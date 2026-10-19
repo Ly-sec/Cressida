@@ -1073,6 +1073,7 @@ namespace app {
     std::vector<Hit> m_hits;
     float m_pointerX = 0, m_pointerY = 0;
     float m_guildScroll = 0, m_channelScroll = 0, m_messageScroll = 0, m_messageMaxScroll = 0, m_memberScroll = 0;
+    bool m_revealGuild = false;
     float m_messageViewportTop = 122, m_messageViewportBottom = 600;
   };
 } // namespace app

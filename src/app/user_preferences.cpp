@@ -9,9 +9,17 @@
 namespace app {
   namespace {
     const std::map<std::string, std::string> defaultShortcuts = {
-        {"settings", "Ctrl+comma"},   {"search", "Ctrl+f"},         {"jump_latest", "Ctrl+End"},
-        {"toggle_members", "Ctrl+u"}, {"next_channel", "Alt+Down"}, {"previous_channel", "Alt+Up"},
-        {"quit", "Ctrl+q"},           {"zoom_in", "Ctrl+equal"},    {"zoom_out", "Ctrl+minus"},
+        {"settings", "Ctrl+comma"},
+        {"search", "Ctrl+f"},
+        {"jump_latest", "Ctrl+End"},
+        {"toggle_members", "Ctrl+u"},
+        {"next_channel", "Alt+Down"},
+        {"previous_channel", "Alt+Up"},
+        {"next_server", "Ctrl+Alt+Down"},
+        {"previous_server", "Ctrl+Alt+Up"},
+        {"quit", "Ctrl+q"},
+        {"zoom_in", "Ctrl+equal"},
+        {"zoom_out", "Ctrl+minus"},
         {"zoom_reset", "Ctrl+0"}
     };
     std::string chord(const Key& key) {
@@ -194,6 +202,23 @@ namespace app {
             continue;
           selectChannel(channels[position].id);
           break;
+        }
+      } else if (name == "next_server" || name == "previous_server") {
+        std::vector<std::string> servers;
+        for (const auto& folder : m_folders) {
+          for (const auto& id : folder.guildIds) {
+            if (std::ranges::find(m_guilds, id, &api::Guild::id) != m_guilds.end())
+              servers.push_back(id);
+          }
+        }
+        if (!servers.empty()) {
+          const auto at = std::ranges::find(servers, m_guildId);
+          const auto step = name == "next_server" ? 1 : -1;
+          auto position = at == servers.end() ? (step > 0 ? -1 : 0) : static_cast<int>(at - servers.begin());
+          position = (position + static_cast<int>(servers.size()) + step) % static_cast<int>(servers.size());
+          if (servers[position] != m_guildId)
+            selectGuild(servers[position]);
+          m_revealGuild = true;
         }
       }
       m_window.invalidate();

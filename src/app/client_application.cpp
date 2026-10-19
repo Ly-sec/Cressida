@@ -2910,6 +2910,19 @@ namespace app {
           }
         }
       }
+      if (m_revealGuild) {
+        m_revealGuild = false;
+        for (std::size_t i = 0; i < rail.size(); ++i) {
+          if (rail[i].guild && rail[i].guild->id == m_guildId) {
+            const float top = 113 + i * 60;
+            if (top - m_guildScroll < 102)
+              m_guildScroll = top - 102;
+            if (top + 48 - m_guildScroll > h - 50)
+              m_guildScroll = top + 48 - (h - 50);
+            break;
+          }
+        }
+      }
       m_scrolling.limit(m_guildScroll, std::max(0.0F, rail.size() * 60.0F - (h - 164)));
       for (std::size_t i = 0; i < rail.size(); ++i) {
         const float y = 113 + i * 60 - m_guildScroll;
@@ -5404,6 +5417,7 @@ namespace app {
               if (!folder.id.empty() && std::ranges::find(folder.guildIds, last->guild) != folder.guildIds.end())
                 m_openFolders.insert(folder.id);
             selectGuild(last->guild);
+            m_revealGuild = true;
             m_startupGuild = last->guild;
           } else
             showDirectMessages();

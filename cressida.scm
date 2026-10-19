@@ -121,3 +121,5 @@
     (synopsis "Native C++ Discord desktop client")
     (description "A native Discord desktop client for Linux and Wayland.")
     (license license:expat)))
+
+cressida-git

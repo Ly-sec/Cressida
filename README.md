@@ -21,15 +21,29 @@ A few highlights:
 - Custom themes with automatic dark and light switching.
 
 ## Run
+A Wayland desktop and working graphics drivers are required.
+For builds without Nix or Guix and distribution packages, see [PACKAGING.md](PACKAGING.md).
 
+### Nix
 With Nix installed, run from this checkout:
 
 ```sh
 nix run path:.
 ```
 
-A Wayland desktop and working graphics drivers are required.
-For builds without Nix and distribution packages, see [PACKAGING.md](PACKAGING.md).
+### Guix
+Add the following to your list of channels:
+
+``` scheme
+(channel
+    (name 'cressida)
+    (url "https://github.com/Ly-sec/Cressida")
+    (branch "main"))
+```
+
+After you perform `guix pull` (or `guix pull --select=cressida`), the `cressida-git`
+package will be available under the module `(cressida)`. Whenever you want to update,
+run `guix pull` again to get latest commit.
 
 ## Sign in
 

@@ -101,7 +101,6 @@
                   freetype
                   glib
                   harfbuzz
-                  libglvnd
                   libjxl
                   libsecret
                   wuffs

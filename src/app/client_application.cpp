@@ -3006,7 +3006,7 @@ namespace app {
           glyph(
               root, 98, y + 4, 16, m_collapsedCategories.contains(channel.id) ? "chevron-right" : "chevron-down", muted
           );
-          label(root, 119, y + 5, sidebarWidth - 62, channel.name, 11, muted, FontWeight::SemiBold);
+          label(root, 119, y + 5, sidebarWidth - 62, channel.name, 13, muted, FontWeight::Bold);
           m_hits.push_back({90, y, sidebarWidth - 24, row.height, Action::Category, channel.id});
           m_contextTargets.push_back({90, y, sidebarWidth - 24, row.height, Action::ChannelMenu, channel.id});
           continue;

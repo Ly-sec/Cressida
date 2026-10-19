@@ -36,7 +36,7 @@ _ensure-configured m=mode: (_configure m)
 
 # Build the desktop client and its libraries.
 build m=mode: (_ensure-configured m)
-    meson compile -C {{build-prefix}}-{{m}} -j 4 cressida
+    meson compile -C {{build-prefix}}-{{m}} cressida
     @if [ '{{build-prefix}}' = build ]; then cp {{build-prefix}}-{{m}}/compile_commands.json compile_commands.json; fi
 
 _with-sanitizers m *command:

@@ -53,11 +53,16 @@
           (add-after 'unpack 'use-system-wuffs
             (lambda _
               (delete-file-recursively "third_party")
+              ;; so meson wouldn't complain
               (substitute* "meson.build"
                 (("'src', 'third_party/wuffs'")
                  "'src'")
                 ((", 'third_party/wuffs/LICENSE-APACHE', 'third_party/wuffs/LICENSE-MIT'")
-                 ""))))
+                 ""))
+              ;; so tests wouldn't complain
+              (substitute* "tests/installation_test.py"
+                (("\\(\"LICENSE\", \"LICENSE-APACHE\", \"LICENSE-MIT\"\\)")
+                 "(\"LICENSE\",)"))))
 
           (add-before 'configure 'fix-native-controls-test
             (lambda _

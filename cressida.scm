@@ -25,6 +25,7 @@
   #:use-module (gnu packages markup) ;md4c
   #:use-module (gnu packages animation) ;rlottie
   #:use-module (gnu packages stb) ;stb-image-resize2
+  #:use-module (gnu packages compression) ;zstd:lib
   #:use-module (gnu packages cpp)) ;nlohmann-json, tomlplusplus
 
 (define source-checkout
@@ -113,6 +114,7 @@
                   mesa
                   mpv
                   nlohmann-json
+                  (list zstd "lib")
                   pango
                   rlottie
                   tomlplusplus))

@@ -130,6 +130,11 @@ namespace app {
         entry.icon = "trash";
         entry.danger = true;
         break;
+      case Action::RemoveFromLog:
+      case Action::ClearEditHistory:
+        entry.icon = "eraser";
+        entry.danger = action == Action::RemoveFromLog;
+        break;
       case Action::CopyMessage:
         entry.icon = "copy";
         break;
@@ -215,6 +220,15 @@ namespace app {
       separator();
       add(Action::CopyMessage, "Copy Text");
       add(Action::CopyLink, "Copy Message Link");
+      const bool retainedMessage = m_messageLog.retained(m_contextChannel, message->id);
+      const bool rememberedEdits = !m_messageLog.edits(m_contextChannel, message->id).empty();
+      if (retainedMessage || rememberedEdits) {
+        separator();
+        if (retainedMessage)
+          add(Action::RemoveFromLog, "Remove from Log");
+        if (rememberedEdits)
+          add(Action::ClearEditHistory, "Clear Edit History");
+      }
       if (!message->deleted && message->authorId == m_account.id) {
         separator();
         add(Action::DeleteMessage, "Delete Message");
@@ -859,6 +873,12 @@ namespace app {
       }
       break;
     }
+    case Action::RemoveFromLog:
+      forgetMessageLog(m_contextChannel, m_contextMessage, true, true);
+      break;
+    case Action::ClearEditHistory:
+      forgetMessageLog(m_contextChannel, m_contextMessage, false, true);
+      break;
     case Action::MuteConversation:
     case Action::UnmuteConversation:
       request.kind = action == Action::MuteConversation ? Kind::Mute : Kind::Unmute;

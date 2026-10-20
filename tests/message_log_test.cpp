@@ -183,6 +183,24 @@ int main() {
     require(!log.size() && log.edits("10", "201").size() == 1, "Clearing deleted snapshots leaves edit history intact");
     log.clearRecords();
     require(log.edits("10", "201").empty() && !log.size(), "Clearing both releases all saved content");
+    // Per-message forgetting touches exactly one key, including its deletion identity
+    log.capture("10", first);
+    log.capture("10", message("102"));
+    ids = {"101", "102"};
+    log.removed("10", ids);
+    log.forget("10", "101", true, true);
+    require(log.known("10", "102"), "Forgetting touches only its own message");
+    require(!log.known("10", "101"), "Forgetting clears the snapshot and deletion identity together");
+    ids = {"101"};
+    log.removed("10", ids);
+    require(log.known("10", "101"), "A message can log again after being forgotten");
+    before = message("301", "Live text");
+    after = before;
+    after.content = "Edited text";
+    after.editedTimestamp = "2026-10-18T09:44:00Z";
+    require(log.recordEdit("10", before, after), "A live version is captured for the forget check");
+    log.forget("10", "301", false, true);
+    require(log.edits("10", "301").empty() && !log.retained("10", "301"), "Edit-only forget drops remembered versions");
     std::cout << "Message logger retention passed\n";
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

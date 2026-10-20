@@ -129,6 +129,17 @@ namespace app {
       std::erase_if(m_records, [&](const auto& entry) { return entry.first.first == channel; });
       std::erase_if(m_edits, [&](const auto& entry) { return entry.first.first == channel; });
     }
+    // Forget one message: its saved snapshot, deletion identity and remembered versions, independently
+    void forget(const std::string& channel, const std::string& id, bool deletions, bool edits) {
+      const Key key{channel, id};
+      if (deletions) {
+        m_records.erase(key);
+        m_dead.erase(key);
+        std::erase(m_deadOrder, key);
+      }
+      if (edits)
+        m_edits.erase(key);
+    }
 
   private:
     static bool less(const std::string& a, const std::string& b) {

@@ -156,6 +156,25 @@ namespace app {
     m_window.invalidate();
   }
 
+  void
+  ClientApplication::forgetMessageLog(const std::string& channel, const std::string& id, bool deletions, bool edits) {
+    m_messageLog.forget(channel, id, deletions, edits);
+    if (deletions)
+      std::erase_if(m_componentStates, [&](const auto& item) { return item.first.starts_with(id + ":"); });
+    if (const auto cache = m_channelMessages.find(channel); cache != m_channelMessages.end())
+      m_messageLog.filter(channel, cache->second);
+    if (channel == m_channelId) {
+      m_messageLog.filter(m_channelId, m_messages);
+      m_messageLayouts.erase(id);
+      if (m_selectedMessage == id) {
+        m_selectedMessage.clear();
+        m_selectedText.clear();
+      }
+      if (m_messageEdit && m_messageEdit->channel == channel && m_messageEdit->message == id)
+        cancelMessageEdit();
+    }
+  }
+
   void ClientApplication::demoDeletedStep() {
     const auto require = [](bool ok, const char* reason) {
       if (!ok)

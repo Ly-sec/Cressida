@@ -250,7 +250,9 @@ namespace app {
       ChannelPanelJump,
       MessageButton,
       DismissEphemeral,
-      SubmitApplicationModal
+      SubmitApplicationModal,
+      RemoveFromLog,
+      ClearEditHistory
     };
     struct Hit {
       float x, y, width, height;
@@ -353,6 +355,7 @@ namespace app {
     void demoJoinStep();
     void deleteMessages(const std::string& channel, const std::vector<std::string>& ids);
     void clearMessageLog(bool deletions = true, bool edits = true);
+    void forgetMessageLog(const std::string& channel, const std::string& id, bool deletions, bool edits);
     void updateMessage(const std::string& channel, const std::string& id, const api::MessagePatch& patch);
     void logMessageEdit(const api::Message& before, const api::Message& after);
     void drawMessageDialog(Node& root, float width, float height);

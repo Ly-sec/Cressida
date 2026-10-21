@@ -317,6 +317,10 @@ namespace app {
           "Lock badges describe everyone access, including a private channel the current member can view"
       );
       require(
+          serverChannelVisible(*serverChannel("1", "102")) && !serverChannelVisible(*serverChannel("1", "103")),
+          "Sidebar rows follows the member's channel permission"
+      );
+      require(
           channelMention("1", "102").name == "secret" && channelMention("1", "103").name == "unknown",
           "A hidden channel name cannot leak from a cached channel snapshot"
       );

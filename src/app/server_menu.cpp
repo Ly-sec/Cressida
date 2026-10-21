@@ -49,6 +49,20 @@ namespace app {
   }
   bool ClientApplication::serverChannelVisible(const api::Channel& channel) const {
     const auto guild = std::ranges::find(m_guilds, m_guildId, &api::Guild::id);
+    const auto visible = [&](const api::Channel& item) {
+      auto permission = serverChannelPermissions(m_guildId, item.isThread() ? item.parentId : item.id);
+      if (!permission)
+        permission = guildPermissions();
+      return !permission || (*permission & api::viewChannel) || (item.isThread() && item.joined.value_or(false));
+    };
+    if (channel.type != 4) {
+      if (!visible(channel))
+        return false;
+    } else if (!std::ranges::any_of(m_channels, [&](const auto& item) {
+                 return item.parentId == channel.id && visible(item);
+               })) {
+      return false;
+    }
     if (guild == m_guilds.end() || !hasFeature(*guild, "COMMUNITY"))
       return true;
     const auto flags = m_userDirectory.guildPreferences(m_guildId).flags.value_or(0);

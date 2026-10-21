@@ -2,8 +2,15 @@ name: Deploy GitHub Pages
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    branches: [website]
+  workflow_call:
+    inputs:
+      website-ref:
+        type: string
+        default: ""
+      docs-ref:
+        type: string
+        default: main
 
 permissions:
   contents: read
@@ -13,38 +20,77 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  sources:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      website-ref: ${{ steps.website.outputs.commit }}
+      docs-ref: ${{ steps.docs.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        id: website
+        with:
+          ref: ${{ inputs.website-ref || github.sha }}
+          path: site
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        id: docs
+        with:
+          ref: ${{ inputs.docs-ref || 'main' }}
+          path: client
+          sparse-checkout: docs
+          persist-credentials: false
+
   checks:
+    needs: sources
     uses: ./.github/workflows/checks.yml
+    with:
+      website-ref: ${{ needs.sources.outputs.website-ref }}
+      docs-ref: ${{ needs.sources.outputs.docs-ref }}
 
   build:
-    needs: checks
+    needs: [sources, checks]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
       pages: read
+    defaults:
+      run:
+        working-directory: site
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ needs.sources.outputs.website-ref }}
+          path: site
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.sources.outputs.docs-ref }}
+          path: client
+          sparse-checkout: docs
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "24"
           cache: npm
+          cache-dependency-path: site/package-lock.json
       - name: Read Pages configuration
         id: pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - run: npm ci
-      - name: Build and verify the published paths
+      - name: Build imported docs and verify published paths
         run: npm run build
         env:
           SITE_URL: ${{ steps.pages.outputs.origin }}
           BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          CRESSIDA_DOCS_DIR: ${{ github.workspace }}/client/docs
           ASTRO_TELEMETRY_DISABLED: "1"
       - name: Upload static site
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:
-          path: dist
+          path: site/dist
 
   deploy:
     needs: build

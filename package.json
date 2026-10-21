@@ -8,11 +8,17 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "check": "astro check && prettier --check .",
+    "check": "node --test tests/*.test.mjs && npm run docs:check && astro check && prettier --check .",
     "build": "astro build && node scripts/check-site.mjs",
     "preview": "astro preview",
     "format": "prettier --write .",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "docs:sync": "node scripts/sync-docs.mjs",
+    "docs:check": "node scripts/docs-format.mjs --check",
+    "docs:format": "node scripts/docs-format.mjs --write",
+    "predev": "npm run docs:sync",
+    "precheck": "npm run docs:sync",
+    "prebuild": "npm run docs:sync"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "7.3.3",

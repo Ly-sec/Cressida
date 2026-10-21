@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { unified } from "@astrojs/markdown-remark";
+import docsLinks from "./scripts/docs-links.mjs";
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import sitemap from "@astrojs/sitemap";
@@ -13,6 +16,9 @@ export default defineConfig({
   base,
   // Accept both forms so unknown slashless paths reach our custom 404 in dev too.
   trailingSlash: "ignore",
+  markdown: {
+    processor: unified({ remarkPlugins: [docsLinks], smartypants: false }),
+  },
   integrations: [
     starlight({
       title: "Cressida",
@@ -29,50 +35,9 @@ export default defineConfig({
         },
       ],
       customCss: ["./src/styles/docs.css"],
-      sidebar: [
-        {
-          label: "Start here",
-          items: [
-            { slug: "docs" },
-            { slug: "docs/installation" },
-            { slug: "docs/manual-installation" },
-            { slug: "docs/sign-in" },
-          ],
-        },
-        {
-          label: "Using Cressida",
-          items: [
-            { slug: "docs/chat" },
-            { slug: "docs/direct-messages" },
-            { slug: "docs/servers-and-threads" },
-            { slug: "docs/media" },
-            { slug: "docs/desktop" },
-            { slug: "docs/keyboard-shortcuts" },
-          ],
-        },
-        {
-          label: "Make it yours",
-          items: [{ slug: "docs/appearance" }, { slug: "docs/custom-themes" }],
-        },
-        {
-          label: "Reference and help",
-          items: [
-            { slug: "docs/command-line" },
-            { slug: "docs/files-and-data" },
-            { slug: "docs/troubleshooting" },
-            { slug: "docs/faq" },
-          ],
-        },
-        {
-          label: "Development",
-          collapsed: true,
-          items: [
-            { slug: "docs/building" },
-            { slug: "docs/contributing" },
-            { slug: "docs/packaging" },
-          ],
-        },
-      ],
+      sidebar: JSON.parse(
+        readFileSync(new URL("./.docs/sidebar.json", import.meta.url), "utf8"),
+      ),
     }),
     sitemap(),
   ],

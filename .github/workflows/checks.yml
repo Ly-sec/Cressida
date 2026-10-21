@@ -2,7 +2,15 @@ name: Website checks
 
 on:
   pull_request:
+    branches: [website]
   workflow_call:
+    inputs:
+      website-ref:
+        type: string
+        default: ""
+      docs-ref:
+        type: string
+        default: main
 
 permissions:
   contents: read
@@ -16,18 +24,31 @@ jobs:
       fail-fast: false
       matrix:
         base: ["/", "/cressida-website/"]
+    defaults:
+      run:
+        working-directory: site
     env:
       SITE_URL: https://example.test
       BASE_PATH: ${{ matrix.base }}
+      CRESSIDA_DOCS_DIR: ${{ github.workspace }}/client/docs
       ASTRO_TELEMETRY_DISABLED: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ inputs.website-ref || github.sha }}
+          path: site
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.docs-ref || 'main' }}
+          path: client
+          sparse-checkout: docs
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "24"
           cache: npm
+          cache-dependency-path: site/package-lock.json
       - run: npm ci
       - run: npm run check
       - run: npm run build

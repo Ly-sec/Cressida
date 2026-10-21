@@ -6,3 +6,6 @@ public/
 src/assets/
 playwright-report/
 test-results/
+
+.docs/
+.docs-import-*/

@@ -1,0 +1,8 @@
+dist/
+node_modules/
+.astro/
+package-lock.json
+public/
+src/assets/
+playwright-report/
+test-results/

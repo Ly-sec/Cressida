@@ -1,0 +1,39 @@
+name: Website checks
+
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check ${{ matrix.base }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        base: ["/", "/cressida-website/"]
+    env:
+      SITE_URL: https://example.test
+      BASE_PATH: ${{ matrix.base }}
+      ASTRO_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run test:browser
+      - name: Check development-server 404 routes
+        run: npm run test:browser -- --grep "unknown path"
+        env:
+          TEST_SERVER: dev

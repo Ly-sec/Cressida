@@ -1,0 +1,79 @@
+---
+title: Troubleshooting
+description: Resolve common startup, tray, sign-in, theme and media problems.
+---
+
+## The window does not open
+
+- Confirm you are in a Wayland session with working graphics drivers. There is
+  no X11 window backend.
+- If Cressida is in the tray, choose **Open** or launch `cressida` again.
+- With `--start-minimized`, allow five seconds for the missing-tray fallback.
+- Run `cressida --version` to confirm that the executable can be found.
+
+For an isolated interface check, try `cressida --demo`. It needs a Wayland
+compositor but does not need account access.
+
+## Closing the window exits instead of hiding
+
+Cressida needs a compatible tray host to stay reachable after hiding. Enable
+your desktop's StatusNotifier-compatible tray support or extension. Without a
+host, window close intentionally exits. Tray **Close** always exits.
+
+## Launching again does not focus the client
+
+A repeat launch asks the running client to open and requests desktop activation.
+The compositor decides whether to grant focus. Check that both launches use the
+same user session and runtime directory, and that you are not passing
+`--new-instance` or `-n`.
+
+Do not delete runtime coordination files while an instance is running. Quit it
+normally before investigating leftover files.
+
+## Sign-in is not remembered
+
+Check that a Secret Service provider is running and unlocked. GNOME Keyring or
+KeePassXC with Secret Service enabled can provide it. Installing `libsecret`
+alone is insufficient. See [Sign in](../sign-in/).
+
+If the browser does not open for sign-in or links, check your default browser
+and `xdg-open` installation.
+
+## System colors do not change
+
+Select **System** under Appearance. Fixed Light or Dark choices override the
+desktop preference. Ensure an XDG desktop portal with a working Settings backend
+is available. An absent or unknown desktop preference falls back to dark.
+
+## A custom theme does not load
+
+Open **Cressida > Themes** and read the reported error. Check the filename,
+`version = 1`, both light and dark variants, and every required color. Unknown
+keys are rejected. The last valid version remains active during invalid edits.
+Use the [complete starter](../custom-themes/#complete-starter) to compare.
+
+## Media or emoji do not display correctly
+
+- Install a color emoji font and check your Fontconfig setup.
+- Keep the complete Cressida assets directory with the executable.
+- For video playback, check the package's libmpv and FFmpeg dependencies.
+- For saving images, check that your desktop portal's FileChooser backend works.
+
+## A source build fails
+
+Use the [build dependency reference](../building/). In particular:
+
+- The compiler **and standard library** must support the required C++23
+  features.
+- The linked libcurl must provide HTTPS and secure WebSockets (`wss`).
+- stb must include `stb_image_resize2.h`; the older resize header is
+  insufficient.
+- `libzstd` is required for animation frame caching.
+
+## Report a problem
+
+[Open an issue](https://github.com/Ly-sec/Cressida/issues) with your
+distribution, desktop/compositor, installation method, Cressida version, steps
+to reproduce and what you expected. Add a screenshot when useful. Remove
+personal conversations, account tokens and other credentials from anything you
+share.

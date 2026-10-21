@@ -1,0 +1,124 @@
+---
+import "../styles/home.css";
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+const home = `${base}/`;
+---
+
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Page not found | Cressida</title>
+    <meta
+      name="description"
+      content="This page has drifted out of orbit. Find your way back to Cressida and its documentation."
+    />
+    <link rel="icon" href={`${base}/cressida-logo.svg`} type="image/svg+xml" />
+    <script is:inline>
+      (() => {
+        let saved;
+        try {
+          saved = localStorage.getItem("starlight-theme");
+        } catch {}
+        document.documentElement.dataset.theme =
+          saved === "light" || saved === "dark"
+            ? saved
+            : matchMedia("(prefers-color-scheme: light)").matches
+              ? "light"
+              : "dark";
+      })();
+    </script>
+  </head>
+  <body>
+    <main class="not-found wrap">
+      <a class="wordmark" href={home} aria-label="Cressida home">
+        <img src={`${base}/cressida-logo.svg`} alt="" width="42" height="42" />
+        Cressida<span class="wordmark-dot">.</span>
+      </a>
+      <div class="lost-orbit" aria-hidden="true">
+        <div class="orbit"></div>
+        <img
+          src={`${base}/cressida-logo.svg`}
+          alt=""
+          width="220"
+          height="220"
+        />
+        <span>404</span>
+      </div>
+      <p class="eyebrow">PAGE NOT FOUND</p>
+      <h1>A little out of orbit.</h1>
+      <p class="explanation">
+        This page may have moved, or the link may be incomplete.
+        <br />
+        Let's get you back to familiar space.
+      </p>
+      <div class="actions">
+        <a class="button primary" href={home}>
+          Back to Cressida <span aria-hidden="true">→</span>
+        </a>
+        <a class="button secondary" href={`${base}/docs/`}>
+          Browse the docs
+        </a>
+      </div>
+      <p class="recovery">
+        Looking for the client?{" "}
+        <a href={`${base}/docs/installation/`}>Start with installation.</a>
+      </p>
+    </main>
+  </body>
+</html>
+
+<style>
+  .not-found {
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding-block: 3rem;
+  }
+  .not-found > .wordmark {
+    margin-bottom: 2rem;
+  }
+  .lost-orbit {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: min(25rem, 100%);
+    height: 15rem;
+    isolation: isolate;
+  }
+  .lost-orbit img {
+    position: absolute;
+    width: 15rem;
+    opacity: 0.5;
+  }
+  .lost-orbit > span {
+    font-size: 6rem;
+    font-weight: 650;
+    letter-spacing: -0.08em;
+    z-index: 1;
+  }
+  .not-found h1 {
+    margin: 0.75rem 0 1rem;
+    font-size: clamp(2.5rem, 6vw, 4rem);
+  }
+  .explanation,
+  .recovery {
+    color: var(--c-muted);
+  }
+  .actions {
+    justify-content: center;
+    margin-top: 1rem;
+  }
+  .recovery {
+    margin: 2rem 0 0;
+    font-size: 0.85rem;
+  }
+  .recovery a {
+    color: var(--c-accent);
+  }
+</style>

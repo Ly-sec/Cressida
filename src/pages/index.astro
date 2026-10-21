@@ -1,0 +1,281 @@
+---
+import ThemeToggle from "../components/ThemeToggle.astro";
+import "../styles/home.css";
+
+const base = import.meta.env.BASE_URL;
+const url = (path: string) => `${base.replace(/\/$/, "")}/${path}`;
+const description =
+  "Cressida is a native Discord client for Linux and Wayland, with rich conversations, desktop integration and themes that feel like home.";
+const canonical = new URL(base, Astro.site);
+---
+
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#17181d" />
+    <link rel="icon" type="image/svg+xml" href={url("cressida-logo.svg")} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:title"
+      content="Cressida | A native place for your conversations"
+    />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta
+      property="og:image"
+      content={new URL(url("images/conversation.png"), Astro.site)}
+    />
+    <meta
+      property="og:image:alt"
+      content="The Cressida desktop client displaying an offline sample conversation"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <title>Cressida | A native place for your conversations</title>
+    <script is:inline>
+      (() => {
+        let saved;
+        try {
+          saved = localStorage.getItem("starlight-theme");
+        } catch {}
+        document.documentElement.dataset.theme =
+          saved === "light" || saved === "dark"
+            ? saved
+            : matchMedia("(prefers-color-scheme: light)").matches
+              ? "light"
+              : "dark";
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">
+      Skip to content
+    </a>
+    <header class="site-header wrap">
+      <a class="wordmark" href={base} aria-label="Cressida home">
+        <img src={url("cressida-logo.svg")} alt="" width="42" height="42" />
+        Cressida<span class="wordmark-dot">.</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="#features">Features</a>
+        <a href={url("docs/")}>Docs</a>
+        <a class="source-link" href="https://github.com/Ly-sec/Cressida">
+          GitHub <span aria-hidden="true">↗</span>
+        </a>
+        <ThemeToggle />
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero wrap" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">
+            <span class="status-dot" aria-hidden="true"></span> MADE FOR LINUX.
+            AT HOME ON WAYLAND.
+          </p>
+          <h1 id="hero-title">
+            Your conversations.
+            <br />
+            <span>Your kind of space.</span>
+          </h1>
+          <p class="hero-description">
+            A native Discord client for Linux and Wayland. A place for your
+            communities, late-night DMs and everything in between. Built in C++,
+            shaped for your desktop.
+          </p>
+          <div class="actions">
+            <a class="button primary" href={url("docs/installation/")}>
+              Get started <span aria-hidden="true">↗</span>
+            </a>
+            <a class="button secondary" href={url("docs/")}>
+              Read the docs <span aria-hidden="true">→</span>
+            </a>
+          </div>
+          <p class="hero-note">
+            Free and open source <span aria-hidden="true">·</span> Early
+            development
+          </p>
+        </div>
+        <div class="hero-art" aria-hidden="true">
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <img src={url("cressida-logo.svg")} alt="" width="340" height="340" />
+          <span class="art-label">
+            A SMALL MOON.
+            <br />A SPACE OF YOUR OWN.
+          </span>
+        </div>
+      </section>
+
+      <figure class="product-shot wrap">
+        <div class="screenshot-frame">
+          <div class="screenshot-caption">
+            <span>
+              <span class="status-dot" aria-hidden="true"></span> CRESSIDA /
+              NATIVE CLIENT
+            </span>
+            <span>LINUX + WAYLAND</span>
+          </div>
+          <img
+            src={url("images/conversation.png")}
+            alt="Cressida's native window with a server rail, channel list, conversation, composer and member list in the dark theme. Sample content from offline demo mode."
+            width="1120"
+            height="760"
+            fetchpriority="high"
+          />
+        </div>
+        <figcaption>
+          The actual client, with offline sample conversations. No account
+          needed to try demo mode.
+        </figcaption>
+      </figure>
+
+      <section
+        class="feature-section wrap"
+        id="features"
+        aria-labelledby="features-title"
+      >
+        <div class="section-heading">
+          <p class="eyebrow">FAMILIAR CONVERSATIONS. NATIVE DETAILS.</p>
+          <h2 id="features-title">
+            All the little things
+            <br />
+            that make it yours.
+          </h2>
+        </div>
+        <div class="feature-grid">
+          <article>
+            <span class="feature-number">01 / CONVERSATIONS</span>
+            <h3>Room for every thread.</h3>
+            <p>
+              Server channels, forum posts, threads and direct messages. Rich
+              text, replies, custom emoji and compact embeds keep the
+              conversation together.
+            </p>
+            <a href={url("docs/chat/")}>
+              Explore chat <span aria-hidden="true">→</span>
+            </a>
+          </article>
+          <article>
+            <span class="feature-number">02 / PERSONALITY</span>
+            <h3>A palette that fits.</h3>
+            <p>
+              Choose a bundled palette or write your own. Switch between light,
+              dark and your system preference, then adjust corners and text to
+              your taste.
+            </p>
+            <a href={url("docs/appearance/")}>
+              Make it yours <span aria-hidden="true">→</span>
+            </a>
+          </article>
+          <article>
+            <span class="feature-number">03 / YOUR DESKTOP</span>
+            <h3>
+              Close the window.
+              <br />
+              Stay in the loop.
+            </h3>
+            <p>
+              A native tray keeps the client within reach. Notifications bring
+              you back to your conversation, and opening Cressida again focuses
+              the existing window.
+            </p>
+            <a href={url("docs/desktop/")}>
+              Meet the desktop details <span aria-hidden="true">→</span>
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section class="profile-section wrap" aria-labelledby="profile-title">
+        <div class="profile-crop">
+          <img
+            src={url("images/direct-message.png")}
+            alt="An offline direct message showing a custom status beside the recipient's name and a profile panel with biography, mutual counts and a full-profile button."
+            width="1120"
+            height="760"
+            loading="lazy"
+          />
+        </div>
+        <div class="profile-copy">
+          <p class="eyebrow">MORE THAN A NAME</p>
+          <h2 id="profile-title">
+            Keep your people
+            <br />
+            in the picture.
+          </h2>
+          <p>
+            See who's around, read a friend's status and keep their profile
+            beside your conversation. One-to-one DMs have their own profile
+            panel, right where you need it.
+          </p>
+          <a class="text-link" href={url("docs/direct-messages/")}>
+            A closer look at DMs <span aria-hidden="true">→</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="development wrap" aria-labelledby="development-title">
+        <div>
+          <p class="eyebrow">GROWING IN THE OPEN</p>
+          <h2 id="development-title">
+            A work in progress.
+            <br />A project you can shape.
+          </h2>
+        </div>
+        <div>
+          <p>
+            Cressida is in early development. Text chat and image uploads are
+            here. Voice and video calls, arbitrary file uploads and file
+            drag-and-drop are still ahead.
+          </p>
+          <p>
+            Try it, tell us what gets in your way, or help build the next piece.
+          </p>
+          <div class="inline-links">
+            <a href={url("docs/faq/")}>Current capabilities →</a>
+            <a href="https://github.com/Ly-sec/Cressida/issues">
+              Report an issue ↗
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="get-started wrap" aria-labelledby="start-title">
+        <p class="eyebrow">YOUR NEXT CONVERSATION STARTS HERE</p>
+        <h2 id="start-title">Make yourself at home.</h2>
+        <p>Find an installation route for your Linux desktop.</p>
+        <a class="button primary" href={url("docs/installation/")}>
+          Install Cressida <span aria-hidden="true">↗</span>
+        </a>
+        <a class="quiet-link" href={url("docs/contributing/")}>
+          Or help us build it →
+        </a>
+      </section>
+    </main>
+    <footer class="site-footer wrap">
+      <div>
+        <a class="wordmark" href={base}>
+          <img src={url("cressida-logo.svg")} alt="" width="32" height="32" />
+          Cressida<span class="wordmark-dot">.</span>
+        </a>
+        <p>
+          An independent, unofficial chat client.
+          <br />
+          Open source. Made for Linux.
+        </p>
+      </div>
+      <nav aria-label="Footer navigation">
+        <a href={url("docs/")}>Documentation</a>
+        <a href="https://github.com/Ly-sec/Cressida">Source code</a>
+        <a href="https://github.com/Ly-sec/Cressida/blob/main/LICENSE">
+          MIT license
+        </a>
+        <a href={url("docs/files-and-data/")}>Your data</a>
+      </nav>
+    </footer>
+  </body>
+</html>

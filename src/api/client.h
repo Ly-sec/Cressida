@@ -14,6 +14,7 @@
 #include "api/profile.h"
 #include "api/read_state.h"
 #include "api/rest_rate_limits.h"
+#include "api/rest_restrictions.h"
 #include "api/role_styles.h"
 #include "api/threads.h"
 #include "api/typing.h"
@@ -92,7 +93,8 @@ namespace api {
     TypingStart,
     InboxRead,
     InboxWrite,
-    InboxUpdate
+    InboxUpdate,
+    AccountRestriction
   };
 
   struct Event {
@@ -279,6 +281,7 @@ namespace api {
     bool m_readsPaused = false;
     unsigned m_backgroundReads = 0;
     RestRateLimits m_rateLimits;
+    RestRestrictions m_restRestrictions;
     std::unique_ptr<RestTransportCache> m_transportCache;
     std::atomic<std::uint64_t> m_guildsReadySession{0}, m_bootstrapSettingsReadySession{0};
     std::atomic<std::uint64_t> m_userSettingsSecretsEpoch{0};

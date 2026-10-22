@@ -52,6 +52,25 @@ Open **Cressida > Themes** and read the reported error. Check the filename,
 keys are rejected. The last valid version remains active during invalid edits.
 Use the [complete starter](custom-themes.md#complete-starter) to compare.
 
+## Account restrictions or security checks
+
+If the service asks for verification, restricts messaging or challenges an
+action, Cressida pauses the affected writes and explains the next step. Complete
+the requested check or review **Account Standing** in the official app, then
+reconnect Cressida before trying again.
+
+Queued actions that are stopped show an error. Cressida does not automatically
+repeat them after the restriction clears. Check whether a message arrived before
+using **Restore** to put a failed message back in an empty composer.
+
+A rate-limit response pauses requests for the service's indicated duration. Long
+waits return an error so other work can continue. Wait before trying again.
+
+These controls do not remove account violations or establish why an account was
+flagged. Include the exact warning and the action immediately before it when
+reporting a problem. Never share account tokens, challenge data or private
+message contents.
+
 ## Media or emoji do not display correctly
 
 - Install a color emoji font and check your Fontconfig setup.

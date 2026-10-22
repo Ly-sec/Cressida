@@ -1,5 +1,6 @@
 #include "api/gateway.h"
 
+#include "api/gateway_pacing.h"
 #include "api/network_profile.h"
 
 #include <algorithm>
@@ -11,6 +12,7 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <poll.h>
+#include <random>
 #include <stdexcept>
 #include <utility>
 
@@ -83,6 +85,15 @@ namespace api {
       ::poll(descriptors, 2, static_cast<int>(std::clamp<std::int64_t>(remaining.count(), 0, 120000)));
       if (descriptors[1].revents & POLLIN)
         connection.wake.drain();
+    }
+    void waitUntil(const Connection& connection, Clock::time_point deadline) {
+      while (!connection.cancelled() && Clock::now() < deadline) {
+        pollfd descriptor{connection.wake.fd(), POLLIN, 0};
+        const auto remaining = std::chrono::ceil<std::chrono::milliseconds>(deadline - Clock::now());
+        ::poll(&descriptor, 1, static_cast<int>(std::clamp<std::int64_t>(remaining.count(), 0, 120000)));
+        if (descriptor.revents & POLLIN)
+          connection.wake.drain();
+      }
     }
     void send(CURL* curl, const Json& payload, Connection& connection) {
       const auto bytes = payload.dump();
@@ -221,7 +232,7 @@ namespace api {
     std::lock_guard lock(m_mutex);
     if (session != m_generation || session != m_session || m_token.empty())
       return false;
-    m_memberSearch = MemberSearch{guild, query, nonce};
+    m_memberSearch = MemberSearch{guild, query, nonce, Clock::now()};
     (void)m_wake.signal();
     return true;
   }
@@ -275,7 +286,13 @@ namespace api {
   }
 
   void Gateway::run(std::stop_token stop) {
-    int backoff = 1;
+    gateway_pacing::ApplicationBudget applicationBudget;
+    gateway_pacing::ReconnectBudget reconnectBudget;
+    std::deque<Clock::time_point> presenceTimes;
+    auto memberRequestAt = Clock::time_point{};
+    std::mt19937 random(std::random_device{}());
+    auto retryAt = Clock::time_point{};
+    bool handoff = false;
     std::string resumeId, resumeEndpoint;
     std::int64_t sequence = -1;
     std::uint64_t activeSession = 0;
@@ -295,12 +312,18 @@ namespace api {
         resumeId.clear();
         resumeEndpoint.clear();
         sequence = -1;
-        backoff = 1;
       }
       Connection connection{stop, m_generation, session, m_wake};
       bool fatal = false;
       bool authenticationFailed = false;
-      bool reconnectImmediately = false;
+      auto retryCause = gateway_pacing::Failure::Transport;
+      auto readyAt = Clock::time_point{};
+      const bool resumable = !resumeId.empty() && sequence >= 0;
+      waitUntil(connection, std::max(retryAt, reconnectBudget.ready(Clock::now(), resumable, handoff)));
+      handoff = false;
+      if (connection.cancelled())
+        continue;
+      reconnectBudget.connecting(Clock::now());
       std::string failure = "Live connection interrupted";
       try {
         std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curl(curl_easy_init(), curl_easy_cleanup);
@@ -331,17 +354,14 @@ namespace api {
         if (connected != CURLE_OK)
           throw GatewayFailure(std::string("Gateway connection failed: ") + curl_easy_strerror(connected));
         const auto connectedAt = Clock::now();
-        std::string message, subscribedGuild, subscribedChannel;
+        std::string message, subscribedGuild;
         std::uint64_t subscription = 0, presenceVersion = 0;
-        std::deque<Clock::time_point> presenceTimes;
         auto subscribedAt = Clock::time_point{};
-        auto memberRequestAt = Clock::time_point{};
         auto heartbeatAt = Clock::now() + 20s;
         std::chrono::milliseconds interval{30000};
         bool hello = false, ready = false, awaitingAck = false;
         while (!connection.cancelled()) {
           const auto now = Clock::now();
-          auto nextControl = heartbeatAt;
           if (now >= heartbeatAt) {
             if (!hello || awaitingAck)
               throw GatewayFailure("Gateway heartbeat timed out");
@@ -349,6 +369,7 @@ namespace api {
             awaitingAck = true;
             heartbeatAt = now + interval;
           }
+          auto nextControl = heartbeatAt;
           if (ready) {
             Presence presence;
             std::uint64_t desiredVersion;
@@ -357,12 +378,19 @@ namespace api {
               presence = m_presence;
               desiredVersion = m_presenceVersion;
             }
-            while (!presenceTimes.empty() && now - presenceTimes.front() >= 20s)
+            while (!presenceTimes.empty() && now - presenceTimes.front() >= gateway_pacing::presenceWindow)
               presenceTimes.pop_front();
-            if (presenceVersion != desiredVersion && presenceTimes.size() >= 5)
-              nextControl = std::min(nextControl, presenceTimes.front() + 20s);
-            if (presenceVersion != desiredVersion && presenceTimes.size() < 5) {
-              if (validStatus(presence.status)) {
+            if (presenceVersion != desiredVersion && !validStatus(presence.status))
+              presenceVersion = desiredVersion;
+            if (presenceVersion != desiredVersion) {
+              const auto presenceAt = std::max(
+                  applicationBudget.ready(now),
+                  presenceTimes.size() >= gateway_pacing::presenceLimit
+                      ? presenceTimes.front() + gateway_pacing::presenceWindow
+                      : now
+              );
+              nextControl = std::min(nextControl, presenceAt);
+              if (now >= presenceAt && applicationBudget.acquire(now)) {
                 Json activities = Json::array();
                 if (!presence.text.empty() || !presence.emojiId.empty() || !presence.emojiName.empty()) {
                   Json custom{{"name", "Custom Status"}, {"type", 4}, {"state", presence.text}};
@@ -391,8 +419,8 @@ namespace api {
                 );
                 presenceTimes.push_back(now);
                 m_dispatch(session, "PRESENCE_SENT", Json{{"status", presence.status}, {"text", presence.text}});
+                presenceVersion = desiredVersion;
               }
-              presenceVersion = desiredVersion;
             }
             std::string guild, channel;
             bool thread;
@@ -406,49 +434,60 @@ namespace api {
               thread = m_thread;
               version = m_subscriptionVersion;
             }
-            if (version != subscription && channel == subscribedChannel && guild == subscribedGuild)
-              nextControl = std::min(nextControl, subscribedAt + 500ms);
-            if (version != subscription
-                && (channel != subscribedChannel || guild != subscribedGuild || now - subscribedAt >= 500ms)) {
-              Json subscriptions = Json::object();
-              if (!subscribedGuild.empty() && subscribedGuild != guild)
-                subscriptions[subscribedGuild] = {
-                    {"typing", false},
-                    {"activities", false},
-                    {"threads", false},
-                    {"channels", Json::object()},
-                    {"thread_member_lists", Json::array()}
-                };
-              Json ranges = Json::array({Json::array({first, first + 99}), Json::array({first + 100, first + 199})});
-              Json channels = thread ? Json::object() : Json{{channel, ranges}};
-              if (!guild.empty() && guild != subscribedGuild) {
-                // A new guild subscription must precede its channel ranges in
-                // a separate WebSocket frame; otherwise the ranges may be ignored.
-                const Json initial = {
-                    {"typing", true},         {"activities", true},         {"threads", true},
-                    {"member_updates", true}, {"channels", Json::object()}, {"thread_member_lists", Json::array()}
-                };
-                send(curl.get(), Json{{"op", 37}, {"d", {{"subscriptions", {{guild, initial}}}}}}, connection);
+            if (version != subscription) {
+              const std::size_t commands = (!guild.empty() && guild != subscribedGuild ? 1 : 0)
+                  + ((!subscribedGuild.empty() && subscribedGuild != guild) || (!guild.empty() && !channel.empty())
+                         ? 1
+                         : 0);
+              const auto subscriptionAt = commands
+                  ? std::max(subscribedAt + gateway_pacing::subscriptionSpacing, applicationBudget.ready(now, commands))
+                  : now;
+              nextControl = std::min(nextControl, subscriptionAt);
+              if (now >= subscriptionAt && (!commands || applicationBudget.acquire(now, commands))) {
+                Json subscriptions = Json::object();
+                if (!subscribedGuild.empty() && subscribedGuild != guild)
+                  subscriptions[subscribedGuild] = {
+                      {"typing", false},
+                      {"activities", false},
+                      {"threads", false},
+                      {"channels", Json::object()},
+                      {"thread_member_lists", Json::array()}
+                  };
+                Json ranges = Json::array({Json::array({first, first + 99}), Json::array({first + 100, first + 199})});
+                Json channels = thread ? Json::object() : Json{{channel, ranges}};
+                if (!guild.empty() && guild != subscribedGuild) {
+                  // A new guild subscription must precede its channel ranges in
+                  // a separate WebSocket frame; otherwise the ranges may be ignored.
+                  const Json initial = {
+                      {"typing", true},         {"activities", true},         {"threads", true},
+                      {"member_updates", true}, {"channels", Json::object()}, {"thread_member_lists", Json::array()}
+                  };
+                  send(curl.get(), Json{{"op", 37}, {"d", {{"subscriptions", {{guild, initial}}}}}}, connection);
+                }
+                if (!guild.empty() && !channel.empty())
+                  subscriptions[guild] = {
+                      {"typing", true},       {"activities", true},
+                      {"threads", true},      {"member_updates", true},
+                      {"channels", channels}, {"thread_member_lists", thread ? Json::array({channel}) : Json::array()}
+                  };
+                if (!subscriptions.empty())
+                  send(curl.get(), Json{{"op", 37}, {"d", {{"subscriptions", subscriptions}}}}, connection);
+                subscription = version;
+                subscribedGuild = guild;
+                subscribedAt = now;
               }
-              if (!guild.empty() && !channel.empty())
-                subscriptions[guild] = {
-                    {"typing", true},       {"activities", true},
-                    {"threads", true},      {"member_updates", true},
-                    {"channels", channels}, {"thread_member_lists", thread ? Json::array({channel}) : Json::array()}
-                };
-              if (!subscriptions.empty())
-                send(curl.get(), Json{{"op", 37}, {"d", {{"subscriptions", subscriptions}}}}, connection);
-              subscription = version;
-              subscribedGuild = guild;
-              subscribedChannel = channel;
-              subscribedAt = now;
             }
+            bool membersPending;
             {
               std::lock_guard lock(m_mutex);
-              if (m_memberSearch || !m_memberPending.empty())
-                nextControl = std::min(nextControl, memberRequestAt);
+              if (m_memberSearch && now - m_memberSearch->queuedAt >= gateway_pacing::memberSearchLifetime)
+                m_memberSearch.reset();
+              membersPending = m_memberSearch || !m_memberPending.empty();
             }
-            if (now >= memberRequestAt) {
+            const auto membersAt = std::max(memberRequestAt, applicationBudget.ready(now));
+            if (membersPending)
+              nextControl = std::min(nextControl, membersAt);
+            if (membersPending && now >= membersAt && applicationBudget.acquire(now)) {
               std::string memberGuild;
               std::vector<std::string> users;
               std::optional<MemberSearch> search;
@@ -484,13 +523,13 @@ namespace api {
                     },
                     connection
                 );
-                memberRequestAt = now + 1s;
+                memberRequestAt = now + gateway_pacing::memberSpacing;
               } else if (!users.empty()) {
                 send(
                     curl.get(),
                     Json{{"op", 8}, {"d", {{"guild_id", memberGuild}, {"user_ids", users}, {"limit", 100}}}}, connection
                 );
-                memberRequestAt = now + 1s;
+                memberRequestAt = now + gateway_pacing::memberSpacing;
               }
             }
           }
@@ -523,6 +562,8 @@ namespace api {
                   recent.c_str()
               );
             }
+            if (closeCode == 4008)
+              retryCause = gateway_pacing::Failure::RateLimited;
             authenticationFailed = closeCode == 4004;
             if (closeCode == 4004
                 || closeCode == 4010
@@ -558,13 +599,14 @@ namespace api {
               throw std::runtime_error("Duplicate Gateway hello");
             hello = true;
             interval = std::chrono::milliseconds(std::clamp(data.value("heartbeat_interval", 30000), 1000, 120000));
-            heartbeatAt = Clock::now();
+            heartbeatAt = Clock::now() + gateway_pacing::heartbeatDelay(interval, random());
             if (!resumeId.empty() && sequence >= 0)
               send(
                   curl.get(), Json{{"op", 6}, {"d", {{"token", token}, {"session_id", resumeId}, {"seq", sequence}}}},
                   connection
               );
-            else
+            else {
+              reconnectBudget.identifying(Clock::now());
               send(
                   curl.get(),
                   Json{
@@ -585,15 +627,17 @@ namespace api {
                   },
                   connection
               );
+            }
           } else if (op == 11)
             awaitingAck = false;
           else if (op == 1) {
             send(curl.get(), Json{{"op", 1}, {"d", sequence < 0 ? Json(nullptr) : Json(sequence)}}, connection);
             awaitingAck = true;
           } else if (op == 7) {
-            reconnectImmediately = true;
+            retryCause = gateway_pacing::Failure::Handoff;
             throw GatewayFailure("Gateway requested reconnect");
           } else if (op == 9) {
+            retryCause = gateway_pacing::Failure::InvalidSession;
             if (!data.is_boolean() || !data.get<bool>()) {
               resumeId.clear();
               resumeEndpoint.clear();
@@ -628,11 +672,11 @@ namespace api {
                     }
               }
               ready = true;
-              backoff = 1;
+              readyAt = Clock::now();
             }
             if (type == "RESUMED") {
               ready = true;
-              backoff = 1;
+              readyAt = Clock::now();
             }
             m_dispatch(session, type, data);
           }
@@ -652,13 +696,12 @@ namespace api {
           m_token.clear();
         continue;
       }
-      // Opcode 7 is an explicit handoff, not a failed connection attempt.
-      if (reconnectImmediately)
-        continue;
-      const auto retryAt = Clock::now() + std::chrono::seconds(backoff);
-      while (!connection.cancelled() && Clock::now() < retryAt)
-        std::this_thread::sleep_for(50ms);
-      backoff = std::min(backoff * 2, 60);
+      // A short READY followed by another close must not reset failure pacing.
+      const auto now = Clock::now();
+      retryAt = reconnectBudget.failed(
+          now, retryCause, readyAt == Clock::time_point{} ? Clock::duration{} : now - readyAt, random()
+      );
+      handoff = retryCause == gateway_pacing::Failure::Handoff;
     }
   }
 } // namespace api

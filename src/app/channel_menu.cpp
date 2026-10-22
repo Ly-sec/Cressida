@@ -331,11 +331,7 @@ namespace app {
         }
         if (latest.empty())
           continue;
-        if (m_demo || m_client.acknowledge(target, latest)) {
-          m_localRead[target] = latest;
-          m_unreadTimeline.acknowledged(target, latest);
-          m_unreadChannels.erase(target);
-        }
+        acknowledgeChannelRead(target, latest);
       }
     } else if (command.kind == Kind::ClearLog) {
       m_messageLog.clearChannelContent(command.channel);

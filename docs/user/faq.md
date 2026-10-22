@@ -42,6 +42,40 @@ browser. It does not bundle an embedded browser engine.
 No. Cressida is an independent, unofficial third-party project with no platform
 affiliation or endorsement.
 
+## Can my account be restricted?
+
+Yes. Users have reported spam flags and temporary restrictions while using
+Cressida. We have not established what triggered those actions. Rate-limit
+handling and other request safeguards do not guarantee protection from account
+restrictions or suspension.
+
+Other native-client projects have reported restrictions or advised caution
+around:
+
+- Starting new direct conversations.
+- Joining or leaving servers.
+- Managing friends or changing account details.
+- Frequent disconnects and reconnects.
+
+These examples come from
+[peer reports](https://github.com/uowuo/abaddon/issues/394#issuecomment-3682402026)
+and [maintainer guidance](https://github.com/uowuo/abaddon#the-spam-filter).
+They are possible risk factors, not confirmed Cressida triggers or a complete
+list. Other features and existing conversations are not guaranteed to avoid
+account flags. We do not have evidence establishing a new-account or
+conversation-history threshold.
+
+If the service requests verification or a CAPTCHA, complete it in the official
+app. Avoid repeatedly retrying a challenged action. Cressida pauses affected
+writes and retains failed messages for manual recovery; see
+[Account restrictions or security checks](troubleshooting.md#account-restrictions-or-security-checks).
+
+Review **Account Standing** in the official app for the specific violation and
+its restrictions. If you believe a violation was incorrect, use its review link.
+A temporary restriction can end while the violation remains on the account. See
+the
+[official explanation of account standing and reviews](https://support.discord.com/hc/en-us/articles/18210965981847-Discord-Warning-System).
+
 ## Can I use it on X11, Windows or macOS?
 
 The current window backend targets Linux and Wayland. Those other environments

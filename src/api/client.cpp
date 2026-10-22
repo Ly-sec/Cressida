@@ -105,6 +105,7 @@ namespace api {
       const process::WakeEvent* wake = nullptr;
       RestCancellation interrupted = RestCancellation::None;
       const char* label = "account";
+      RestRestrictions* restrictions = nullptr;
     };
 
     size_t receive(char* bytes, size_t size, size_t count, void* context) noexcept {
@@ -114,6 +115,18 @@ namespace api {
         return 0;
       try {
         transfer.body.append(bytes, length);
+      } catch (...) {
+        return 0;
+      }
+      return length;
+    }
+
+    size_t responseHeader(char* bytes, size_t size, size_t count, void* context) noexcept {
+      if (size && count > std::numeric_limits<size_t>::max() / size)
+        return 0;
+      const auto length = size * count;
+      try {
+        static_cast<RestRateLimits::Headers*>(context)->add(std::string_view(bytes, length));
       } catch (...) {
         return 0;
       }
@@ -166,18 +179,34 @@ namespace api {
           && path.ends_with("/stickers");
       if (transfer.scope.foregroundRevision && (payload || (method && std::string_view(method) != "GET")))
         throw std::runtime_error("Only optional reads may yield to user work");
-      for (int attempt = 0; attempt < 3; ++attempt) {
-        while (std::chrono::steady_clock::now() < cooldown.deadline(path)) {
+      constexpr int maximumRateLimitAttempts = 3;
+      constexpr auto maximumInlineRateLimitWait = std::chrono::seconds(30);
+      const std::string_view requestMethod = method      ? method
+          : payload || !uploads.empty() || stickerUpload ? "POST"
+                                                         : "GET";
+      const auto restricted = [&]() {
+        return !token.empty() && transfer.restrictions
+            ? transfer.restrictions->blocked(transfer.scope.expectedSession, requestMethod, path)
+            : std::string{};
+      };
+      for (int attempt = 0; attempt < maximumRateLimitAttempts; ++attempt) {
+        RestRateLimits::Admission admission;
+        while (true) {
           if (progress(&transfer, 0, 0, 0, 0))
             return std::unexpected(Failure{"Request cancelled"});
+          if (auto pause = restricted(); !pause.empty())
+            return std::unexpected(Failure{std::move(pause)});
+          admission = cooldown.acquire(requestMethod, path);
+          if (admission.lease)
+            break;
           const auto remaining =
-              std::chrono::ceil<std::chrono::milliseconds>(cooldown.deadline(path) - std::chrono::steady_clock::now());
+              std::chrono::ceil<std::chrono::milliseconds>(admission.retryAt - std::chrono::steady_clock::now());
+          if (remaining > maximumInlineRateLimitWait)
+            return std::unexpected(Failure{"The service is rate limiting requests. Try again later.", false, {}, 429});
           pollfd descriptor{transfer.wake->fd(), POLLIN, 0};
-          (void)::poll(&descriptor, 1, static_cast<int>(std::clamp<std::int64_t>(remaining.count(), 0, 86400100)));
+          (void)::poll(&descriptor, 1, static_cast<int>(std::clamp<std::int64_t>(remaining.count(), 1, 86400100)));
           transfer.wake->drain();
         }
-        if (progress(&transfer, 0, 0, 0, 0))
-          return std::unexpected(Failure{"Request cancelled"});
         // Reusing the easy handle retains its TLS/HTTP connection and DNS cache.
         auto* curlHandle = transfer.connection;
         if (curlHandle)
@@ -242,6 +271,9 @@ namespace api {
         curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT_MS, 10000L);
         curl_easy_setopt(curl.get(), CURLOPT_TIMEOUT_MS, 30000L);
         curl_easy_setopt(curl.get(), CURLOPT_ACCEPT_ENCODING, "");
+        RestRateLimits::Headers responseHeaders;
+        curl_easy_setopt(curl.get(), CURLOPT_HEADERFUNCTION, responseHeader);
+        curl_easy_setopt(curl.get(), CURLOPT_HEADERDATA, &responseHeaders);
         curl_easy_setopt(curl.get(), CURLOPT_WRITEFUNCTION, receive);
         curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, &transfer);
         curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 0L);
@@ -260,9 +292,24 @@ namespace api {
         }
         if (method)
           curl_easy_setopt(curl.get(), CURLOPT_CUSTOMREQUEST, method);
+        if (progress(&transfer, 0, 0, 0, 0))
+          return std::unexpected(Failure{"Request cancelled"});
+        if (auto pause = restricted(); !pause.empty())
+          return std::unexpected(Failure{std::move(pause)});
         const auto code =
             performRestTransfer(curl.get(), transfer.multi, *transfer.wake, transfer.scope, transfer.interrupted);
         network_profile::transferred(transfer.label, curl.get(), code);
+        long status = 0;
+        curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
+        auto json = decodeRestBody(status, transfer.body);
+        RestRateLimits::Fallback fallback;
+        if (status == 429 && json.is_object()) {
+          if (const auto at = json.find("retry_after"); at != json.end() && at->is_number())
+            fallback.retryAfter = at->get<double>();
+          if (const auto at = json.find("global"); at != json.end() && at->is_boolean())
+            fallback.global = at->get<bool>();
+        }
+        const auto retryAt = admission.lease.complete(status, responseHeaders, fallback);
         if (code != CURLE_OK)
           return std::unexpected(
               Failure{
@@ -274,23 +321,18 @@ namespace api {
           );
         if (progress(&transfer, 0, 0, 0, 0))
           return std::unexpected(Failure{"Request cancelled"});
-        long status = 0;
-        curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
-        auto json = decodeRestBody(status, transfer.body);
-        // Only Discord rate limits impose a delay; successful reads need no fixed pause.
+        const auto serviceCode = restServiceCode(json);
+        if (!token.empty() && transfer.restrictions) {
+          auto pause =
+              transfer.restrictions->observe(transfer.scope.expectedSession, requestMethod, path, status, json);
+          if (!pause.empty())
+            return std::unexpected(Failure{std::move(pause), false, {}, status, serviceCode});
+        }
         if (status == 429) {
-          double seconds = 1.0;
-          if (!json.is_discarded() && json.contains("retry_after") && json["retry_after"].is_number())
-            seconds = json["retry_after"].get<double>();
-          // Respect long limits too; return to the user rather than retrying prematurely.
-          if (!std::isfinite(seconds) || seconds < 0)
-            seconds = 60;
-          cooldown.limited(
-              path, std::chrono::milliseconds(static_cast<long long>(std::min(seconds, 86400.0) * 1000) + 100),
-              json.is_object() && json.value("global", false)
-          );
-          if (seconds > 30)
-            return std::unexpected(Failure{"Discord is rate limiting this connection. Try again later."});
+          if (retryAt - std::chrono::steady_clock::now() > maximumInlineRateLimitWait)
+            return std::unexpected(
+                Failure{"The service is rate limiting requests. Try again later.", false, {}, status, serviceCode}
+            );
           continue;
         }
         if ((serverSettings || accountSettings)
@@ -300,25 +342,29 @@ namespace api {
             && json["code"].is_number_integer()
             && (json["code"] == 60003 || json["code"] == 60008 || json["code"] == 60009))
           return std::unexpected(
-              Failure{"Discord requires two-factor verification for this action.", false, json.value("mfa", Json{})}
+              Failure{
+                  "The service requires two-factor verification for this action.", false, json.value("mfa", Json{}),
+                  status, serviceCode
+              }
           );
         if (status == 401 && !token.empty())
-          return std::unexpected(Failure{"The account token was rejected. Reconnect with a valid token.", true});
+          return std::unexpected(
+              Failure{"The account token was rejected. Reconnect with a valid token.", true, {}, status, serviceCode}
+          );
         if ((status < 200 || status >= 300) && token.empty())
           return std::unexpected(Failure{"Discord could not complete browser sign-in. Please try again."});
         if (status == 403)
-          return std::unexpected(Failure{"You do not have permission to access this channel or perform this action."});
+          return std::unexpected(
+              Failure{
+                  "You do not have permission to access this channel or perform this action.",
+                  false,
+                  {},
+                  status,
+                  serviceCode
+              }
+          );
 
         if (status < 200 || status >= 300) {
-          int serviceCode = 0;
-          if (!json.is_discarded() && json.is_object()) {
-            const auto code = json.find("code");
-            if (code != json.end() && code->is_number_integer()) {
-              const auto value = code->get<std::int64_t>();
-              if (value >= 0 && value <= std::numeric_limits<int>::max())
-                serviceCode = static_cast<int>(value);
-            }
-          }
           return std::unexpected(
               Failure{
                   "The service returned an error (HTTP "
@@ -337,7 +383,7 @@ namespace api {
           return std::unexpected(Failure{"Discord returned an unreadable response."});
         return json;
       }
-      return std::unexpected(Failure{"Discord is rate limiting this connection. Try again later."});
+      return std::unexpected(Failure{"The service is rate limiting requests. Try again later.", false, {}, 429});
     }
   } // namespace
 
@@ -396,6 +442,7 @@ namespace api {
   std::uint64_t Client::beginConnect(std::string credential, std::optional<std::string> handoffKey) {
     m_credentials->cancelLoad();
     const auto session = ++m_session;
+    m_restRestrictions.reset(session);
     m_authenticatedSession = 0;
     m_restoringSession = 0;
     m_gateway->reset();
@@ -418,6 +465,7 @@ namespace api {
   std::uint64_t Client::disconnect() {
     m_credentials->cancelLoad();
     const auto session = ++m_session;
+    m_restRestrictions.reset(session);
     m_authenticatedSession = 0;
     m_restoringSession = 0;
     m_gateway->reset();
@@ -897,6 +945,17 @@ namespace api {
       }
     }};
     try {
+      if (type == "READY") {
+        if (auto notice = m_restRestrictions.requiredAction(session, data))
+          publish(Event{.operation = Operation::AccountRestriction, .session = session, .error = std::move(*notice)});
+      }
+      if (type == "USER_REQUIRED_ACTION_UPDATE") {
+        if (auto notice = m_restRestrictions.requiredAction(session, data)) {
+          publish(Event{.operation = Operation::AccountRestriction, .session = session, .error = std::move(*notice)});
+          wakeRequests();
+        }
+        return;
+      }
 
       if (type == "SAVED_MESSAGE_CREATE" || type == "SAVED_MESSAGE_DELETE" || type == "RECENT_MENTION_DELETE") {
         Event event{.operation = Operation::InboxUpdate, .session = session};
@@ -1513,6 +1572,7 @@ namespace api {
       scope.intent = command.readIntent.get();
       scope.promotedNavigation = command.readIntent ? &m_historyRevision : nullptr;
       Transfer transfer{{}, scope, connection.get(), multi.get(), &m_readWake[lane]};
+      transfer.restrictions = &m_restRestrictions;
       transfer.label = operationLabel(command.operation);
       network_profile::queued(transfer.label, command.queuedAt);
       try {
@@ -1860,6 +1920,7 @@ namespace api {
           &m_requestWake
       };
       event.restoredLogin = command.restoredLogin;
+      transfer.restrictions = &m_restRestrictions;
       transfer.label = operationLabel(command.operation);
       network_profile::queued(transfer.label, command.queuedAt);
       bool saveCredential = false;

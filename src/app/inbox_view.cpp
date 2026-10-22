@@ -474,12 +474,7 @@ namespace app {
     } else if (command.starts_with("read:")) {
       const auto channel = command.substr(5);
       const auto cursor = m_unreadTimeline.cursor(channel);
-      if (cursor && api::validSnowflake(cursor->latest) && (m_demo || m_client.acknowledge(channel, cursor->latest))) {
-        m_localRead[channel] = cursor->latest;
-        m_unreadTimeline.acknowledged(channel, cursor->latest);
-        m_unreadChannels.erase(channel);
-        m_unreadDMs.erase(channel);
-      } else
+      if (!cursor || !acknowledgeChannelRead(channel, cursor->latest))
         m_inboxStatus = "Could not mark this channel as read.";
     } else {
       api::InboxQuery query;

@@ -19,6 +19,7 @@
 #include "app/message_history.h"
 #include "app/message_layout.h"
 #include "app/message_log.h"
+#include "app/read_acknowledgements.h"
 #include "app/role_motion.h"
 #include "app/scroll_motion.h"
 #include "app/server_audit.h"
@@ -1274,6 +1275,13 @@ namespace app {
     std::optional<AdoptedChatPreload> m_adoptedChatPreload;
     bool readingChannel(const std::string& channel) const;
     bool markChannelRead(bool explicitAction = false);
+    bool acknowledgeChannelRead(const std::string& channel, const std::string& message, bool automatic = false);
+    void dispatchReadAcknowledgements();
+    void cancelAutomaticRead(const std::string& channel);
+    void resetReadAcknowledgements();
+    void failedReadAcknowledgement(const std::string& channel, const std::string& message);
+    Timer m_readAcknowledgementTimer;
+    ReadAcknowledgements m_readAcknowledgements;
     std::vector<api::Message> m_messages;
     MessageLog m_messageLog;
     struct CachedMessageLayout {

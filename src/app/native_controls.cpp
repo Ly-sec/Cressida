@@ -89,6 +89,7 @@ namespace app {
   ClientApplication::~ClientApplication() {
     clearOutgoing();
     m_inboxReminderTimer.stop();
+    m_readAcknowledgementTimer.stop();
     m_trayStartupTimer.stop();
     m_trayDemoTimer.stop();
     closeSelectDropdown();

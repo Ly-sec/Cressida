@@ -4,6 +4,7 @@
 #include "core/process/wake_event.h"
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <map>
@@ -59,6 +60,7 @@ namespace api {
     std::size_t m_memberPendingCount = 0;
     struct MemberSearch {
       std::string guild, query, nonce;
+      std::chrono::steady_clock::time_point queuedAt;
     };
     std::optional<MemberSearch> m_memberSearch;
     std::jthread m_worker;

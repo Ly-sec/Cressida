@@ -14,6 +14,10 @@ icons and folders. Large counts use `99+`; hover a count to see its full value.
 Muted channels and categories appear dimmer, while hovered, selected and
 mentioned items remain readable.
 
+Automatic read receipts are grouped while you read active conversations. Local
+unread indicators update immediately. Explicit **Mark as Read** actions are sent
+immediately.
+
 ## Use folders
 
 Click a folder to expand or collapse it. An expanded folder keeps its servers

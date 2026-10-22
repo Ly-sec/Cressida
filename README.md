@@ -7,6 +7,9 @@
 > [!WARNING]
 > Cressida is an unofficial third-party Discord client. It is not affiliated with or
 > endorsed by Discord.
+>
+> Account restrictions have been reported. Read the [account-risk notice](#can-my-account-be-restricted)
+> before signing in.
 
 # Cressida
 
@@ -21,6 +24,16 @@ A few highlights:
 - Threads and forum posts alongside server chat and DMs.
 - Built-in image/video viewing, GIFs, custom emoji and stickers.
 - Custom themes with automatic dark and light switching.
+
+## Can my account be restricted?
+
+Yes. Users have reported spam flags and temporary account restrictions while
+using Cressida. We have not established the trigger, and our request safeguards
+cannot guarantee protection from restrictions or suspension.
+
+If the service requests verification or a CAPTCHA, complete it in the official
+app. Read the [account-risk FAQ](docs/user/faq.md#can-my-account-be-restricted)
+before signing in.
 
 ## Documentation
 

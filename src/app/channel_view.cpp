@@ -138,6 +138,7 @@ namespace app {
       m_unreadChannels.erase(id);
       m_unreadDMs.erase(id);
       m_unreadGuilds.erase(id);
+      cancelAutomaticRead(id);
       m_localRead.erase(id);
       std::erase_if(m_lastChannels, [&](const auto& item) { return item.second == id; });
       if (m_restoreChannel == id)

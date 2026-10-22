@@ -498,6 +498,7 @@ namespace app {
       m_scrolling.stop(m_channelScroll);
     } else if (action.kind == Kind::MarkGuildRead) {
       for (const auto& [channel, latest] : action.readStates) {
+        cancelAutomaticRead(channel);
         m_localRead[channel] = latest;
         m_unreadTimeline.acknowledged(channel, latest);
         if (!m_unreadTimeline.cursor(channel))
@@ -528,6 +529,7 @@ namespace app {
         m_messageLog.clearChannel(channel);
         m_unreadChannels.erase(channel);
         m_unreadGuilds.erase(channel);
+        cancelAutomaticRead(channel);
         m_localRead.erase(channel);
         m_channelDetailRequests.erase(channel);
         m_channelDetailsLoaded.erase(channel);

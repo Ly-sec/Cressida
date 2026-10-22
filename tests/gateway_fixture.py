@@ -170,9 +170,22 @@ def serve(listener, errors):
             ]}, "THREAD_MEMBER_LIST_UPDATE", 2)
             regular = wait_for(connection, 37)["d"]["subscriptions"]["1"]
             assert regular["thread_member_lists"] == [] and regular["channels"] == {"2": [[0, 99], [100, 199]]}, "leaving a thread clears its participant subscription"
+            switched_at = time.monotonic()
+            packet(connection, 0, {}, "COALESCE_START", 3)
+            packet(connection, 0, {}, "COALESCE_FINISH", 4)
+            latest_presence = wait_for(connection, 3)
+            assert latest_presence["d"]["status"] == "idle", "presence must coalesce rapid choices"
+            latest_channel = wait_for(connection, 37)["d"]["subscriptions"]["1"]
+            assert latest_channel["channels"] == {"4": [[0, 99], [100, 199]]}, "queued navigation must retain only the latest view"
+            assert time.monotonic() - switched_at >= 0.4, "channel changes must honor subscription pacing"
             packet(connection, 0, {"guild_id": "1", "channel_id": "40", "user_id": "7", "timestamp": 1000,
-                "member": {"user": {"id": "7", "username": "Maya"}, "nick": "Thread nickname"}}, "TYPING_START", 3)
-            packet(connection, 0, {}, "THREAD_TEST_COMPLETE", 4)
+                "member": {"user": {"id": "7", "username": "Maya"}, "nick": "Thread nickname"}}, "TYPING_START", 5)
+            packet(connection, 0, {}, "THREAD_TEST_COMPLETE", 6)
+        with upgrade(listener) as connection:
+            wait_for(connection, 2)
+            packet(connection, 0, {"session_id": "cooldown-session"}, "READY", 1)
+            wait_for(connection, 3)
+            frame(connection, struct.pack("!H", 4008), opcode=8)
         with upgrade(listener) as connection:
             identify = wait_for(connection, 2)
             assert identify["d"]["token"] == "synthetic-token"

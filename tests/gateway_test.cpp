@@ -10,6 +10,41 @@
 #include <set>
 
 namespace {
+  bool checkRateLimitCancellation(const std::string& endpoint) {
+    std::atomic<std::uint64_t> generation{1};
+    std::mutex mutex;
+    std::condition_variable changed;
+    bool complete = false;
+    auto cancelAt = std::chrono::steady_clock::now();
+    {
+      api::Gateway gateway(
+          generation,
+          [&](auto, const auto& type, const auto& data) {
+            std::lock_guard lock(mutex);
+            if (type == "RECONNECTING" && data.value("reason", "") == "Gateway closed (4008)") {
+              complete = true;
+              changed.notify_all();
+            }
+          },
+          endpoint
+      );
+      gateway.authenticate(1, "synthetic-token", {"online"});
+      std::unique_lock lock(mutex);
+      if (!changed.wait_for(lock, std::chrono::seconds(3), [&] { return complete; })) {
+        std::cerr << "Gateway did not report its rate-limit cooldown\n";
+        return false;
+      }
+      lock.unlock();
+      cancelAt = std::chrono::steady_clock::now();
+      ++generation;
+      gateway.reset();
+    }
+    if (std::chrono::steady_clock::now() - cancelAt > std::chrono::milliseconds(500)) {
+      std::cerr << "Gateway cooldown delayed cancellation\n";
+      return false;
+    }
+    return true;
+  }
   bool checkThreadSubscription(const std::string& endpoint) {
     std::atomic<std::uint64_t> generation{1};
     std::mutex mutex;
@@ -28,6 +63,16 @@ namespace {
                 && rows->front().status == "online";
             valid &= received;
             active->subscribe("1", "2", 0);
+          }
+          if (type == "COALESCE_START")
+            active->subscribe("1", "3", 0);
+          if (type == "COALESCE_FINISH") {
+            for (int update = 0; update < 20; ++update) {
+              active->setPresence(1, update % 2 ? "dnd" : "online");
+              active->subscribe("1", std::to_string(10 + update), 0);
+            }
+            active->setPresence(1, "idle");
+            active->subscribe("1", "4", 0);
           }
           if (type == "TYPING_START") {
             const auto event = api::parseTypingStart(data);
@@ -156,7 +201,7 @@ int main(int argc, char** argv) {
   for (int phase = 0; phase < 3; ++phase)
     if (!checkPresenceRestore(argv[1], phase))
       return 1;
-  if (!checkThreadSubscription(argv[1]))
+  if (!checkThreadSubscription(argv[1]) || !checkRateLimitCancellation(argv[1]))
     return 1;
   std::atomic<std::uint64_t> generation{1};
   std::mutex mutex;

@@ -840,6 +840,7 @@ namespace app {
           if (first || banner)
             throw std::runtime_error("Jumping to the newest unread message must catch up");
           m_unreadTimeline.snapshot({{m_channelId, {"1001", "1031"}}}, m_channelId);
+          cancelAutomaticRead(m_channelId);
           m_localRead.erase(m_channelId);
           m_messageScroll = m_messageMaxScroll / 2;
         } else if (step == 8) {
@@ -5775,6 +5776,7 @@ namespace app {
     m_connecting = true;
     m_guildUpdates.clear();
     resetGuildBootstrap();
+    resetReadAcknowledgements();
     m_session = m_client.connect(std::move(m_token));
     m_token.clear();
     if (m_inputs.contains("token"))
@@ -5794,6 +5796,7 @@ namespace app {
     m_status = "Your desktop keyring may ask you to unlock it.";
     m_guildUpdates.clear();
     resetGuildBootstrap();
+    resetReadAcknowledgements();
     m_session = m_client.restoreLogin();
     m_window.invalidate();
   }
@@ -5816,6 +5819,7 @@ namespace app {
     clearGifs();
     clearInteractions();
     m_login.cancel();
+    resetReadAcknowledgements();
     m_client.disconnect();
     clearThreads();
     m_demo = true;
@@ -5865,15 +5869,77 @@ namespace app {
     if (publicMessage == m_messages.rend())
       return false;
     const auto& latest = publicMessage->id;
-    if (!explicitAction && m_localRead[m_channelId] == latest)
+    if (!explicitAction && !MessageHistory::less(m_localRead[m_channelId], latest))
       return false;
-    if (!m_demo && !m_client.acknowledge(m_channelId, latest))
+    return acknowledgeChannelRead(m_channelId, latest, !explicitAction);
+  }
+  bool
+  ClientApplication::acknowledgeChannelRead(const std::string& channel, const std::string& message, bool automatic) {
+    if (!api::validSnowflake(channel) || !api::validSnowflake(message) || m_deletedChannels.contains(channel))
       return false;
-    m_localRead[m_channelId] = latest;
-    m_unreadTimeline.acknowledged(m_channelId, latest);
-    m_unreadChannels.erase(m_channelId);
-    m_unreadDMs.erase(m_channelId);
+    if (automatic) {
+      if (!m_readAcknowledgements.queue(channel, message))
+        return false;
+    } else {
+      if (!m_demo && !m_client.acknowledge(channel, message))
+        return false;
+      m_readAcknowledgements.acknowledged(channel, message, ReadAcknowledgements::Clock::now());
+    }
+    auto& local = m_localRead[channel];
+    if (MessageHistory::less(local, message))
+      local = message;
+    m_unreadTimeline.acknowledged(channel, message);
+    m_unreadChannels.erase(channel);
+    m_unreadDMs.erase(channel);
+    dispatchReadAcknowledgements();
     return true;
+  }
+  void ClientApplication::dispatchReadAcknowledgements() {
+    m_readAcknowledgementTimer.stop();
+    if (!m_connected) {
+      m_readAcknowledgements.reset();
+      return;
+    }
+    const auto now = ReadAcknowledgements::Clock::now();
+    if (const auto pending = m_readAcknowledgements.take(now)) {
+      const auto local = m_localRead.find(pending->channel);
+      if (!m_deletedChannels.contains(pending->channel)
+          && m_unreadGuilds.contains(pending->channel)
+          && local != m_localRead.end()
+          && local->second == pending->message
+          && !m_demo
+          && !m_client.acknowledge(pending->channel, pending->message)) {
+        failedReadAcknowledgement(pending->channel, pending->message);
+        m_status = "Could not mark this channel as read. Try again.";
+        m_window.invalidate();
+      }
+    }
+    if (const auto delay = m_readAcknowledgements.delay(now)) {
+      const auto session = m_session;
+      const auto account = m_account.id;
+      m_readAcknowledgementTimer.start(*delay, [this, session, account] {
+        if (session != m_session || account != m_account.id)
+          return;
+        dispatchReadAcknowledgements();
+      });
+    }
+  }
+  void ClientApplication::cancelAutomaticRead(const std::string& channel) {
+    m_readAcknowledgements.cancel(channel);
+    if (!m_readAcknowledgements.pending())
+      m_readAcknowledgementTimer.stop();
+  }
+  void ClientApplication::resetReadAcknowledgements() {
+    m_readAcknowledgementTimer.stop();
+    m_readAcknowledgements.reset();
+  }
+  void ClientApplication::failedReadAcknowledgement(const std::string& channel, const std::string& message) {
+    m_unreadTimeline.failed(channel, message);
+    if (m_unreadTimeline.cursor(channel)) {
+      m_unreadChannels.insert(channel);
+      if (std::ranges::find(m_privateChannels, channel, &api::Channel::id) != m_privateChannels.end())
+        m_unreadDMs.insert(channel);
+    }
   }
   void ClientApplication::cacheChannel() {
     if (m_channelId.empty() || m_deletedChannels.contains(m_channelId))
@@ -6639,6 +6705,7 @@ namespace app {
         m_status = "Connecting to your account…";
         m_guildUpdates.clear();
         resetGuildBootstrap();
+        resetReadAcknowledgements();
         m_session = m_client.connectHandoff(std::move(login->key), std::move(login->handoffToken));
         m_window.invalidate();
       } else if (!login->error.empty()) {
@@ -6687,6 +6754,7 @@ namespace app {
       if (!event.unauthorized && event.operation == api::Operation::Messages && event.resource != m_channelId)
         continue;
       if (event.unauthorized) {
+        resetReadAcknowledgements();
         clearTyping();
         closeVideo();
         clearEmojiState();
@@ -6915,10 +6983,13 @@ namespace app {
         }
       } else if (event.operation == api::Operation::ReadState) {
         m_unreadTimeline.snapshot(std::move(event.unreadCursors), event.resource);
-        if (event.resource == "reset")
+        if (event.resource == "reset") {
+          resetReadAcknowledgements();
           m_localRead.clear();
-        else if (!event.resource.empty())
+        } else if (!event.resource.empty()) {
+          cancelAutomaticRead(event.resource);
           m_localRead.erase(event.resource);
+        }
         m_unreadChannels.clear();
         m_unreadDMs.clear();
         m_unreadGuilds = std::move(event.unread);
@@ -7057,6 +7128,7 @@ namespace app {
       } else if (event.operation == api::Operation::PrivateChannelDelete) {
         if (event.resource == m_chatPreloadChannel || event.resource == m_chatPreloadHover)
           clearChatPreload();
+        cancelAutomaticRead(event.resource);
         m_unreadDMs.erase(event.resource);
         m_unreadChannels.erase(event.resource);
         if (m_dmPreviewId == event.resource) {
@@ -7213,14 +7285,8 @@ namespace app {
         m_window.invalidate();
         continue;
       }
-      if (event.operation == api::Operation::Acknowledge && !event.error.empty()) {
-        m_unreadTimeline.failed(event.resource, event.messageId);
-        if (m_unreadTimeline.cursor(event.resource)) {
-          m_unreadChannels.insert(event.resource);
-          if (std::ranges::find(m_privateChannels, event.resource, &api::Channel::id) != m_privateChannels.end())
-            m_unreadDMs.insert(event.resource);
-        }
-      }
+      if (event.operation == api::Operation::Acknowledge && !event.error.empty())
+        failedReadAcknowledgement(event.resource, event.messageId);
       if (!event.error.empty())
         m_status = event.error;
       while (m_liveChanges.size() > (m_history.busy() ? 4096U : 256U))
@@ -8077,6 +8143,7 @@ namespace app {
       });
       break;
     case Action::SignOut:
+      resetReadAcknowledgements();
       m_desktopNotifications.clear();
       m_notifiedMessages.clear();
       closeVideo();

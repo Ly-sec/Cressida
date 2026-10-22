@@ -77,9 +77,19 @@ global cosmetics unless they supply a replacement for that category.
 
 ## Motion
 
-Use the reduced motion setting to make supported transitions settle immediately,
-including server folder opening and closing. Other animation controls are
-available in settings where supported.
+Open **Settings > Accessibility > Motion** and enable **Reduce motion** to make
+supported transitions settle immediately, including server folder opening and
+closing. Scrolling becomes immediate and animated artwork stays still.
+
+To keep selected media animated, enable **Allow GIFs with reduced motion**,
+**Allow emoji with reduced motion**, or both. These switches start off and are
+saved separately for your account. They apply to visible message media and
+previews, including the GIF picker and image viewer.
+
+The overrides retain your other playback choices. **Animate emoji** must be on
+for custom emoji to animate. **Automatically play GIFs** controls GIF autoplay;
+when it is off, hover over a GIF to play it. Reduced motion still keeps avatars,
+profile cosmetics, role-color motion and interface transitions still.
 
 ## When System mode does not follow the desktop
 

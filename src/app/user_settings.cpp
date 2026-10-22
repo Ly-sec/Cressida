@@ -1433,11 +1433,19 @@ namespace app {
       section("Motion");
       toggle(
           "Reduce motion", m_preferences.reducedMotion, "reduced_motion",
-          "Limit interface motion and disable animated media while reduced motion is enabled."
+          "Limit interface motion. Media stays still unless you enable an override below."
+      );
+      toggle(
+          "Allow GIFs with reduced motion", m_preferences.gifsWithReducedMotion, "gifs_with_reduced_motion",
+          "Let message GIFs and GIF previews animate with reduced motion. GIF autoplay still applies."
+      );
+      toggle(
+          "Allow emoji with reduced motion", m_preferences.emojiWithReducedMotion, "emoji_with_reduced_motion",
+          "Let custom emoji animate with reduced motion when Animate emoji is enabled."
       );
       toggle(
           "Animate emoji", m_preferences.animateEmoji, "animate_emoji",
-          "Play animated emoji in conversations when reduced motion is off."
+          "Play animated emoji, subject to reduced motion and its emoji override."
       );
       toggle(
           "Animate avatars", m_preferences.animateAvatars, "animate_avatars",
@@ -1445,7 +1453,7 @@ namespace app {
       );
       toggle(
           "Automatically play GIFs", m_preferences.autoplayGifs, "autoplay_gifs",
-          "Play message GIFs when the conversation is visible and reduced motion is off."
+          "Play visible message GIFs automatically. Reduced motion requires the GIF override above."
       );
       section("Color and readability");
       localSlider(

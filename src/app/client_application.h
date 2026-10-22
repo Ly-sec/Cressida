@@ -646,6 +646,8 @@ namespace app {
     std::string shortcutLabel(const std::string& action) const;
     bool shortcutKey(const Key& key);
     void demoUserPreferencesStep();
+    static constexpr int reducedMotionReplayFrames = 12;
+    void demoReducedMotionStep();
     void demoDecorationsStep();
     void drawTitlebar(Node& root, float width);
     void drawWindowIcon(Node& node, float x, float y, WindowIcon icon, bool over);

@@ -230,6 +230,12 @@ namespace app {
           || value["profile_themes"].get<bool>();
 
       result.reducedMotion = value.value("reduced_motion", false);
+      result.gifsWithReducedMotion = value.contains("gifs_with_reduced_motion")
+          && value["gifs_with_reduced_motion"].is_boolean()
+          && value["gifs_with_reduced_motion"].get<bool>();
+      result.emojiWithReducedMotion = value.contains("emoji_with_reduced_motion")
+          && value["emoji_with_reduced_motion"].is_boolean()
+          && value["emoji_with_reduced_motion"].get<bool>();
       result.animateEmoji = value.value("animate_emoji", true);
       result.animateAvatars = value.value("animate_avatars", true);
       result.developerMode = value.value("developer_mode", false);
@@ -364,6 +370,8 @@ namespace app {
           {"profile_themes", preferences.showProfileThemes},
 
           {"reduced_motion", preferences.reducedMotion},
+          {"gifs_with_reduced_motion", preferences.gifsWithReducedMotion},
+          {"emoji_with_reduced_motion", preferences.emojiWithReducedMotion},
           {"animate_emoji", preferences.animateEmoji},
           {"animate_avatars", preferences.animateAvatars},
           {"developer_mode", preferences.developerMode},

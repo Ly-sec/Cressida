@@ -30,6 +30,7 @@ namespace app {
     std::string fontFamily;
     std::string colorTheme = "cressida";
     bool reducedMotion = false, animateEmoji = true, animateAvatars = true;
+    bool gifsWithReducedMotion = false, emojiWithReducedMotion = false;
     int saturation = 100, spoilerMode = 0, roleColorMode = 0;
     bool developerMode = false, convertEmoticons = true, showReactions = true, showRoleIcons = true;
     int messageGroupSpacing = 16;

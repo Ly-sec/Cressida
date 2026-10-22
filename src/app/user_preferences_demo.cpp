@@ -1,8 +1,11 @@
 #include "app/client_application.h"
 #include "app/message_group.h"
 #include "app/theme.h"
+#include "render/core/texture_manager.h"
 #include "ui/controls/toggle.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <linux/input-event-codes.h>
@@ -195,6 +198,112 @@ namespace app {
       m_window.invalidate();
       break;
     }
+    m_window.invalidate();
+  }
+  void ClientApplication::demoReducedMotionStep() {
+    const auto require = [](bool ok, const char* message) {
+      if (!ok)
+        throw std::runtime_error(message);
+    };
+    const std::array<std::string, 5> paths{
+        "https://static.klipy.com/ii/cressida-motion-demo.gif", "/emojis/99001.gif?size=128",
+        "/avatars/99002/a_motion.gif", "/banners/99002/a_motion.gif",
+        "https://cdn.discordapp.com/assets/content/cressida-motion-demo"
+    };
+    constexpr auto frameDuration = std::chrono::milliseconds(80);
+    const auto click = [&](const std::string& id) {
+      const auto found = m_widgets.find("toggle:" + id);
+      require(found != m_widgets.end() && found->second->parent(), "Motion setting has an attached native toggle");
+      auto& toggle = *static_cast<Toggle*>(found->second);
+      float x = 0, y = 0;
+      Node::mapToScene(&toggle, toggle.width() / 2, toggle.height() / 2, x, y);
+      m_window.motion(x, y);
+      m_window.click(x, y + m_window.titlebarHeight() - layout::Window::titlebarHeight, BTN_LEFT);
+      m_window.released();
+    };
+    const auto step = m_demoInteractionStep++;
+    if (step == 0) {
+      require(
+          !m_preferences.gifsWithReducedMotion && !m_preferences.emojiWithReducedMotion,
+          "Reduced-motion media overrides require an explicit opt-in"
+      );
+      const int size = static_cast<int>(Style::controlHeightSm);
+      for (const auto& path : paths) {
+        auto animation = std::make_shared<media::Animation>();
+        animation->width = animation->height = size;
+        animation->duration = frameDuration * 2;
+        for (int frame = 0; frame < 2; ++frame)
+          animation->frames.push_back(
+              {.rgba = std::vector<std::uint8_t>(size * size * 4, frame ? 255 : 64), .duration = frameDuration}
+          );
+        auto& image = m_images[path];
+        image.animation = animation;
+        image.texture =
+            m_window.context().textureManager().loadFromRgba(animation->frames.front().rgba.data(), size, size);
+        require(image.texture.valid(), "Offline media fixtures have actual native textures");
+      }
+      click("reduced_motion");
+    } else if (step == 1)
+      click("gifs_with_reduced_motion");
+    else if (step == 2)
+      click("emoji_with_reduced_motion");
+    else if (step == 3)
+      click("animate_emoji");
+    else if (step == 4)
+      click("gifs_with_reduced_motion");
+    else if (step == 5) {
+      click("gifs_with_reduced_motion");
+      click("animate_emoji");
+    } else if (step == 6)
+      click("autoplay_gifs");
+    else if (step == 8)
+      click("gifs_with_reduced_motion");
+    else if (step == 9)
+      click("reduced_motion");
+    else if (step == 10)
+      click("reduced_motion");
+    else if (step == 11)
+      click("emoji_with_reduced_motion");
+
+    require(m_preferences.reducedMotion == (step != 9), "Media overrides preserve reduced interface motion");
+    const std::array<bool, reducedMotionReplayFrames> gifPlaying{false, true, true,  true, false, true,
+                                                                 false, true, false, true, false, false};
+    const std::array<bool, reducedMotionReplayFrames> emojiPlaying{false, false, true, false, false, true,
+                                                                   true,  true,  true, true,  true,  false};
+    const std::array<bool, 5> expected{gifPlaying[step], emojiPlaying[step], step == 9, false, step == 9};
+    Node probe;
+    probe.setPosition(Style::spaceSection * 2, Style::spaceSection * 3);
+    const float size = Style::controlHeightSm;
+    m_pointerX = step >= 7 && step <= 9 ? probe.x() + size / 2 : -1;
+    m_pointerY = step >= 7 && step <= 9 ? probe.y() + size / 2 : -1;
+    m_animationDelay = std::chrono::milliseconds::max();
+    for (std::size_t i = 0; i < paths.size(); ++i) {
+      const auto use = i == 3 ? ImageUse::ProfileBanner : i == 4 ? ImageUse::ProfileEffect : ImageUse::Content;
+      require(
+          picture(
+              probe, i * (size + Style::spaceMd), 0, size, size, paths[i], 0, false, false, ImageFitMode::Contain,
+              frameDuration, use
+          ),
+          "Visible media fixtures use the real shared picture renderer"
+      );
+      const auto& image = m_images.at(paths[i]);
+      if (image.animationFrame != static_cast<std::size_t>(expected[i])
+          || (image.playingDraw == m_animationDraw) != expected[i])
+        throw std::runtime_error(
+            "Reduced motion frame " + std::to_string(step) + " has unexpected playback for " + paths[i]
+        );
+    }
+    require(
+        (m_animationDelay != std::chrono::milliseconds::max())
+            == std::ranges::any_of(expected, [](bool value) { return value; }),
+        "Only permitted visible media schedules another animation frame"
+    );
+    if (step == reducedMotionReplayFrames - 1)
+      require(
+          !m_preferences.gifsWithReducedMotion && !m_preferences.emojiWithReducedMotion,
+          "Turning both overrides off restores still media"
+      );
+    std::clog << "Offline reduced motion replay step " << step + 1 << " passed\n";
     m_window.invalidate();
   }
 } // namespace app

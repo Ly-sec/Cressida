@@ -408,6 +408,10 @@ namespace app {
         demoComposerReplyStep();
       if (m_demo && m_demoOverlay == "user-preferences-cycle" && m_demoInteractionStep < 12)
         demoUserPreferencesStep();
+      if (m_demo
+          && m_demoOverlay.starts_with("reduced-motion-cycle")
+          && m_demoInteractionStep < reducedMotionReplayFrames)
+        demoReducedMotionStep();
       if (m_demo && m_demoOverlay == "user-account-cycle" && m_demoInteractionStep < 16)
         demoUserAccountStep();
       if (m_demo && m_demoOverlay == "user-settings-lists-cycle" && m_demoInteractionStep < 30)
@@ -1406,27 +1410,29 @@ namespace app {
                    : m_demo && view && std::string_view(view).starts_with("reply-grouping") ? replyGroupingReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("media-gallery-cycle")
                    ? mediaGalleryReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("image-menu-cycle")    ? imageMenuReplayFrames
-                   : m_demo && view && std::string_view(view) == "chat-preload-cycle"            ? 10
-                   : m_demo && view && std::string_view(view) == "join-cycle"                    ? 4
-                   : m_demo && view && std::string_view(view) == "deleted-cycle"                 ? 3
-                   : m_demo && view && std::string_view(view) == "inline-edit-cycle"             ? 8
-                   : m_demo && view && std::string_view(view) == "autocomplete-cycle"            ? 9
-                   : m_demo && view && std::string_view(view).starts_with("decorations-cycle")   ? 4
-                   : m_demo && view && std::string_view(view) == "user-preferences-cycle"        ? 12
-                   : m_demo && view && std::string_view(view) == "user-account-cycle"            ? 16
-                   : m_demo && view && std::string_view(view) == "user-settings-lists-cycle"     ? 30
-                   : m_demo && view && std::string_view(view) == "settings-font-cycle"           ? 12
-                   : m_demo && view && std::string_view(view) == "server-hover-cycle"            ? 7
-                   : m_demo && view && std::string_view(view) == "themes-cycle"                  ? 11
-                   : m_demo && view && std::string_view(view).starts_with("message-hover-cycle") ? 10
-                   : m_demo && view && std::string_view(view) == "sidebar-cycle"                 ? 10
-                   : m_demo && view && std::string_view(view) == "role-emoji-cycle"              ? 3
-                   : m_demo && view && std::string_view(view) == "role-members-cycle"            ? 2
-                   : m_demo && view && std::string_view(view) == "mentions-cycle"                ? 4
-                   : m_demo && view && std::string_view(view) == "channel-menu-scroll-cycle"     ? 3
-                   : m_demo && view && std::string_view(view) == "channel-create-cycle"          ? 12
-                   : m_demo && view && std::string_view(view) == "channel-invite-cycle"          ? 18
+                   : m_demo && view && std::string_view(view).starts_with("image-menu-cycle")  ? imageMenuReplayFrames
+                   : m_demo && view && std::string_view(view) == "chat-preload-cycle"          ? 10
+                   : m_demo && view && std::string_view(view) == "join-cycle"                  ? 4
+                   : m_demo && view && std::string_view(view) == "deleted-cycle"               ? 3
+                   : m_demo && view && std::string_view(view) == "inline-edit-cycle"           ? 8
+                   : m_demo && view && std::string_view(view) == "autocomplete-cycle"          ? 9
+                   : m_demo && view && std::string_view(view).starts_with("decorations-cycle") ? 4
+                   : m_demo && view && std::string_view(view).starts_with("reduced-motion-cycle")
+                   ? reducedMotionReplayFrames
+                   : m_demo && view && std::string_view(view) == "user-preferences-cycle"            ? 12
+                   : m_demo && view && std::string_view(view) == "user-account-cycle"                ? 16
+                   : m_demo && view && std::string_view(view) == "user-settings-lists-cycle"         ? 30
+                   : m_demo && view && std::string_view(view) == "settings-font-cycle"               ? 12
+                   : m_demo && view && std::string_view(view) == "server-hover-cycle"                ? 7
+                   : m_demo && view && std::string_view(view) == "themes-cycle"                      ? 11
+                   : m_demo && view && std::string_view(view).starts_with("message-hover-cycle")     ? 10
+                   : m_demo && view && std::string_view(view) == "sidebar-cycle"                     ? 10
+                   : m_demo && view && std::string_view(view) == "role-emoji-cycle"                  ? 3
+                   : m_demo && view && std::string_view(view) == "role-members-cycle"                ? 2
+                   : m_demo && view && std::string_view(view) == "mentions-cycle"                    ? 4
+                   : m_demo && view && std::string_view(view) == "channel-menu-scroll-cycle"         ? 3
+                   : m_demo && view && std::string_view(view) == "channel-create-cycle"              ? 12
+                   : m_demo && view && std::string_view(view) == "channel-invite-cycle"              ? 18
                    : m_demo && view && std::string_view(view) == "server-settings-commands-cycle"    ? 12
                    : m_demo && view && std::string_view(view) == "server-settings-expressions-cycle" ? 26
                    : m_demo && view && std::string_view(view) == "server-settings-management-cycle"  ? 12
@@ -1505,6 +1511,8 @@ namespace app {
       throw std::runtime_error("Window controls replay did not finish");
     if (m_demoOverlay.starts_with("decorations-cycle") && m_demoInteractionStep != 4)
       throw std::runtime_error("Desktop decorations replay did not finish");
+    if (m_demoOverlay.starts_with("reduced-motion-cycle") && m_demoInteractionStep != reducedMotionReplayFrames)
+      throw std::runtime_error("Reduced motion media replay did not finish");
     if (m_demoOverlay == "user-preferences-cycle" && m_demoInteractionStep != 12)
       throw std::runtime_error("Client preferences replay did not finish");
     if (m_demoOverlay == "dm-compose-cycle" && m_demoInteractionStep != 16)
@@ -2977,6 +2985,13 @@ namespace app {
           selectSettingsPage("advanced");
           m_demoOverlay = view;
           m_demoInteractionStep = 0;
+        } else if (view.starts_with("reduced-motion-cycle")) {
+          if (view.ends_with("light"))
+            m_preferences.theme = "light";
+          openSettings();
+          selectSettingsPage("accessibility");
+          m_demoOverlay = view;
+          m_demoInteractionStep = 0;
         } else if (view == "user-preferences-cycle") {
           openSettings();
           selectSettingsPage("keybinds");
@@ -3358,9 +3373,14 @@ namespace app {
           : emojiAnimation                    ? m_preferences.animateEmoji
           : avatarAnimation                   ? m_preferences.animateAvatars
                                               : m_preferences.autoplayGifs;
+      const bool messageMedia =
+          !avatarAnimation && !cosmeticAnimation && use == ImageUse::Content && !path.contains("/banners/");
+      const bool motionAllowed = !m_preferences.reducedMotion
+          || (emojiAnimation ? m_preferences.emojiWithReducedMotion
+                             : messageMedia && m_preferences.gifsWithReducedMotion);
       const bool playing = !path.contains("passthrough=false")
           && (m_demo || m_window.active())
-          && !m_preferences.reducedMotion
+          && motionAllowed
           && (autoplay || (!emojiAnimation && !avatarAnimation && !cosmeticAnimation && hovered(gx, gy, width, height)))
           && (m_viewImage.empty() || path == m_viewImage);
       if (playing) {

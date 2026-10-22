@@ -190,6 +190,8 @@ int main() {
       app::SessionStore store(std::filesystem::path(directory) / "client-preferences.json");
       app::Preferences selected;
       selected.reducedMotion = true;
+      selected.gifsWithReducedMotion = true;
+      selected.emojiWithReducedMotion = true;
       selected.saturation = 45;
       selected.roleColorMode = 1;
       selected.spoilerMode = 2;
@@ -213,6 +215,8 @@ int main() {
       const auto actual = store.preferences("123");
       require(
           actual.reducedMotion
+              && actual.gifsWithReducedMotion
+              && actual.emojiWithReducedMotion
               && actual.saturation == 45
               && actual.roleColorMode == 1
               && actual.spoilerMode == 2
@@ -226,6 +230,10 @@ int main() {
       );
       require(
           !store.preferences("456").reducedMotion
+              && !store.preferences("456").gifsWithReducedMotion
+              && !store.preferences("456").emojiWithReducedMotion
+              && !store.startupPreferences().gifsWithReducedMotion
+              && !store.startupPreferences().emojiWithReducedMotion
               && store.preferences("456").desktopDecorations
               && store.startupPreferences().desktopDecorations
               && store.startupPreferences().saturation == 100,
@@ -249,6 +257,40 @@ int main() {
       require(
           !restarted.preferences("123").desktopDecorations && restarted.preferences("123").cornerRadius == 0,
           "The desktop-decoration choice survives a new application session"
+      );
+      require(
+          restarted.preferences("123").gifsWithReducedMotion && restarted.preferences("123").emojiWithReducedMotion,
+          "Media overrides survive application restart"
+      );
+      auto separateMotion = selected;
+      separateMotion.gifsWithReducedMotion = false;
+      restarted.savePreferences("123", separateMotion);
+      require(
+          !restarted.preferences("123").gifsWithReducedMotion && restarted.preferences("123").emojiWithReducedMotion,
+          "GIF and emoji overrides persist independently"
+      );
+      const auto motionPath = std::filesystem::path(directory) / "malformed-motion.json";
+      std::ofstream(motionPath) << nlohmann::json{
+          {"123",
+           {{"preferences",
+             {{"reduced_motion", true},
+              {"saturation", 45},
+              {"gifs_with_reduced_motion", "true"},
+              {"emoji_with_reduced_motion", 1}}}}}
+      };
+      const auto malformedMotion = app::SessionStore(motionPath).preferences("123");
+      require(
+          malformedMotion.reducedMotion
+              && malformedMotion.saturation == 45
+              && !malformedMotion.gifsWithReducedMotion
+              && !malformedMotion.emojiWithReducedMotion,
+          "Malformed overrides stay off without discarding other accessibility choices"
+      );
+      std::ofstream(motionPath) << nlohmann::json{{"123", {{"preferences", {{"reduced_motion", true}}}}}};
+      const auto legacyMotion = app::SessionStore(motionPath).preferences("123");
+      require(
+          legacyMotion.reducedMotion && !legacyMotion.gifsWithReducedMotion && !legacyMotion.emojiWithReducedMotion,
+          "Existing reduced-motion settings retain still media until an explicit opt-in"
       );
       restarted.savePreferences("123", {});
       require(

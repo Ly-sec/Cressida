@@ -54,6 +54,8 @@ namespace app {
       return true;
     const std::pair<std::string_view, bool Preferences::*> flags[] = {
         {"reduced_motion", &Preferences::reducedMotion},
+        {"gifs_with_reduced_motion", &Preferences::gifsWithReducedMotion},
+        {"emoji_with_reduced_motion", &Preferences::emojiWithReducedMotion},
         {"animate_emoji", &Preferences::animateEmoji},
         {"animate_avatars", &Preferences::animateAvatars},
         {"avatar_decorations", &Preferences::showAvatarDecorations},

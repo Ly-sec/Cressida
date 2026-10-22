@@ -47,7 +47,7 @@ done
 test -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
 
 for view in inbox-cycle inbox-cycle-light inbox-cycle-narrow search-cycle search-cycle-light search-cycle-narrow outgoing-cycle outgoing-cycle-light chat-preload-cycle connection-cycle history-cycle dm-home-cycle dm-home-cycle-light dm-profile-cycle dm-profile-cycle-light cosmetics-cycle cosmetics-cycle-light cosmetics-cycle-hover cosmetics-cycle-hover-light \
-    deleted-cycle markdown-cycle markdown-cycle-light autocomplete-cycle settings-font-cycle themes-cycle sticker-cycle \
+    deleted-cycle reduced-motion-cycle reduced-motion-cycle-light markdown-cycle markdown-cycle-light autocomplete-cycle settings-font-cycle themes-cycle sticker-cycle \
     server-menu-cycle folder-menu-cycle folder-animation folder-animation-light rail-drag rail-drag-light typing-cycle typing-cycle-light reply-cycle reply-cycle-light floating-cycle floating-cycle-light decorations-cycle decorations-cycle-light channel-menu-cycle reaction-spacing embed-components chat-links-cycle chat-links-cycle-light \
     chat-links-light chat-links-narrow embed-cycle embed-cycle-light categories animation-cycle gif-cycle attachment-cycle \
     autocomplete-tokens autocomplete-tokens-light reply-grouping reply-grouping-light reply-grouping-compact \

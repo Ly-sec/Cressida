@@ -1,12 +1,14 @@
 #include "api/client.h"
 
 #include "api/network_profile.h"
+#include "api/request_diagnostics.h"
 #include "api/rest_schedule.h"
 #include "api/rest_transfer.h"
 #include "api/rest_transport_cache.h"
 #include "api/server_organization.h"
 #include "api/thread_member_list.h"
 #include "api/uploads.h"
+#include "core/log.h"
 
 #include <algorithm>
 #include <chrono>
@@ -23,10 +25,38 @@
 namespace api {
   namespace {
     using Json = nlohmann::json;
+    const Logger restLog("rest");
+    const Logger accountLog("account");
     const char* operationLabel(Operation operation) {
       switch (operation) {
       case Operation::Connect:
         return "connect";
+      case Operation::Send:
+        return "send-message";
+      case Operation::Acknowledge:
+        return "read-receipt";
+      case Operation::Reaction:
+        return "reaction";
+      case Operation::Interaction:
+        return "interaction";
+      case Operation::Profile:
+        return "profile";
+      case Operation::SaveProfile:
+        return "save-profile";
+      case Operation::SavePresence:
+        return "save-presence";
+      case Operation::AccountSettings:
+        return "account-settings";
+      case Operation::SaveAccountSettings:
+        return "save-account-settings";
+      case Operation::SettingsList:
+        return "settings-list";
+      case Operation::GifFavorites:
+      case Operation::SaveGifFavorite:
+        return "gif-favorites";
+      case Operation::EmojiPreferences:
+      case Operation::SaveEmojiFavorite:
+        return "emoji-preferences";
       case Operation::Messages:
         return "messages";
       case Operation::Channels:
@@ -106,6 +136,7 @@ namespace api {
       RestCancellation interrupted = RestCancellation::None;
       const char* label = "account";
       RestRestrictions* restrictions = nullptr;
+      std::uint64_t diagnosticId = 0;
     };
 
     size_t receive(char* bytes, size_t size, size_t count, void* context) noexcept {
@@ -189,20 +220,46 @@ namespace api {
             ? transfer.restrictions->blocked(transfer.scope.expectedSession, requestMethod, path)
             : std::string{};
       };
+      const auto diagnosticId = transfer.diagnosticId = request_diagnostics::nextId();
       for (int attempt = 0; attempt < maximumRateLimitAttempts; ++attempt) {
+        using Outcome = request_diagnostics::Outcome;
+        const auto started = std::chrono::steady_clock::now();
+        request_diagnostics::Record diagnostic{
+            .id = diagnosticId, .action = transfer.label, .method = requestMethod, .path = path, .attempt = attempt + 1
+        };
+        ScopeExit logAttempt{[&] {
+          diagnostic.durationMs =
+              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+          const auto line = request_diagnostics::format(diagnostic);
+          if (diagnostic.outcome == Outcome::Success
+              || diagnostic.outcome == Outcome::Cancelled
+              || diagnostic.outcome == Outcome::ExpectedEmpty)
+            restLog.debug("{}", line);
+          else if (diagnostic.outcome == Outcome::Setup || diagnostic.outcome == Outcome::Authentication)
+            restLog.error("{}", line);
+          else
+            restLog.warn("{}", line);
+        }};
         RestRateLimits::Admission admission;
         while (true) {
-          if (progress(&transfer, 0, 0, 0, 0))
+          if (progress(&transfer, 0, 0, 0, 0)) {
+            diagnostic.outcome = Outcome::Cancelled;
             return std::unexpected(Failure{"Request cancelled"});
-          if (auto pause = restricted(); !pause.empty())
+          }
+          if (auto pause = restricted(); !pause.empty()) {
+            diagnostic.outcome = Outcome::Restricted;
             return std::unexpected(Failure{std::move(pause)});
+          }
           admission = cooldown.acquire(requestMethod, path);
           if (admission.lease)
             break;
           const auto remaining =
               std::chrono::ceil<std::chrono::milliseconds>(admission.retryAt - std::chrono::steady_clock::now());
-          if (remaining > maximumInlineRateLimitWait)
+          if (remaining > maximumInlineRateLimitWait) {
+            diagnostic.outcome = Outcome::RateLimited;
+            diagnostic.status = 429;
             return std::unexpected(Failure{"The service is rate limiting requests. Try again later.", false, {}, 429});
+          }
           pollfd descriptor{transfer.wake->fd(), POLLIN, 0};
           (void)::poll(&descriptor, 1, static_cast<int>(std::clamp<std::int64_t>(remaining.count(), 1, 86400100)));
           transfer.wake->drain();
@@ -292,16 +349,36 @@ namespace api {
         }
         if (method)
           curl_easy_setopt(curl.get(), CURLOPT_CUSTOMREQUEST, method);
-        if (progress(&transfer, 0, 0, 0, 0))
+        if (progress(&transfer, 0, 0, 0, 0)) {
+          diagnostic.outcome = Outcome::Cancelled;
           return std::unexpected(Failure{"Request cancelled"});
-        if (auto pause = restricted(); !pause.empty())
+        }
+        if (auto pause = restricted(); !pause.empty()) {
+          diagnostic.outcome = Outcome::Restricted;
           return std::unexpected(Failure{std::move(pause)});
+        }
         const auto code =
             performRestTransfer(curl.get(), transfer.multi, *transfer.wake, transfer.scope, transfer.interrupted);
         network_profile::transferred(transfer.label, curl.get(), code);
         long status = 0;
         curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
+        diagnostic.status = status;
+        diagnostic.transportCode = static_cast<int>(code);
         auto json = decodeRestBody(status, transfer.body);
+        diagnostic.serviceCode = restServiceCode(json);
+        diagnostic.outcome = transfer.interrupted != RestCancellation::None ? Outcome::Cancelled
+            : code != CURLE_OK                                              ? Outcome::Transport
+            : status == 429                                                 ? Outcome::RateLimited
+            : status == 401                                                 ? Outcome::Authentication
+            : status == 403                                                 ? Outcome::Permission
+            : status < 200 || status >= 300                                 ? Outcome::Http
+            : json.is_discarded()                                           ? Outcome::InvalidResponse
+                                                                            : Outcome::Success;
+        if (diagnostic.outcome == Outcome::Http
+            && request_diagnostics::expectedEmptyCollection(
+                requestMethod, path, status, diagnostic.serviceCode, inboxPageSize
+            ))
+          diagnostic.outcome = Outcome::ExpectedEmpty;
         RestRateLimits::Fallback fallback;
         if (status == 429 && json.is_object()) {
           if (const auto at = json.find("retry_after"); at != json.end() && at->is_number())
@@ -319,20 +396,25 @@ namespace api {
                       : "Could not reach Discord. Try again."
               }
           );
-        if (progress(&transfer, 0, 0, 0, 0))
+        if (progress(&transfer, 0, 0, 0, 0)) {
+          diagnostic.outcome = Outcome::Cancelled;
           return std::unexpected(Failure{"Request cancelled"});
+        }
         const auto serviceCode = restServiceCode(json);
         if (!token.empty() && transfer.restrictions) {
           auto pause =
               transfer.restrictions->observe(transfer.scope.expectedSession, requestMethod, path, status, json);
-          if (!pause.empty())
+          if (!pause.empty()) {
+            diagnostic.outcome = Outcome::Restricted;
             return std::unexpected(Failure{std::move(pause), false, {}, status, serviceCode});
+          }
         }
         if (status == 429) {
           if (retryAt - std::chrono::steady_clock::now() > maximumInlineRateLimitWait)
             return std::unexpected(
                 Failure{"The service is rate limiting requests. Try again later.", false, {}, status, serviceCode}
             );
+          diagnostic.retry = attempt + 1 < maximumRateLimitAttempts;
           continue;
         }
         if ((serverSettings || accountSettings)
@@ -340,13 +422,15 @@ namespace api {
             && json.is_object()
             && json.contains("code")
             && json["code"].is_number_integer()
-            && (json["code"] == 60003 || json["code"] == 60008 || json["code"] == 60009))
+            && (json["code"] == 60003 || json["code"] == 60008 || json["code"] == 60009)) {
+          diagnostic.outcome = Outcome::Restricted;
           return std::unexpected(
               Failure{
                   "The service requires two-factor verification for this action.", false, json.value("mfa", Json{}),
                   status, serviceCode
               }
           );
+        }
         if (status == 401 && !token.empty())
           return std::unexpected(
               Failure{"The account token was rejected. Reconnect with a valid token.", true, {}, status, serviceCode}
@@ -945,6 +1029,17 @@ namespace api {
       }
     }};
     try {
+      if (type == "READY" || type == "USER_REQUIRED_ACTION_UPDATE") {
+        const auto action = data.find("required_action");
+        const bool required =
+            action != data.end() && action->is_string() && !action->get_ref<const std::string&>().empty();
+        if (required)
+          accountLog.warn("Verification state received required_action_present=true");
+        else if (
+            type == "USER_REQUIRED_ACTION_UPDATE" && action != data.end() && (action->is_null() || action->is_string())
+        )
+          accountLog.info("Verification state updated required_action_present=false");
+      }
       if (type == "READY") {
         if (auto notice = m_restRestrictions.requiredAction(session, data))
           publish(Event{.operation = Operation::AccountRestriction, .session = session, .error = std::move(*notice)});
@@ -1682,6 +1777,10 @@ namespace api {
           }
         }
       } catch (const std::exception&) {
+        restLog.warn(
+            "Response processing failed id=req-{:x} action={} category=invalid-response", transfer.diagnosticId,
+            request_diagnostics::action(transfer.label)
+        );
         event.error = "Could not read Discord's response. Reconnect or try again.";
       }
       // All retry decisions below run under m_mutex. A credential change may
@@ -3129,6 +3228,10 @@ namespace api {
           }
       } catch (const std::exception&) {
         // Do not expose arbitrary JSON/transport exceptions, which can contain account data.
+        restLog.warn(
+            "Response processing failed id=req-{:x} action={} category=invalid-response", transfer.diagnosticId,
+            request_diagnostics::action(transfer.label)
+        );
         event.error = "Could not read Discord's response. Reconnect or try again.";
       }
       if (command.operation == Operation::Connect && completeConnect(event, BootstrapSource::Rest))

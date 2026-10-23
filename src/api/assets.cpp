@@ -2,29 +2,76 @@
 
 #include "api/models.h"
 #include "api/network_profile.h"
+#include "core/log.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <chrono>
+#include <cstring>
 #include <curl/curl.h>
 #include <memory>
 #include <utility>
 
 namespace api {
   namespace {
+    constexpr Logger logger{"assets"};
+    constexpr auto failureLogInterval = std::chrono::seconds(30);
+    enum class AssetFailure : unsigned {
+      Initialize,
+      Transfer,
+      Response,
+      Empty,
+      EncodedLimit,
+      Buffer,
+      Decode,
+      ResultBudget,
+      Count
+    };
+    struct AssetDiagnostics {
+      using Clock = std::chrono::steady_clock;
+      struct FailureState {
+        Clock::time_point next;
+        std::size_t suppressed = 0;
+      };
+      std::array<FailureState, static_cast<unsigned>(AssetFailure::Count)> failures{};
+      void failure(AssetFailure reason, long status = 0, int transport = 0, std::size_t bytes = 0) {
+        auto& state = failures[static_cast<unsigned>(reason)];
+        const auto now = Clock::now();
+        if (now < state.next) {
+          ++state.suppressed;
+          return;
+        }
+        constexpr std::array stages{"initialize",    "transfer", "http-response", "empty-response",
+                                    "encoded-limit", "buffer",   "decode",        "result-budget"};
+        logger.warn(
+            "asset failed stage={} status={} transport_code={} bytes={} suppressed_since_previous={}",
+            stages[static_cast<unsigned>(reason)], status, transport, bytes, state.suppressed
+        );
+        state.next = now + failureLogInterval;
+        state.suppressed = 0;
+      }
+    };
     constexpr std::size_t maximumPendingBytes = 128 * 1024 * 1024;
     constexpr std::size_t maximumPendingResults = 128;
     struct Download {
       std::vector<unsigned char> bytes;
       std::stop_token stop;
+      bool oversized = false, bufferFailed = false;
     };
     size_t receive(char* bytes, size_t size, size_t count, void* context) noexcept {
       auto& download = *static_cast<Download*>(context);
       const auto length = size * count;
-      if (download.stop.stop_requested() || length > maxUploadBytes - download.bytes.size())
+      if (download.stop.stop_requested())
         return 0;
+      if (length > maxUploadBytes - download.bytes.size()) {
+        download.oversized = true;
+        return 0;
+      }
       try {
         download.bytes.insert(download.bytes.end(), bytes, bytes + length);
       } catch (...) {
+        download.bufferFailed = true;
         return 0;
       }
       return length;
@@ -32,8 +79,11 @@ namespace api {
     int progress(void* context, curl_off_t, curl_off_t, curl_off_t, curl_off_t) noexcept {
       return static_cast<Download*>(context)->stop.stop_requested();
     }
-    Asset load(CURL* curl, const std::string& path, bool videoPoster, std::stop_token stop) {
+    Asset
+    load(CURL* curl, const std::string& path, bool videoPoster, std::stop_token stop, AssetDiagnostics& diagnostics) {
       Download data{{}, stop};
+      if (!curl && !stop.stop_requested())
+        diagnostics.failure(AssetFailure::Initialize);
       if (curl && !stop.stop_requested()) {
         curl_easy_reset(curl);
         const std::string url = mediaUrl(path);
@@ -54,11 +104,40 @@ namespace api {
         network_profile::transferred("asset", curl, status);
         long code = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);
+        if (!stop.stop_requested()) {
+          if (data.oversized)
+            diagnostics.failure(AssetFailure::EncodedLimit, code, static_cast<int>(status), data.bytes.size());
+          else if (data.bufferFailed)
+            diagnostics.failure(AssetFailure::Buffer, code, static_cast<int>(status), data.bytes.size());
+          else if (status != CURLE_OK)
+            diagnostics.failure(AssetFailure::Transfer, code, static_cast<int>(status));
+          else if (code != 200)
+            diagnostics.failure(AssetFailure::Response, code);
+          else if (data.bytes.empty())
+            diagnostics.failure(AssetFailure::Empty, code);
+          else
+            logger.debug("asset fetched bytes={}", data.bytes.size());
+        }
         if (status != CURLE_OK || code != 200)
           std::vector<unsigned char>{}.swap(data.bytes);
       }
       auto animation =
           videoPoster ? media::decodeVideoPoster(data.bytes, stop) : media::decodeAnimation(data.bytes, stop);
+      if (!stop.stop_requested() && !data.bytes.empty()) {
+        if (animation)
+          logger.debug(
+              "asset decoded width={} height={} frames={} decoded_bytes={}", animation->width, animation->height,
+              animation->frames.size(), animation->byteSize()
+          );
+        else {
+          const bool gif = data.bytes.size() >= 6
+              && (std::memcmp(data.bytes.data(), "GIF87a", 6) == 0 || std::memcmp(data.bytes.data(), "GIF89a", 6) == 0);
+          if (videoPoster || gif)
+            diagnostics.failure(AssetFailure::Decode, 0, 0, data.bytes.size());
+          else
+            logger.debug("asset passed to static image decoder bytes={}", data.bytes.size());
+        }
+      }
       return {path, std::move(data.bytes), std::move(animation)};
     }
   } // namespace
@@ -133,13 +212,17 @@ namespace api {
     return results;
   }
   void Assets::run(std::stop_token stop) {
+    logger.debug("worker starting");
+    AssetDiagnostics diagnostics;
     std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curl(m_loader ? nullptr : curl_easy_init(), curl_easy_cleanup);
     while (!stop.stop_requested()) {
       Request request;
       {
         std::unique_lock lock(m_mutex);
-        if (!m_ready.wait(lock, stop, [&] { return !m_queue.empty(); }))
+        if (!m_ready.wait(lock, stop, [&] { return !m_queue.empty(); })) {
+          logger.debug("worker stopped");
           return;
+        }
         request = std::move(m_queue.front());
         m_queue.pop_front();
       }
@@ -148,13 +231,14 @@ namespace api {
       if (requestStop.stop_requested())
         continue;
       auto result = m_loader ? m_loader(request.path, request.videoPoster, requestStop)
-                             : load(curl.get(), request.path, request.videoPoster, requestStop);
+                             : load(curl.get(), request.path, request.videoPoster, requestStop, diagnostics);
       if (requestStop.stop_requested())
         continue;
       result.path = request.path;
       const auto animationBytes = result.animation ? result.animation->byteSize() : 0;
       if (result.bytes.capacity() > maximumPendingBytes
           || animationBytes > maximumPendingBytes - result.bytes.capacity()) {
+        diagnostics.failure(AssetFailure::ResultBudget);
         std::vector<unsigned char>{}.swap(result.bytes);
         result.animation.reset();
       } else if (result.bytes.empty()) {
@@ -184,5 +268,6 @@ namespace api {
       m_results.push_back(std::move(result));
       (void)m_wake.signal();
     }
+    logger.debug("worker stopped");
   }
 } // namespace api

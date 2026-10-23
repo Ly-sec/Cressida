@@ -7,6 +7,7 @@
 #include "app/window_decorations.h"
 #include "core/deferred_call.h"
 #include "core/environment.h"
+#include "core/log.h"
 #include "core/timer_manager.h"
 #include "cursor-shape-v1-client-protocol.h"
 #include "fractional-scale-v1-client-protocol.h"
@@ -41,6 +42,13 @@
 
 namespace app {
   using Clock = std::chrono::steady_clock;
+  namespace {
+    constexpr Logger kLog("window");
+    [[noreturn]] void windowFailure(const char* stage, const char* message, int code = 0) {
+      kLog.error("window failed stage={} code={}", stage, code);
+      throw std::runtime_error(message);
+    }
+  } // namespace
 
   struct Window::Impl {
     Window& owner;
@@ -651,10 +659,10 @@ namespace app {
       FcConfigAppFontAddFile(FcConfigGetCurrent(), reinterpret_cast<const FcChar8*>(emojiFont));
     m->display = wl_display_connect(nullptr);
     if (!m->display)
-      throw std::runtime_error("Could not connect to the Wayland desktop");
+      windowFailure("connect", "Could not connect to the Wayland desktop", errno);
     m->xkb = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
     if (!m->xkb)
-      throw std::runtime_error("Could not initialize keyboard input");
+      windowFailure("keyboard", "Could not initialize keyboard input", 0);
     const char* locale = std::setlocale(LC_CTYPE, "");
     m->composeTable = xkb_compose_table_new_from_locale(m->xkb, locale ? locale : "C", XKB_COMPOSE_COMPILE_NO_FLAGS);
     if (m->composeTable)
@@ -773,8 +781,9 @@ namespace app {
             },
     };
     wl_registry_add_listener(m->registry, &registryListener, m.get());
+    kLog.info("Wayland connection established");
     if (wl_display_roundtrip(m->display) < 0 || !m->compositor || !m->shell)
-      throw std::runtime_error("The desktop does not provide xdg-shell");
+      windowFailure("desktop-protocol", "The desktop does not provide xdg-shell", wl_display_get_error(m->display));
     m->surface = wl_compositor_create_surface(m->compositor);
     m->activationState.bind(m->activation, m->surface);
     static const wl_surface_listener surfaceListener{
@@ -819,7 +828,7 @@ namespace app {
     int frames = 0;
     while (m->running) {
       if (wl_display_dispatch_pending(m->display) < 0)
-        throw std::runtime_error("Wayland connection lost");
+        windowFailure("dispatch", "Wayland connection lost", wl_display_get_error(m->display));
       tick();
       if (m->pasteFd >= 0 && Clock::now() > m->pasteDeadline) {
         ::close(m->pasteFd);
@@ -851,7 +860,7 @@ namespace app {
       bool redraw = false;
       while (wl_display_prepare_read(m->display) != 0) {
         if (wl_display_dispatch_pending(m->display) < 0)
-          throw std::runtime_error("Wayland connection lost");
+          windowFailure("dispatch", "Wayland connection lost", wl_display_get_error(m->display));
         if (m->visible && m->configured && m->dirty && !m->frameCallback) {
           redraw = true;
           break;
@@ -862,7 +871,7 @@ namespace app {
       const int flushed = wl_display_flush(m->display);
       if (flushed < 0 && errno != EAGAIN) {
         wl_display_cancel_read(m->display);
-        throw std::runtime_error("Wayland flush failed");
+        windowFailure("flush", "Wayland flush failed", errno);
       }
       std::vector<pollfd> descriptors = {
           {wl_display_get_fd(m->display), static_cast<short>(POLLIN | (flushed < 0 ? POLLOUT : 0)), 0},
@@ -891,13 +900,13 @@ namespace app {
       const int ready = ::poll(descriptors.data(), descriptors.size(), timeout);
       if (ready > 0 && (descriptors[0].revents & POLLIN)) {
         if (wl_display_read_events(m->display) < 0)
-          throw std::runtime_error("Wayland read failed");
+          windowFailure("read", "Wayland read failed", errno);
       } else
         wl_display_cancel_read(m->display);
       if (ready < 0 && errno != EINTR)
-        throw std::runtime_error("Window event polling failed");
+        windowFailure("poll", "Window event polling failed", errno);
       if (descriptors[0].revents & (POLLERR | POLLHUP | POLLNVAL))
-        throw std::runtime_error("Wayland connection closed");
+        windowFailure("connection-closed", "Wayland connection closed", wl_display_get_error(m->display));
       if (descriptors[2].revents)
         m->readPaste();
       for (std::size_t i = m->writes.size(); i > 0; --i) {
@@ -1047,6 +1056,7 @@ namespace app {
   bool Window::visible() const { return m->visible; }
   std::uint64_t Window::toplevelGeneration() const { return m->toplevelGeneration; }
   void Window::hide() {
+    kLog.debug("hide requested visible={}", m->visible);
     if (!m->visible)
       return;
     m->visible = false;
@@ -1082,6 +1092,7 @@ namespace app {
     m->dirty = true;
   }
   void Window::show(std::string activationToken) {
+    kLog.debug("show requested visible={} activation_supplied={}", m->visible, !activationToken.empty());
     if (!m->visible) {
       m->visible = true;
       m->configured = false;

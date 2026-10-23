@@ -2,7 +2,6 @@ render_source_paths = [
   'core/files/resource_paths.cpp',
   'core/input/key_chord.cpp',
   'core/input/keybind_matcher.cpp',
-  'core/log.cpp',
   'core/ui_phase.cpp',
   'render/animation/animation.cpp',
   'render/animation/animation_manager.cpp',

@@ -50,6 +50,7 @@ def check_installation(build, source, meson, readelf):
         renderer = installed("libdir", "libcressida-render.so")
         assert binary.is_file() and os.access(binary, os.X_OK), "Installed executable is missing"
         assert renderer.is_file(), "Installed renderer is missing"
+        assert installed("libdir", "libcressida-log.so").is_file(), "Installed logger is missing"
 
         assets = installed("datadir", "cressida", "assets")
         for path in (source / "assets").rglob("*"):
@@ -70,12 +71,20 @@ def check_installation(build, source, meson, readelf):
         dynamic = run_checked(readelf, "-d", str(binary))
         assert "$ORIGIN/" in dynamic, "Installed executable has no relative renderer search path"
         assert str(build) not in dynamic, "Installed executable retains a build-tree search path"
+        for library in (renderer, installed("libdir", "libcressida-log.so")):
+            library_dynamic = run_checked(readelf, "-d", str(library))
+            assert str(build) not in library_dynamic, "Installed library retains build paths"
+        assert "$ORIGIN" in run_checked(readelf, "-d", str(renderer)), "Renderer cannot locate its sibling logger"
         environment = os.environ.copy()
+        environment["XDG_CACHE_HOME"] = str(stage / "private-cache")
+        environment["HOME"] = str(stage / "private-home")
         for key in ("LD_LIBRARY_PATH", "LD_PRELOAD", "CRESSIDA_ASSETS_DIR", "DISCORD_CPP_ASSETS_DIR"):
             environment.pop(key, None)
         for option, expected in (("--version", "cressida "), ("--help", "Usage: cressida")):
             output = run_checked(str(binary), option, cwd=stage, env=environment)
             assert expected in output, f"Installed {option} failed"
+        assert not (stage / "private-cache").exists(), "Help/version unexpectedly wrote logs"
+        assert not (stage / "private-home").exists(), "Help/version unexpectedly wrote home data"
         print("Installed executable, renderer lookup, complete assets, headers, launcher, icon and notices passed")
 
 

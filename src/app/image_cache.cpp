@@ -1,8 +1,10 @@
 #include "app/image_cache.h"
 
+#include "core/log.h"
 #include "render/core/texture_manager.h"
 
 #include <algorithm>
+#include <chrono>
 #include <tuple>
 #include <utility>
 
@@ -92,6 +94,18 @@ namespace app {
         textures->unload(image->second.texture);
       cache.erase(image);
       changed = true;
+    }
+    if (changed) {
+      constexpr auto reportInterval = std::chrono::seconds(1);
+      static thread_local auto lastReport = std::chrono::steady_clock::time_point{};
+      const auto now = std::chrono::steady_clock::now();
+      if (now - lastReport >= reportInterval) {
+        Logger("images").debug(
+            "cache trimmed entries={} encoded_bytes={} animation_bytes={} texture_bytes={}", usage.entries,
+            usage.encodedBytes, usage.animationBytes, usage.textureBytes
+        );
+        lastReport = now;
+      }
     }
     return changed;
   }

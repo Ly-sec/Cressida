@@ -67,7 +67,7 @@ namespace paths {
           candidates.push_back(overridePath);
           return candidates;
         }
-        kLog.warn("CRESSIDA_ASSETS_DIR is not a valid asset bundle: {}", overridePath.string());
+        kLog.warn("CRESSIDA_ASSETS_DIR is not a valid asset bundle");
       }
 
       if (auto exe = executablePath()) {
@@ -89,13 +89,13 @@ namespace paths {
     std::filesystem::path resolveAssetsRoot() {
       for (const auto& candidate : assetCandidates()) {
         if (isAssetRoot(candidate)) {
-          kLog.debug("using assets from {}", candidate.string());
+          kLog.debug("asset bundle located");
           return candidate;
         }
       }
 
       const std::filesystem::path fallback = installedAssetsRoot();
-      kLog.warn("could not locate a valid asset bundle; defaulting to {}", fallback.string());
+      kLog.warn("could not locate a valid asset bundle; using fallback");
       return fallback;
     }
 

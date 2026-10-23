@@ -89,6 +89,43 @@ Use the [build dependency reference](building.md). In particular:
   insufficient.
 - `libzstd` is required for animation frame caching.
 
+## Collect diagnostic logs
+
+Cressida writes diagnostic logs automatically during startup and use. The
+current file is `~/.cache/cressida/logs/cressida.log`; `cressida.log.1` contains
+the previous rotation. An absolute `XDG_CACHE_HOME` changes the parent cache
+location. See [Files and data](files-and-data.md#diagnostic-logs) for retention
+and access.
+
+Log files include debug details even when the terminal only shows informational
+messages, warnings and errors. To also see debug details in the terminal:
+
+1. Quit the running client using **Close** in its tray menu or your Quit
+   shortcut.
+2. Start it from a terminal:
+
+   ```sh
+   cressida --log-level debug
+   ```
+
+3. Reproduce the problem, note the approximate time, then quit normally to flush
+   the log before copying it.
+
+Launching again normally focuses the existing client. It does not change that
+process's log level. If a separate instance already owns the log file, another
+instance reports that it is using terminal logging instead.
+
+Logs cover startup and shutdown, connections, window and desktop services,
+credential operations, local state, media failures and cache usage. Network
+entries include a local request reference, an action, an anonymized route,
+status codes, timing and retry information. They omit message contents,
+credentials, request bodies and raw headers.
+
+Review logs and terminal captures before sharing them. Terminal startup errors
+can contain additional error details. Include only the relevant period and
+remove any personal information. Logging does not establish the cause of an
+account restriction.
+
 ## Report a problem
 
 [Open an issue](https://github.com/Ly-sec/Cressida/issues) with your

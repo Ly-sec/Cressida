@@ -1,13 +1,43 @@
 #include "auth/credentials.h"
 
+#include "core/log.h"
+
 #include <algorithm>
 #include <cerrno>
 #include <cstdlib>
 #include <fcntl.h>
+#include <optional>
 #include <sys/stat.h>
 #include <unistd.h>
 
 namespace auth {
+  namespace {
+    constexpr Logger logger{"credentials"};
+    constexpr const char* operationName(CredentialOperation operation) {
+      switch (operation) {
+      case CredentialOperation::Load:
+        return "load";
+      case CredentialOperation::Save:
+        return "save";
+      case CredentialOperation::Forget:
+        return "forget";
+      }
+      return "unknown";
+    }
+    constexpr const char* failureName(CredentialFailure failure) {
+      switch (failure) {
+      case CredentialFailure::Unavailable:
+        return "keyring-unavailable";
+      case CredentialFailure::Cancelled:
+        return "keyring-cancelled";
+      case CredentialFailure::Invalid:
+        return "invalid-credential";
+      case CredentialFailure::StateFile:
+        return "local-state";
+      }
+      return "unknown";
+    }
+  } // namespace
   bool validCredential(const std::string& token) {
     return !token.empty()
         && token.size() <= 4096
@@ -128,18 +158,24 @@ namespace auth {
         operationStop = m_activeStop.get_token();
       }
       CredentialResult result{task.operation, task.request};
+      std::optional<CredentialFailure> failure;
+      const auto fail = [&](CredentialFailure reason) {
+        failure = reason;
+        result.error = credentialError(reason);
+      };
+      logger.debug("operation started operation={}", operationName(task.operation));
       try {
         if (task.operation == CredentialOperation::Load) {
           std::error_code error;
           const bool disabled = m_disabled.empty() || std::filesystem::exists(m_disabled, error);
           if (error)
-            result.error = credentialError(CredentialFailure::StateFile);
+            fail(CredentialFailure::StateFile);
           else if (!disabled) {
             auto token = m_backend->load(operationStop);
             if (!token)
-              result.error = credentialError(token.error());
+              fail(token.error());
             else if (!token->empty() && !validCredential(*token)) {
-              result.error = credentialError(CredentialFailure::Invalid);
+              fail(CredentialFailure::Invalid);
               {
                 std::lock_guard lock(m_mutex);
                 if (task.revision == m_revision)
@@ -158,29 +194,29 @@ namespace auth {
             allowed = task.revision == m_revision && disableRestore();
           }
           if (!validCredential(task.token))
-            result.error = credentialError(CredentialFailure::Invalid);
+            fail(CredentialFailure::Invalid);
           else if (!allowed)
-            result.error = credentialError(CredentialFailure::StateFile);
+            fail(CredentialFailure::StateFile);
           else if (auto saved = m_backend->save(task.token, operationStop); !saved)
-            result.error = credentialError(saved.error());
+            fail(saved.error());
           else {
             std::lock_guard lock(m_mutex);
             if (task.revision == m_revision && !operationStop.stop_requested()) {
               std::error_code error;
               std::filesystem::remove(m_disabled, error);
               if (error)
-                result.error = credentialError(CredentialFailure::StateFile);
+                fail(CredentialFailure::StateFile);
             }
           }
         } else {
           auto erased = m_backend->erase(operationStop);
           if (!erased)
-            result.error = credentialError(erased.error());
+            fail(erased.error());
           else if (!task.markerWritten)
-            result.error = credentialError(CredentialFailure::StateFile);
+            fail(CredentialFailure::StateFile);
         }
       } catch (...) {
-        result.error = credentialError(CredentialFailure::Unavailable);
+        fail(CredentialFailure::Unavailable);
       }
       bool deliver;
       {
@@ -188,6 +224,15 @@ namespace auth {
         m_busy = false;
         deliver = !m_stopping && !operationStop.stop_requested() && task.revision == m_revision;
       }
+      if (!deliver)
+        logger.debug("operation discarded operation={}", operationName(task.operation));
+      else if (failure) {
+        if (*failure == CredentialFailure::Cancelled)
+          logger.debug("operation cancelled operation={}", operationName(task.operation));
+        else
+          logger.warn("operation failed operation={} stage={}", operationName(task.operation), failureName(*failure));
+      } else
+        logger.debug("operation completed operation={}", operationName(task.operation));
       if (deliver && task.complete)
         task.complete(std::move(result));
     }

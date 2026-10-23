@@ -200,6 +200,7 @@ With prefix `/usr` and the usual `lib`/`share` directories:
 ```text
 /usr/bin/cressida
 /usr/lib/libcressida-render.so
+/usr/lib/libcressida-log.so
 /usr/include/cressida/...
 /usr/share/cressida/assets/...
 /usr/share/applications/dev.lysec.Cressida.desktop
@@ -207,8 +208,8 @@ With prefix `/usr` and the usual `lib`/`share` directories:
 /usr/share/licenses/cressida/...
 ```
 
-Meson honors a distribution's alternative libdir. Ship the renderer library
-with the executable from the same build; it currently has no versioned ABI.
+Meson honors a distribution's alternative libdir. Ship the renderer and logging
+libraries with the executable from the same build; they currently have no versioned ABI.
 Development headers can go in a distribution's development subpackage. Keep
 the complete assets bundle with the runtime package: fonts, icon metadata,
 emoji catalogs, themes and demo media are used by the application and previews.
@@ -220,8 +221,9 @@ without this override. Cressida does not currently ship AppStream metadata,
 man pages or systemd units. The installed application icon
 uses the original Cressida logo; the tray uses its separate small-size artwork.
 
-The executable's installed runpath locates the renderer relative to its own
-directory, including custom libdirs, without `LD_LIBRARY_PATH` or an `ldconfig`
+The executable's installed runpath locates the renderer and logger relative to its
+own directory, including custom libdirs. The renderer also finds its sibling
+logging library through `$ORIGIN`, without `LD_LIBRARY_PATH` or an `ldconfig`
 step. External runtime dependencies must still be provided by the system/package
 manager. Meson refreshes the desktop-entry and icon caches when the corresponding
 optional tools are available. It skips those refreshes for `DESTDIR` staging;

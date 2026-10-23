@@ -1,5 +1,7 @@
 #include "media/video_player.h"
 
+#include "core/log.h"
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -11,6 +13,7 @@
 
 namespace media {
   namespace {
+    constexpr Logger logger{"playback"};
     class MemoryInput final : public VideoInput {
       std::vector<std::uint8_t> m_bytes;
       std::atomic_bool m_cancelled = false;
@@ -63,13 +66,16 @@ namespace media {
     m->state.loading = true;
     m->input = std::move(input);
     m->player = mpv_create();
-    auto fail = [&] {
+    const auto mode = audioOnly ? "audio" : "video";
+    logger.debug("player opening mode={}", mode);
+    auto fail = [&](const char* stage) {
+      logger.warn("player initialization failed mode={} stage={}", mode, stage);
       close();
       m->state.error = audioOnly ? "Could not initialize the sound preview." : "Could not initialize video playback.";
       return false;
     };
     if (!m->input || !m->player)
-      return fail();
+      return fail(!m->input ? "input" : "player-create");
     for (const auto& [name, value] :
          {std::pair{"config", "no"},
           {"load-scripts", "no"},
@@ -99,7 +105,7 @@ namespace media {
           {"demuxer-max-back-bytes", "8MiB"},
           {"cache-secs", "10"}})
       if (!m->option(name, value))
-        return fail();
+        return fail("options");
     // The custom stream is the only input. Embedded playlists, tracks and
     // container references cannot open files or secondary URLs through FFmpeg.
     char protocol[] = "protocol_whitelist", formats[] = "format_whitelist";
@@ -114,13 +120,13 @@ namespace media {
     options.format = MPV_FORMAT_NODE_MAP;
     options.u.list = &list;
     if (mpv_set_option(m->player, "demuxer-lavf-o", MPV_FORMAT_NODE, &options) < 0)
-      return fail();
+      return fail("demuxer-options");
     if (silent && !m->option("ao", "null"))
-      return fail();
+      return fail("audio-output");
     if (audioOnly && !m->option("vid", "no"))
-      return fail();
+      return fail("audio-mode");
     if (mpv_initialize(m->player) < 0)
-      return fail();
+      return fail("player-initialize");
     mpv_set_wakeup_callback(
         m->player, [](void* context) { (void)static_cast<Impl*>(context)->wake.signal(); }, m.get()
     );
@@ -173,7 +179,7 @@ namespace media {
             }
         )
         < 0)
-      return fail();
+      return fail("stream-register");
     if (!audioOnly) {
       mpv_opengl_init_params gl{getProc, nullptr};
       int advanced = 1;
@@ -184,7 +190,7 @@ namespace media {
           {}
       };
       if (mpv_render_context_create(&m->renderer, m->player, params) < 0)
-        return fail();
+        return fail("render-context");
       mpv_render_context_set_update_callback(
           m->renderer,
           [](void* context) {
@@ -203,11 +209,13 @@ namespace media {
       mpv_observe_property(m->player, 0, name, MPV_FORMAT_INT64);
     const char* command[] = {"loadfile", "cressida-video://current", nullptr};
     if (mpv_command_async(m->player, 0, command) < 0)
-      return fail();
+      return fail("load-command");
     m->state.playing = false;
     return true;
   }
   void VideoPlayer::close() {
+    if (m->player)
+      logger.debug("player closing mode={}", m->audioOnly ? "audio" : "video");
     if (m->input)
       m->input->cancel();
     if (m->renderer) {
@@ -234,14 +242,18 @@ namespace media {
       if (event->event_id == MPV_EVENT_NONE)
         break;
       changed = true;
-      if (event->event_id == MPV_EVENT_FILE_LOADED)
+      if (event->event_id == MPV_EVENT_FILE_LOADED) {
         m->state.loading = false;
+        logger.debug("media loaded mode={}", m->audioOnly ? "audio" : "video");
+      }
       if (event->event_id == MPV_EVENT_END_FILE) {
         const auto& end = *static_cast<mpv_event_end_file*>(event->data);
         m->state.loading = m->state.playing = false;
-        if (end.reason == MPV_END_FILE_REASON_ERROR)
+        if (end.reason == MPV_END_FILE_REASON_ERROR) {
+          logger.warn("playback failed mode={} code={}", m->audioOnly ? "audio" : "video", end.error);
           m->state.error = m->audioOnly ? "This sound is unavailable or unsupported."
                                         : "Video unavailable or unsupported. Try Open original.";
+        }
       }
       if (event->event_id != MPV_EVENT_PROPERTY_CHANGE)
         continue;
@@ -287,6 +299,7 @@ namespace media {
             || m->state.height > 4096
             || std::int64_t(m->state.width) * m->state.height > 8388608)) {
       pause(true);
+      logger.warn("playback failed stage=canvas-limit");
       m->state.error = "This video exceeds the supported canvas size.";
     }
     return changed;

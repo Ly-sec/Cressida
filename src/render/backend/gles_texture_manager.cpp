@@ -101,7 +101,7 @@ TextureHandle GlesTextureManager::decodeEncodedRaster(
   if (auto decoded = decodeRasterImage(data, size)) {
     return uploadRgba(decoded->pixels.data(), decoded->width, decoded->height, mipmap);
   } else if (debugPath != nullptr) {
-    kLog.warn("failed to decode image: {} ({})", ImageSourceLog::describe(*debugPath), decoded.error());
+    kLog.warn("failed to decode image source");
   }
 
   return {};
@@ -112,7 +112,7 @@ GlesTextureManager::~GlesTextureManager() { cleanup(); }
 TextureHandle GlesTextureManager::loadFromFile(const std::string& path, int targetSize, bool mipmap) {
   auto loaded = loadImageFile(path, targetSize);
   if (!loaded) {
-    kLog.warn("failed to load image: {} ({})", ImageSourceLog::describe(path), loaded.error());
+    kLog.warn("failed to load image source");
     return {};
   }
 

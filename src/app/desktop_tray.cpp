@@ -1,6 +1,7 @@
 #include "app/desktop_tray.h"
 
 #include "app/desktop_activation.h"
+#include "core/log.h"
 #include "core/process/wake_event.h"
 #include "render/core/image_file_loader.h"
 #include "ui/style.h"
@@ -18,6 +19,7 @@
 
 namespace app {
   namespace {
+    constexpr Logger logger{"tray"};
     constexpr auto itemPath = "/StatusNotifierItem";
     constexpr auto menuPath = "/MenuBar";
     constexpr auto menuInterface = "com.canonical.dbusmenu";
@@ -166,10 +168,12 @@ namespace app {
           std::ranges::any_of(watchers, [](const auto& watcher) { return watcher.registered && watcher.host; });
       if (next != available) {
         available = next;
+        logger.info("host availability changed available={}", next);
         emit({.available = next});
       }
     }
     void command(TrayCommand value) {
+      logger.debug("command received command={}", static_cast<unsigned>(value));
       TrayEvent event{.command = value};
       if (value == TrayCommand::Open)
         event.activationToken = activationToken.take();
@@ -329,10 +333,15 @@ namespace app {
           g_variant_unref(result);
         }
       }
+      if (!watcher.registered && !stopping)
+        logger.warn("host registration failed stage=register");
+      else if (!watcher.host && !stopping)
+        logger.debug("registered watcher has no active host");
       updateAvailability();
     }
     void run() {
       g_main_context_push_thread_default(context);
+      logger.debug("worker starting");
       GVariantBuilder pixels;
       g_variant_builder_init(&pixels, G_VARIANT_TYPE("a(iiay)"));
       for (const auto size : {Style::baseGlyphSize, Style::glyphSizeDisplay, Style::glyphSizeDisplay * 2}) {
@@ -352,6 +361,8 @@ namespace app {
         );
       }
       pixmap = g_variant_ref_sink(g_variant_builder_end(&pixels));
+      if (g_variant_n_children(pixmap) == 0)
+        logger.warn("tray icon fallback unavailable stage=rasterize");
       auto* address = g_dbus_address_get_for_bus_sync(G_BUS_TYPE_SESSION, cancel, nullptr);
       if (address) {
         bus = g_dbus_connection_new_for_address_sync(
@@ -363,7 +374,10 @@ namespace app {
         );
         g_free(address);
       }
+      if (!bus && !stopping)
+        logger.warn("tray unavailable stage=session-bus");
       if (bus) {
+        logger.debug("session bus connected");
         g_dbus_connection_set_exit_on_close(bus, false);
         std::string fdBody(itemBody);
         fdBody.replace(
@@ -391,9 +405,15 @@ namespace app {
             g_dbus_connection_register_object(bus, itemPath, info->interfaces[1], &table, this, nullptr, nullptr),
             g_dbus_connection_register_object(bus, menuPath, menu->interfaces[0], &table, this, nullptr, nullptr)
         };
+        if (std::ranges::any_of(objects, [](guint object) { return object == 0; }) && !stopping)
+          logger.warn("tray export failed stage=interfaces");
+        else
+          logger.debug("tray interfaces exported");
         g_signal_connect(
             bus, "closed", G_CALLBACK(+[](GDBusConnection*, gboolean, GError*, gpointer data) {
               auto& self = *static_cast<Impl*>(data);
+              if (!self.stopping)
+                logger.warn("session bus disconnected");
               for (auto& watcher : self.watchers)
                 watcher.registered = watcher.host = false;
               self.updateAvailability();
@@ -447,6 +467,7 @@ namespace app {
       while (g_main_context_pending(context))
         g_main_context_iteration(context, false);
       g_main_context_pop_thread_default(context);
+      logger.debug("worker stopped");
     }
   };
   DesktopTray::DesktopTray() : m(std::make_unique<Impl>()) {}

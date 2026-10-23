@@ -1,5 +1,6 @@
 #include "app/theme_runtime.h"
 
+#include "core/log.h"
 #include "core/process/wake_event.h"
 
 #include <gio/gio.h>
@@ -9,6 +10,7 @@
 
 namespace app {
   namespace {
+    constexpr Logger logger{"themes"};
     constexpr auto portalName = "org.freedesktop.portal.Desktop";
     constexpr auto portalPath = "/org/freedesktop/portal/desktop";
     constexpr auto settingsInterface = "org.freedesktop.portal.Settings";
@@ -59,6 +61,7 @@ namespace app {
     }
     void run(std::stop_token stop, ThemeCatalog catalog, std::filesystem::path user, bool desktop) {
       g_main_context_push_thread_default(context);
+      logger.debug("watcher starting");
       {
         struct State {
           Impl& owner;
@@ -69,12 +72,16 @@ namespace app {
           GDBusConnection* bus = nullptr;
           guint subscription = 0, nameWatch = 0;
           bool systemLight = false;
+          bool monitorFailureLogged = false;
           bool stopping = false, subscriptionReleased = true, watchReleased = true;
           std::optional<ThemeSnapshot> previous;
           void publish() {
             auto snapshot = catalog.reload();
             snapshot.systemLight = systemLight;
             if (previous != snapshot) {
+              logger.debug("catalog refreshed themes={} issues={}", snapshot.themes.size(), snapshot.issues.size());
+              if (!snapshot.issues.empty() && (!previous || previous->issues != snapshot.issues))
+                logger.warn("catalog contains invalid themes issues={}", snapshot.issues.size());
               previous = snapshot;
               owner.publish(snapshot);
             }
@@ -92,8 +99,19 @@ namespace app {
               if (path.empty())
                 continue;
               auto* file = g_file_new_for_path(path.c_str());
-              auto* monitor = g_file_monitor_directory(file, G_FILE_MONITOR_WATCH_MOVES, owner.cancellation, nullptr);
+              GError* error = nullptr;
+              auto* monitor = g_file_monitor_directory(file, G_FILE_MONITOR_WATCH_MOVES, owner.cancellation, &error);
               g_object_unref(file);
+              if (!monitor
+                  && error
+                  && !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND)
+                  && !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)
+                  && !monitorFailureLogged) {
+                monitorFailureLogged = true;
+                logger.warn("theme watching failed stage=directory-monitor repeated_warnings=suppressed");
+              }
+              if (error)
+                g_error_free(error);
               if (!monitor)
                 continue;
               g_signal_connect(
@@ -153,14 +171,21 @@ namespace app {
               systemLight = lightPreference(value);
               g_variant_unref(value);
               g_variant_unref(reply);
-            } else
+            } else {
               systemLight = false;
+              if (!stopping)
+                logger.debug("system appearance unavailable stage=portal-read");
+            }
             publish();
           }
           void connectDesktop() {
             bus = g_bus_get_sync(G_BUS_TYPE_SESSION, owner.cancellation, nullptr);
-            if (!bus)
+            if (!bus) {
+              if (!stopping)
+                logger.warn("system appearance unavailable stage=session-bus");
               return;
+            }
+            logger.debug("system appearance subscription starting");
             subscriptionReleased = false;
             subscription = g_dbus_connection_signal_subscribe(
                 bus, portalName, settingsInterface, "SettingChanged", portalPath, nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
@@ -188,12 +213,14 @@ namespace app {
             nameWatch = g_bus_watch_name_on_connection(
                 bus, portalName, G_BUS_NAME_WATCHER_FLAGS_AUTO_START,
                 [](GDBusConnection*, const char*, const char*, void* data) {
+                  logger.debug("appearance portal available");
                   static_cast<State*>(data)->readPreference();
                 },
                 [](GDBusConnection*, const char*, void* data) {
                   auto& self = *static_cast<State*>(data);
                   if (self.stopping)
                     return;
+                  logger.debug("appearance portal unavailable; using fallback");
                   self.systemLight = false;
                   self.publish();
                 },
@@ -226,6 +253,8 @@ namespace app {
         if (!user.empty()) {
           std::error_code error;
           std::filesystem::create_directories(user, error);
+          if (error && !stop.stop_requested())
+            logger.warn("theme watching failed stage=directory-create");
         }
         state.watch();
         state.publish();
@@ -235,6 +264,7 @@ namespace app {
           g_main_loop_run(loop);
       }
       g_main_context_pop_thread_default(context);
+      logger.debug("watcher stopped");
     }
   };
   ThemeRuntime::ThemeRuntime() : m(std::make_unique<Impl>()) {}
@@ -245,6 +275,9 @@ namespace app {
     m = std::make_unique<Impl>();
     ThemeCatalog catalog(bundled, user);
     auto initial = catalog.reload();
+    logger.debug("catalog loaded themes={} issues={}", initial.themes.size(), initial.issues.size());
+    if (!watch && !initial.issues.empty())
+      logger.warn("catalog contains invalid themes issues={}", initial.issues.size());
     if (watch)
       m->worker =
           std::jthread([impl = m.get(), catalog = std::move(catalog), user, desktop](std::stop_token stop) mutable {

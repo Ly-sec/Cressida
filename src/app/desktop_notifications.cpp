@@ -1,6 +1,7 @@
 #include "app/desktop_notifications.h"
 
 #include "app/desktop_activation.h"
+#include "core/log.h"
 #include "core/process/wake_event.h"
 #include "render/core/image_decoder.h"
 
@@ -18,6 +19,7 @@
 
 namespace app {
   namespace {
+    constexpr Logger logger{"notifications"};
     constexpr auto service = "org.freedesktop.Notifications";
     constexpr auto path = "/org/freedesktop/Notifications";
     constexpr std::size_t maxAvatarBytes = 256 * 1024;
@@ -88,6 +90,7 @@ namespace app {
     std::jthread worker;
     std::atomic<bool> stopping = false, scheduled = false;
     bool bodyMarkup = false;
+    bool deliveryFailed = false, capacityWarning = false, queueWarning = false;
     std::mutex mutex;
     struct Queued {
       DesktopNotice notice;
@@ -194,8 +197,13 @@ namespace app {
       if (!bus)
         return;
       for (const auto& notice : batch) {
-        if (pendingCalls >= 32)
+        if (pendingCalls >= 32) {
+          if (!capacityWarning) {
+            capacityWarning = true;
+            logger.warn("delivery capacity reached; some notifications discarded");
+          }
           break;
+        }
         GVariantBuilder hints;
         g_variant_builder_init(&hints, G_VARIANT_TYPE_VARDICT);
         g_variant_builder_add(&hints, "{sv}", "category", g_variant_new_string("im.received"));
@@ -229,6 +237,10 @@ namespace app {
               GError* error = nullptr;
               auto* reply = g_dbus_connection_call_finish(G_DBUS_CONNECTION(object), result, &error);
               if (reply) {
+                if (pending->owner->deliveryFailed) {
+                  pending->owner->deliveryFailed = false;
+                  logger.debug("desktop delivery recovered");
+                }
                 guint32 id = 0;
                 g_variant_get(reply, "(u)", &id);
                 g_variant_unref(reply);
@@ -247,6 +259,10 @@ namespace app {
                 } else
                   self.close(id);
               }
+              if (!reply && !pending->owner->stopping && !pending->owner->deliveryFailed) {
+                pending->owner->deliveryFailed = true;
+                logger.warn("desktop delivery failed stage=notify repeated_warnings=suppressed");
+              }
               if (error)
                 g_error_free(error);
             },
@@ -256,9 +272,13 @@ namespace app {
     }
     void run() {
       g_main_context_push_thread_default(context);
+      logger.debug("worker starting");
       bus = g_bus_get_sync(G_BUS_TYPE_SESSION, cancel, nullptr);
       guint action = 0, closed = 0, activation = 0;
+      if (!bus && !stopping)
+        logger.warn("desktop notifications unavailable stage=session-bus");
       if (bus) {
+        logger.debug("session bus connected");
         // Only the optional notification body supports markup. A server without
         // that capability receives ordinary text, including literal '&'/'<'.
         auto* capabilities = g_dbus_connection_call_sync(
@@ -275,7 +295,8 @@ namespace app {
               bodyMarkup = true;
           g_variant_unref(values);
           g_variant_unref(capabilities);
-        }
+        } else if (!stopping)
+          logger.debug("notification capabilities unavailable");
         activation = g_dbus_connection_signal_subscribe(
             bus, service, service, "ActivationToken", path, nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
             [](GDBusConnection*, const char*, const char*, const char*, const char*, GVariant* value, void* data) {
@@ -348,6 +369,7 @@ namespace app {
       while (g_main_context_pending(context))
         g_main_context_iteration(context, false);
       g_main_context_pop_thread_default(context);
+      logger.debug("worker stopped");
     }
   };
   DesktopNotifications::DesktopNotifications() : m(std::make_unique<Impl>()) {}
@@ -361,8 +383,13 @@ namespace app {
       return;
     {
       std::lock_guard lock(m->mutex);
-      if (m->queue.size() == 32)
+      if (m->queue.size() == 32) {
+        if (!m->queueWarning) {
+          m->queueWarning = true;
+          logger.warn("queue capacity reached; oldest notification discarded");
+        }
         m->queue.pop_front();
+      }
       const bool ready = notice.avatar.empty() || !notice.avatarBytes.empty();
       if (notice.avatarBytes.size() > maxAvatarBytes)
         notice.avatarBytes.clear();

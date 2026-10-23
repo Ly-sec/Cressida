@@ -1,8 +1,8 @@
 ---
 title: Files and data
 description:
-  Where Cressida stores settings, themes and saved credentials, and what to back
-  up.
+  Locations and retention for settings, themes, saved credentials and diagnostic
+  logs.
 ---
 
 ## Locations
@@ -11,6 +11,7 @@ description:
 | ------------------------ | --------------------------------------- |
 | Session and UI state     | `~/.local/state/cressida/session.json`  |
 | Custom themes            | `~/.config/cressida/themes/`            |
+| Diagnostic logs          | `~/.cache/cressida/logs/`               |
 | Saved credentials        | Your desktop's Secret Service keyring.  |
 | Instance lock and socket | `cressida/` beneath `$XDG_RUNTIME_DIR`. |
 
@@ -29,6 +30,25 @@ files; the state file stores the selected palette's ID, not its contents.
 
 Saved login credentials belong in the desktop keyring. Signing out removes the
 saved login. Closing or restarting the client does not sign out.
+
+## Diagnostic logs
+
+`cressida.log` contains the current diagnostic output. When it reaches 1 MiB,
+Cressida rotates it to `cressida.log.1`, replacing the previous backup. Each
+generated log file is capped at 1 MiB. These files retain recent diagnostics,
+not a permanent activity archive. Log lines are capped at 8 KiB and escape
+control characters.
+
+An absolute `XDG_CACHE_HOME` replaces `~/.cache` for these files. Log files use
+owner-only permissions (`0600`) in a private directory (`0700`). A separate
+`.lock` coordinates file access; other instances use terminal output while a
+writer owns it. If file logging is unavailable, terminal logging continues.
+Close all instances before removing log files or their lock.
+
+Files include debug details regardless of terminal verbosity. They do not store
+chat history or replace the optional message history settings below. See
+[Collect diagnostic logs](troubleshooting.md#collect-diagnostic-logs) before
+sharing a report. You do not need to back them up to preserve account settings.
 
 ## Backups
 

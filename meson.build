@@ -76,6 +76,11 @@ endforeach
 
 subdir('src')
 render_includes = include_directories('src', 'third_party/wuffs')
+log_library = shared_library('cressida-log', 'src/core/log.cpp',
+  include_directories: include_directories('src'), dependencies: dependency('threads'), install: true)
+log_dep = declare_dependency(link_with: log_library,
+  include_directories: include_directories('src'), dependencies: dependency('threads'))
+render_deps += log_dep
 render_lib = shared_library('cressida-render', render_sources + control_sources, protocol_sources,
   include_directories: render_includes,
   dependencies: render_deps,
@@ -83,6 +88,7 @@ render_lib = shared_library('cressida-render', render_sources + control_sources,
     '-DCRESSIDA_INSTALL_PREFIX="' + get_option('prefix') + '"',
     '-DCRESSIDA_INSTALL_DATADIR="' + get_option('datadir') + '"',
   ],
+  install_rpath: '$ORIGIN',
   install: true,
 )
 render_dep = declare_dependency(
@@ -96,8 +102,8 @@ media_library = static_library('cressida-media', 'src/media/animation.cpp', 'src
   include_directories: include_directories('src'), dependencies: media_deps)
 media_dep = declare_dependency(link_with: media_library, include_directories: include_directories('src'), dependencies: media_deps)
 video_library = static_library('cressida-video', 'src/media/video_player.cpp',
-  include_directories: include_directories('src'), dependencies: [dependency('mpv', version: '>=2.3'), dependency('threads')])
-video_dep = declare_dependency(link_with: video_library, include_directories: include_directories('src'), dependencies: dependency('threads'))
+  include_directories: include_directories('src'), dependencies: [dependency('mpv', version: '>=2.3'), dependency('threads'), log_dep])
+video_dep = declare_dependency(link_with: video_library, include_directories: include_directories('src'), dependencies: [dependency('threads'), log_dep])
 backend_deps = [dependency('libcurl', version: '>=8.16'), dependency('nlohmann_json'), dependency('threads')]
 if meson.can_run_host_binaries()
   websocket_check = cpp.run('''
@@ -113,7 +119,7 @@ if meson.can_run_host_binaries()
     error('libcurl needs WebSocket support. Re-enter nix develop to use the project curl build, then reconfigure.')
   endif
 endif
-credential_deps = [dependency('libsecret-1'), dependency('threads')]
+credential_deps = [dependency('libsecret-1'), dependency('threads'), log_dep]
 credentials = static_library('credentials', 'src/auth/credentials.cpp', 'src/auth/secret_service.cpp',
   include_directories: include_directories('src'), dependencies: credential_deps)
 credential_dep = declare_dependency(link_with: credentials,
@@ -121,10 +127,10 @@ credential_dep = declare_dependency(link_with: credentials,
 backend = static_library('cressida-backend', 'src/api/models.cpp', 'src/api/embed_components.cpp', 'src/api/client.cpp', 'src/api/rest_restrictions.cpp',
   'src/api/guild_settings.cpp', 'src/api/server_preferences.cpp', 'src/api/settings.cpp', 'src/api/user_settings.cpp', 'src/api/gifs.cpp', 'src/api/emoji.cpp', 'src/api/stickers.cpp', 'src/api/read_state.cpp', 'src/api/role_styles.cpp', 'src/api/profile.cpp', 'src/api/cosmetics.cpp', 'src/api/threads.cpp', 'src/api/channel_features.cpp', 'src/api/message_search.cpp', 'src/api/inbox.cpp', 'src/api/user_directory.cpp', 'src/api/actions.cpp', 'src/api/assets.cpp', 'src/api/gateway.cpp', 'src/api/uploads.cpp', 'src/api/video_source.cpp',
   include_directories: include_directories('src'),
-  dependencies: backend_deps + [credential_dep, media_dep],
+  dependencies: backend_deps + [credential_dep, media_dep, log_dep],
 )
 backend_dep = declare_dependency(link_with: backend,
-  include_directories: include_directories('src'), dependencies: backend_deps + [credential_dep, media_dep])
+  include_directories: include_directories('src'), dependencies: backend_deps + [credential_dep, media_dep, log_dep])
 
 browser_opener = find_program('xdg-open', required: false)
 browser_args = []
@@ -133,11 +139,11 @@ if browser_opener.found()
 endif
 browser_login = static_library('browser-login', 'src/auth/browser_login.cpp',
   include_directories: include_directories('src'),
-  dependencies: [dependency('nlohmann_json'), dependency('threads')],
+  dependencies: [dependency('nlohmann_json'), dependency('threads'), log_dep],
   cpp_args: browser_args,
 )
 browser_dep = declare_dependency(link_with: browser_login,
-  include_directories: include_directories('src'), dependencies: dependency('threads'))
+  include_directories: include_directories('src'), dependencies: [dependency('threads'), log_dep])
 
 client_args = []
 # Keep local-prefix and staged installs runnable without LD_LIBRARY_PATH or ldconfig.
@@ -155,7 +161,7 @@ markdown_dep = dependency('md4c')
 message_layout = static_library('message-layout', ['src/app/message_layout.cpp', 'src/app/syntax_highlight.cpp'], dependencies: [render_dep, backend_dep, markdown_dep])
 message_layout_dep = declare_dependency(link_with: message_layout, dependencies: [render_dep, backend_dep, markdown_dep])
 emoji_catalog = static_library('emoji-catalog', 'src/app/emoji_catalog.cpp', dependencies: [backend_dep, markdown_dep])
-theme_deps = [dependency('tomlplusplus'), dependency('gio-2.0'), dependency('threads')]
+theme_deps = [dependency('tomlplusplus'), dependency('gio-2.0'), dependency('threads'), log_dep]
 theme_library = static_library('cressida-themes', 'src/app/theme_catalog.cpp', 'src/app/theme_runtime.cpp',
   include_directories: include_directories('src'), dependencies: theme_deps)
 theme_dep = declare_dependency(link_with: theme_library, include_directories: include_directories('src'), dependencies: theme_deps)
@@ -171,7 +177,7 @@ client = executable('cressida',
 install_subdir('src',
   install_dir: get_option('includedir') / 'cressida',
   strip_directory: true,
-  exclude_files: ['app/single_instance.cpp', 'app/autocomplete.cpp', 'app/syntax_highlight.cpp', 'ui/scroll_into_view.cpp', 'app/typing_view.cpp', 'app/chat_navigation.cpp', 'api/embed_components.cpp', 'api/server_preferences.cpp', 'app/server_menu_dialog.cpp', 'app/server_menu_demo.cpp', 'app/chat_preload.cpp', 'app/dm_home.cpp', 'app/dm_profile.cpp', 'app/dm_profile_demo.cpp', 'app/dm_create.cpp', 'app/dm_request_panel.cpp', 'app/dm_home_demo.cpp', 'app/user_preferences_demo.cpp', 'app/user_account_demo.cpp', 'app/desktop_notifications.cpp', 'app/desktop_tray.cpp', 'app/tray_view.cpp', 'app/user_notifications.cpp', 'api/user_settings.cpp', 'app/user_preferences.cpp', 'app/user_account_view.cpp', 'app/user_account_dialog.cpp', 'app/user_account_profile.cpp', 'app/user_settings_lists.cpp', 'app/connection_state.cpp', 'app/server_commands_demo.cpp', 'app/server_commands.cpp', 'app/server_commands_model.cpp', 'app/server_image_crop.cpp', 'media/lottie.cpp', 'app/server_extra_forms.cpp', 'app/server_expressions.cpp', 'app/server_audit_model.cpp', 'app/server_audit.cpp', 'app/server_audio.cpp', 'app/server_management.cpp', 'app/settings_color_picker.cpp', 'api/guild_settings.cpp', 'app/server_settings.cpp', 'app/server_settings_demo.cpp', 'app/server_menu.cpp', 'app/server_upload.cpp', 'app/file_picker.cpp', 'app/select_popup.cpp', 'app/channel_demo.cpp', 'app/channel_menu.cpp', 'app/channel_create.cpp', 'app/channel_create_demo.cpp', 'app/channel_invite.cpp', 'app/channel_view.cpp', 'app/component_view.cpp', 'api/channel_features.cpp', 'api/message_search.cpp', 'api/inbox.cpp', 'api/threads.cpp', 'app/thread_view.cpp', 'app/forum_view.cpp'] + render_source_paths + control_source_paths + ['app/sticker_picker.cpp', 'api/stickers.cpp', 'app/emoji_picker.cpp', 'app/emoji_catalog.cpp', 'api/emoji.cpp', 'api/role_styles.cpp', 'api/profile.cpp', 'api/cosmetics.cpp', 'app/profile_view.cpp', 'app/profile_cosmetics.cpp', 'app/profile_cosmetics_demo.cpp', 'app/name_badges.cpp', 'app/guild_profile_view.cpp', 'app/server_view.cpp', 'app/role_view.cpp', 'app/system_message_view.cpp', 'app/message_log_view.cpp', 'app/message_dialog.cpp', 'app/video_view.cpp', 'media/video_player.cpp', 'api/video_source.cpp'] + ['meson.build', 'main.cpp', 'app/theme_catalog.cpp', 'app/theme_runtime.cpp', 'app/font_catalog.cpp', 'app/window.cpp', 'app/window_activation.cpp', 'app/window_icons.cpp', 'app/window_control_view.cpp', 'app/window_controls_demo.cpp', 'app/media_view.cpp', 'app/sidebar_view.cpp', 'app/server_rail.cpp', 'app/server_rail_demo.cpp', 'app/server_rail_drag.cpp', 'app/gif_picker.cpp', 'app/user_settings.cpp', 'app/native_controls.cpp', 'app/context_actions.cpp', 'app/client_application.cpp', 'app/image_cache.cpp', 'app/outgoing_messages.cpp', 'app/search_view.cpp', 'app/inbox_view.cpp', 'app/session_store.cpp', 'app/message_layout.cpp', 'api/client.cpp', 'api/rest_restrictions.cpp', 'api/models.cpp', 'api/settings.cpp', 'api/gifs.cpp', 'api/read_state.cpp', 'api/user_directory.cpp', 'api/actions.cpp', 'api/assets.cpp', 'api/gateway.cpp', 'api/uploads.cpp', 'auth/browser_login.cpp', 'auth/credentials.cpp', 'auth/secret_service.cpp', 'media/animation.cpp'],
+  exclude_files: ['core/log.cpp', 'app/single_instance.cpp', 'app/autocomplete.cpp', 'app/syntax_highlight.cpp', 'ui/scroll_into_view.cpp', 'app/typing_view.cpp', 'app/chat_navigation.cpp', 'api/embed_components.cpp', 'api/server_preferences.cpp', 'app/server_menu_dialog.cpp', 'app/server_menu_demo.cpp', 'app/chat_preload.cpp', 'app/dm_home.cpp', 'app/dm_profile.cpp', 'app/dm_profile_demo.cpp', 'app/dm_create.cpp', 'app/dm_request_panel.cpp', 'app/dm_home_demo.cpp', 'app/user_preferences_demo.cpp', 'app/user_account_demo.cpp', 'app/desktop_notifications.cpp', 'app/desktop_tray.cpp', 'app/tray_view.cpp', 'app/user_notifications.cpp', 'api/user_settings.cpp', 'app/user_preferences.cpp', 'app/user_account_view.cpp', 'app/user_account_dialog.cpp', 'app/user_account_profile.cpp', 'app/user_settings_lists.cpp', 'app/connection_state.cpp', 'app/server_commands_demo.cpp', 'app/server_commands.cpp', 'app/server_commands_model.cpp', 'app/server_image_crop.cpp', 'media/lottie.cpp', 'app/server_extra_forms.cpp', 'app/server_expressions.cpp', 'app/server_audit_model.cpp', 'app/server_audit.cpp', 'app/server_audio.cpp', 'app/server_management.cpp', 'app/settings_color_picker.cpp', 'api/guild_settings.cpp', 'app/server_settings.cpp', 'app/server_settings_demo.cpp', 'app/server_menu.cpp', 'app/server_upload.cpp', 'app/file_picker.cpp', 'app/select_popup.cpp', 'app/channel_demo.cpp', 'app/channel_menu.cpp', 'app/channel_create.cpp', 'app/channel_create_demo.cpp', 'app/channel_invite.cpp', 'app/channel_view.cpp', 'app/component_view.cpp', 'api/channel_features.cpp', 'api/message_search.cpp', 'api/inbox.cpp', 'api/threads.cpp', 'app/thread_view.cpp', 'app/forum_view.cpp'] + render_source_paths + control_source_paths + ['app/sticker_picker.cpp', 'api/stickers.cpp', 'app/emoji_picker.cpp', 'app/emoji_catalog.cpp', 'api/emoji.cpp', 'api/role_styles.cpp', 'api/profile.cpp', 'api/cosmetics.cpp', 'app/profile_view.cpp', 'app/profile_cosmetics.cpp', 'app/profile_cosmetics_demo.cpp', 'app/name_badges.cpp', 'app/guild_profile_view.cpp', 'app/server_view.cpp', 'app/role_view.cpp', 'app/system_message_view.cpp', 'app/message_log_view.cpp', 'app/message_dialog.cpp', 'app/video_view.cpp', 'media/video_player.cpp', 'api/video_source.cpp'] + ['meson.build', 'main.cpp', 'app/theme_catalog.cpp', 'app/theme_runtime.cpp', 'app/font_catalog.cpp', 'app/window.cpp', 'app/window_activation.cpp', 'app/window_icons.cpp', 'app/window_control_view.cpp', 'app/window_controls_demo.cpp', 'app/media_view.cpp', 'app/sidebar_view.cpp', 'app/server_rail.cpp', 'app/server_rail_demo.cpp', 'app/server_rail_drag.cpp', 'app/gif_picker.cpp', 'app/user_settings.cpp', 'app/native_controls.cpp', 'app/context_actions.cpp', 'app/client_application.cpp', 'app/image_cache.cpp', 'app/outgoing_messages.cpp', 'app/search_view.cpp', 'app/inbox_view.cpp', 'app/session_store.cpp', 'app/message_layout.cpp', 'api/client.cpp', 'api/rest_restrictions.cpp', 'api/models.cpp', 'api/settings.cpp', 'api/gifs.cpp', 'api/read_state.cpp', 'api/user_directory.cpp', 'api/actions.cpp', 'api/assets.cpp', 'api/gateway.cpp', 'api/uploads.cpp', 'auth/browser_login.cpp', 'auth/credentials.cpp', 'auth/secret_service.cpp', 'media/animation.cpp'],
 )
 install_subdir('assets',
   install_dir: get_option('datadir') / 'cressida',
@@ -179,6 +185,11 @@ install_subdir('assets',
 install_data('LICENSE', 'third_party/wuffs/LICENSE-APACHE', 'third_party/wuffs/LICENSE-MIT',
   install_dir: get_option('datadir') / 'licenses/cressida',
 )
+
+log_test = executable('log_test', 'tests/log_test.cpp', dependencies: log_dep)
+test('log', log_test)
+request_diagnostics_test = executable('request_diagnostics_test', 'tests/request_diagnostics_test.cpp', dependencies: log_dep)
+test('request_diagnostics', request_diagnostics_test)
 
 # Reuse upstream regression coverage for the copied text and image paths.
 foreach name : ['cairo_text_renderer', 'image_orientation', 'image_file_loader_data_uri']
@@ -206,6 +217,9 @@ client_test = executable('discord_client_test', 'tests/discord_client_test.cpp',
 test('discord_client', client_test)
 test('client_help', client, args: ['--help'])
 test('client_version', client, args: ['--version'])
+test('client_log_level_help', client, args: ['--log-level', 'debug', '--help'])
+test('client_log_level_invalid', client, args: ['--log-level', 'invalid'], should_fail: true)
+test('client_log_level_missing', client, args: ['--log-level'], should_fail: true)
 test('client_start_minimized_help', client, args: ['--start-minimized', '--help'])
 test('client_start_minimized_version', client, args: ['--start-minimized', '--start-minimized', '--version'])
 test('client_start_minimized_invalid', client, args: ['--start-minimized=true'], should_fail: true)

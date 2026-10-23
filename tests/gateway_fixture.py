@@ -238,7 +238,7 @@ def serve(listener, errors):
             # Keep the peer open until the client has drained the final data;
             # closing during a subscription/heartbeat write can reset TCP first.
             assert wait_for(connection, 1)["d"] == 12
-            frame(connection, struct.pack("!H", 4002), opcode=8)
+            frame(connection, struct.pack("!H", 4002) + b"synthetic-private-close-reason", opcode=8)
         listener.settimeout(3)
         with upgrade(listener, "/resume?v=9&encoding=json") as connection:
             assert wait_for(connection, 6)["d"]["seq"] == 12
@@ -263,8 +263,11 @@ with socket.socket() as listener:
     thread.join(timeout=1)
     if errors:
         raise errors[0]
-    assert re.search(r"gateway close=4002 ready=1 phase=ready recent_opcodes=\[(?:\d+,){0,7}\d+\]", result.stderr), "decode closes need bounded numeric opcode context"
-    assert "synthetic-token" not in result.stderr, "Gateway diagnostics must not disclose credentials"
+    assert re.search(r"Reconnect scheduled reason=peer-close close_code=4002 phase=ready resumable=true backoff_ms=\d+ recent_opcodes=\[(?:\d+,){0,7}\d+\]", result.stderr), "decode closes need bounded numeric opcode context and paced recovery"
+    assert re.search(r"Connection rejected close_code=4004 authentication_failed=true phase=ready recent_opcodes=\[(?:\d+,){0,7}\d+\]", result.stderr), "authentication failures need numeric close context"
+    assert "Session established action=ready" in result.stderr and "Session established action=resumed" in result.stderr, "normal lifecycle diagnostics are visible without debug or file setup"
+    for private in ("synthetic-token", "synthetic-session", "synthetic-private-close-reason", "working", "127.0.0.1"):
+        assert private not in result.stderr, "Gateway diagnostics must not disclose credentials, state, peer reasons or URLs"
     if result.returncode:
         sys.stderr.write(result.stderr)
     sys.exit(result.returncode)

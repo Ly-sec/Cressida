@@ -29,7 +29,7 @@ namespace text {
     const bool firstTime = !registeredFontFiles().contains(pathStr);
     if (firstTime) {
       if (!FcConfigAppFontAddFile(nullptr, reinterpret_cast<const FcChar8*>(pathStr.c_str()))) {
-        kLog.warn("failed to register font file: {}", pathStr);
+        kLog.warn("failed to register font file");
         return {};
       }
       registeredFontFiles().insert(pathStr);
@@ -43,13 +43,13 @@ namespace text {
         FcStrSetDestroy(dirs);
       if (fontSet)
         FcFontSetDestroy(fontSet);
-      kLog.warn("failed to allocate font scan state for: {}", pathStr);
+      kLog.warn("failed to allocate font scan state");
       return {};
     }
 
     if (!FcFileScan(fontSet, dirs, nullptr, nullptr, reinterpret_cast<const FcChar8*>(pathStr.c_str()), FcTrue)
         || fontSet->nfont <= 0) {
-      kLog.warn("failed to query font family from: {}", pathStr);
+      kLog.warn("failed to query font family");
       FcStrSetDestroy(dirs);
       FcFontSetDestroy(fontSet);
       return {};

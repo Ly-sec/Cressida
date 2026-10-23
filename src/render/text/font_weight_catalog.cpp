@@ -143,7 +143,7 @@ namespace text {
         if (fonts != nullptr) {
           FcFontSetDestroy(fonts);
         }
-        kLog.debug("no fontconfig faces for family '{}'; exposing regular weight only", queryFamily);
+        kLog.debug("no fontconfig faces for selected family; exposing regular weight only");
         entry.weights = {FontWeight::Normal};
         return entry;
       }

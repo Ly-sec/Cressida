@@ -2,10 +2,10 @@
 
 #include "api/gateway_pacing.h"
 #include "api/network_profile.h"
+#include "core/log.h"
 
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
 #include <curl/curl.h>
 #include <curl/websockets.h>
 #include <deque>
@@ -21,6 +21,7 @@ namespace api {
     using namespace std::chrono_literals;
     using Json = nlohmann::json;
     using Clock = std::chrono::steady_clock;
+    const Logger gatewayLog("gateway");
     constexpr std::string_view gatewayQuery = "?v=9&encoding=json";
 
     enum class IdentifyCapability : std::uint64_t {
@@ -325,6 +326,10 @@ namespace api {
         continue;
       reconnectBudget.connecting(Clock::now());
       std::string failure = "Live connection interrupted";
+      const char* phase = "connect";
+      const char* failureKind = "transport";
+      unsigned diagnosticCloseCode = 0;
+      gatewayLog.info("Connection starting resumable={}", resumable);
       try {
         std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curl(curl_easy_init(), curl_easy_cleanup);
         if (!curl)
@@ -354,6 +359,8 @@ namespace api {
         if (connected != CURLE_OK)
           throw GatewayFailure(std::string("Gateway connection failed: ") + curl_easy_strerror(connected));
         const auto connectedAt = Clock::now();
+        phase = "hello";
+        gatewayLog.info("Transport connected");
         std::string message, subscribedGuild;
         std::uint64_t subscription = 0, presenceVersion = 0;
         auto subscribedAt = Clock::time_point{};
@@ -363,8 +370,10 @@ namespace api {
         while (!connection.cancelled()) {
           const auto now = Clock::now();
           if (now >= heartbeatAt) {
-            if (!hello || awaitingAck)
+            if (!hello || awaitingAck) {
+              failureKind = "heartbeat-timeout";
               throw GatewayFailure("Gateway heartbeat timed out");
+            }
             send(curl.get(), Json{{"op", 1}, {"d", sequence < 0 ? Json(nullptr) : Json(sequence)}}, connection);
             awaitingAck = true;
             heartbeatAt = now + interval;
@@ -547,21 +556,8 @@ namespace api {
             const unsigned closeCode = count >= 2
                 ? (static_cast<unsigned char>(buffer[0]) << 8) | static_cast<unsigned char>(buffer[1])
                 : 1000;
-            if (closeCode == 4002) {
-              std::string recent;
-              for (const auto opcode : connection.recentOpcodes) {
-                if (!recent.empty())
-                  recent += ',';
-                recent += std::to_string(opcode);
-              }
-              const auto* phase = !hello ? "hello" : ready ? "ready" : resumeId.empty() ? "identify" : "resume";
-              // Fixed phases and numeric opcodes only: never print a packet,
-              // its IDs, credentials, custom status or server close reason.
-              std::fprintf(
-                  stderr, "[network] gateway close=4002 ready=%d phase=%s recent_opcodes=[%s]\n", ready ? 1 : 0, phase,
-                  recent.c_str()
-              );
-            }
+            diagnosticCloseCode = closeCode;
+            failureKind = "peer-close";
             if (closeCode == 4008)
               retryCause = gateway_pacing::Failure::RateLimited;
             authenticationFailed = closeCode == 4004;
@@ -600,12 +596,16 @@ namespace api {
             hello = true;
             interval = std::chrono::milliseconds(std::clamp(data.value("heartbeat_interval", 30000), 1000, 120000));
             heartbeatAt = Clock::now() + gateway_pacing::heartbeatDelay(interval, random());
-            if (!resumeId.empty() && sequence >= 0)
+            if (!resumeId.empty() && sequence >= 0) {
+              phase = "resume";
+              gatewayLog.debug("Handshake action=resume");
               send(
                   curl.get(), Json{{"op", 6}, {"d", {{"token", token}, {"session_id", resumeId}, {"seq", sequence}}}},
                   connection
               );
-            else {
+            } else {
+              phase = "identify";
+              gatewayLog.debug("Handshake action=identify");
               reconnectBudget.identifying(Clock::now());
               send(
                   curl.get(),
@@ -634,9 +634,12 @@ namespace api {
             send(curl.get(), Json{{"op", 1}, {"d", sequence < 0 ? Json(nullptr) : Json(sequence)}}, connection);
             awaitingAck = true;
           } else if (op == 7) {
+            failureKind = "peer-reconnect";
             retryCause = gateway_pacing::Failure::Handoff;
             throw GatewayFailure("Gateway requested reconnect");
           } else if (op == 9) {
+            failureKind = "invalid-session";
+            gatewayLog.warn("Session invalidated resumable={} phase={}", data.is_boolean() && data.get<bool>(), phase);
             retryCause = gateway_pacing::Failure::InvalidSession;
             if (!data.is_boolean() || !data.get<bool>()) {
               resumeId.clear();
@@ -648,6 +651,11 @@ namespace api {
             const auto type = packet.value("t", std::string{});
             if (type == "READY" || type == "RESUMED") {
               network_profile::elapsed("gateway", "ready", connectedAt);
+              phase = "ready";
+              gatewayLog.info(
+                  "Session established action={} duration_ms={}", type == "READY" ? "ready" : "resumed",
+                  std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - connectedAt).count()
+              );
               std::lock_guard lock(m_mutex);
               m_memberRequested.clear();
             }
@@ -683,8 +691,24 @@ namespace api {
         }
       } catch (const GatewayFailure& error) {
         failure = error.what();
-      } catch (...) { /* Payloads and transport diagnostics may contain credentials. */
+      } catch (...) { // Exception details can contain private packet or transport data.
+        failureKind = "protocol";
       }
+      if (connection.cancelled()) {
+        gatewayLog.debug("Connection cancelled phase={}", phase);
+        continue;
+      }
+      std::string recent;
+      for (const auto opcode : connection.recentOpcodes) {
+        if (!recent.empty())
+          recent += ',';
+        recent += std::to_string(opcode);
+      }
+      if (fatal)
+        gatewayLog.error(
+            "Connection rejected close_code={} authentication_failed={} phase={} recent_opcodes=[{}]",
+            diagnosticCloseCode, authenticationFailed, phase, recent
+        );
       if (!connection.cancelled())
         m_dispatch(
             session, fatal ? "CONNECTION_FAILED" : "RECONNECTING",
@@ -702,6 +726,13 @@ namespace api {
           now, retryCause, readyAt == Clock::time_point{} ? Clock::duration{} : now - readyAt, random()
       );
       handoff = retryCause == gateway_pacing::Failure::Handoff;
+      const bool canResume = !resumeId.empty() && sequence >= 0;
+      const auto nextConnection = std::max(retryAt, reconnectBudget.ready(now, canResume, handoff));
+      gatewayLog.warn(
+          "Reconnect scheduled reason={} close_code={} phase={} resumable={} backoff_ms={} recent_opcodes=[{}]",
+          failureKind, diagnosticCloseCode, phase, canResume,
+          std::max<std::int64_t>(0, std::chrono::ceil<std::chrono::milliseconds>(nextConnection - now).count()), recent
+      );
     }
   }
 } // namespace api

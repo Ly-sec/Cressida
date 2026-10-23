@@ -3,57 +3,41 @@
 #include "core/environment.h"
 
 #include <algorithm>
+#include <atomic>
+#include <cerrno>
 #include <chrono>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
+#include <fcntl.h>
 #include <filesystem>
 #include <mutex>
 #include <string>
-#include <system_error>
+#include <sys/file.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace {
+  constexpr std::size_t maximumLogBytes = 1024 * 1024;
+  constexpr std::size_t maximumLineBytes = 8 * 1024;
+  constexpr std::size_t maximumSectionBytes = 64;
+  constexpr std::size_t bufferedLines = 64;
+  constexpr auto flushInterval = std::chrono::milliseconds(500);
+  constexpr const char* levelEnvironment = "CRESSIDA_LOG_LEVEL";
+  constexpr const char* currentFilename = "cressida.log";
+  constexpr const char* backupFilename = "cressida.log.1";
+  constexpr const char* lockFilename = ".lock";
+  std::atomic<LogLevel> minimumLevel{LogLevel::Info};
+  std::atomic<bool> fileActive{false};
+  std::mutex logMutex;
+  FILE* logFile = nullptr;
+  int directoryFd = -1, lockFd = -1;
+  std::size_t logSize = 0, pendingLines = 0;
+  auto lastFlush = std::chrono::steady_clock::now();
+  bool exitRegistered = false;
 
-  LogLevel gMinLevel = LogLevel::Info;
-  FILE* gLogFile = nullptr;
-  std::mutex gLogMutex;
-  std::string gLogPath;
-  std::string gBackupLogPath;
-  std::uintmax_t gLogSizeBytes = 0;
-  std::size_t gBufferedFileLogLines = 0;
-  std::chrono::steady_clock::time_point gLastFileFlushAt = std::chrono::steady_clock::now();
-  bool gRegisteredExitFlush = false;
-
-  constexpr std::size_t kMaxLogBytes = 1 * 1024 * 1024; // 1 MB
-  constexpr std::size_t kMaxLogLineBytes = 8 * 1024;    // 8 KiB
-  constexpr std::size_t kBufferedFileLogFlushLines = 64;
-  constexpr auto kBufferedFileLogFlushInterval = std::chrono::milliseconds(500);
-  constexpr const char* kLogLevelEnv = "CRESSIDA_LOG_LEVEL";
-
-  struct CappedLogMessage {
-    std::string storage;
-    std::string_view original;
-    bool capped = false;
-
-    [[nodiscard]] std::string_view text() const noexcept { return capped ? std::string_view(storage) : original; }
-  };
-
-  const char* levelTagAnsi(LogLevel level) {
-    switch (level) {
-    case LogLevel::Debug:
-      return "\033[36mDBG\033[0m";
-    case LogLevel::Info:
-      return "\033[32mINF\033[0m";
-    case LogLevel::Warn:
-      return "\033[33mWRN\033[0m";
-    case LogLevel::Error:
-      return "\033[31mERR\033[0m";
-    }
-    return "???";
-  }
-
-  const char* levelTagPlain(LogLevel level) {
+  const char* levelTag(LogLevel level) {
     switch (level) {
     case LogLevel::Debug:
       return "DBG";
@@ -67,181 +51,142 @@ namespace {
     return "???";
   }
 
-  std::size_t utf8PrefixBoundary(std::string_view text, std::size_t maxBytes) {
-    if (maxBytes >= text.size()) {
-      return text.size();
-    }
-
-    std::size_t end = maxBytes;
-    while (end > 0 && (static_cast<unsigned char>(text[end]) & 0xC0U) == 0x80U) {
-      --end;
-    }
-    return end;
+  std::size_t utf8Boundary(std::string_view value, std::size_t length) {
+    if (length >= value.size())
+      return value.size();
+    while (length && (static_cast<unsigned char>(value[length]) & 0xc0U) == 0x80U)
+      --length;
+    return length;
   }
 
-  std::string truncationSuffix(std::size_t originalBytes) {
-    return std::string(" ... [truncated, original=") + std::to_string(originalBytes) + " bytes]";
-  }
-
-  CappedLogMessage capMessageForLine(std::string_view msg, std::size_t prefixBytes) {
-    CappedLogMessage result;
-    result.original = msg;
-
-    if (prefixBytes + 1 >= kMaxLogLineBytes) {
-      result.capped = true;
-      return result;
+  std::string singleLine(std::string_view value, std::size_t limit) {
+    std::string result;
+    result.reserve(std::min(value.size(), limit));
+    constexpr char hex[] = "0123456789abcdef";
+    std::size_t at = 0;
+    while (at < value.size() && result.size() <= limit) {
+      const auto byte = static_cast<unsigned char>(value[at++]);
+      if (byte == '\n')
+        result += "\\n";
+      else if (byte == '\r')
+        result += "\\r";
+      else if (byte == '\t')
+        result += "\\t";
+      else if (byte < 0x20U || byte == 0x7fU) {
+        result += "\\x";
+        result += hex[byte >> 4];
+        result += hex[byte & 0xfU];
+      } else
+        result += static_cast<char>(byte);
     }
-
-    const std::size_t maxMessageBytes = kMaxLogLineBytes - prefixBytes - 1;
-    if (msg.size() <= maxMessageBytes) {
-      return result;
+    if (at < value.size() || result.size() > limit) {
+      const auto suffix = std::format(" ... [truncated, original={} bytes]", value.size());
+      const auto keep = limit > suffix.size() ? utf8Boundary(result, limit - suffix.size()) : 0;
+      result.resize(keep);
+      result += std::string_view(suffix).substr(0, limit - keep);
     }
-
-    result.capped = true;
-
-    std::string suffix = truncationSuffix(msg.size());
-    if (suffix.size() > maxMessageBytes) {
-      constexpr std::string_view kShortSuffix = " ... [truncated]";
-      result.storage = std::string(kShortSuffix.substr(0, std::min(kShortSuffix.size(), maxMessageBytes)));
-      return result;
-    }
-
-    const std::size_t bodyBytes = utf8PrefixBoundary(msg, maxMessageBytes - suffix.size());
-    result.storage.reserve(bodyBytes + suffix.size());
-    result.storage.append(msg.substr(0, bodyBytes));
-    result.storage.append(suffix);
     return result;
   }
 
-  std::size_t formattedPrefixLength(int length, std::size_t bufferSize) {
-    if (length <= 0 || bufferSize == 0) {
-      return 0;
-    }
-    return std::min(static_cast<std::size_t>(length), bufferSize - 1);
-  }
-
-  std::string consolePrefix(const std::tm& tm, const std::timespec& ts, LogLevel level, const char* section) {
-    char buffer[96];
-    const int length = std::snprintf(
-        buffer, sizeof(buffer), "%02d:%02d:%02d.%03ld [%s]", tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec / 1'000'000,
-        levelTagAnsi(level)
+  std::string prefix(LogLevel level, const char* section, bool file, bool color) {
+    std::timespec ts{};
+    std::timespec_get(&ts, TIME_UTC);
+    std::tm time{};
+    localtime_r(&ts.tv_sec, &time);
+    char timestamp[64];
+    if (file)
+      std::snprintf(
+          timestamp, sizeof(timestamp), "%04d-%02d-%02d %02d:%02d:%02d.%03ld", time.tm_year + 1900, time.tm_mon + 1,
+          time.tm_mday, time.tm_hour, time.tm_min, time.tm_sec, ts.tv_nsec / 1'000'000
+      );
+    else
+      std::snprintf(
+          timestamp, sizeof(timestamp), "%02d:%02d:%02d.%03ld", time.tm_hour, time.tm_min, time.tm_sec,
+          ts.tv_nsec / 1'000'000
+      );
+    const char* ansi = level == LogLevel::Error ? "\033[31m"
+        : level == LogLevel::Warn               ? "\033[33m"
+        : level == LogLevel::Info               ? "\033[32m"
+                                                : "\033[36m";
+    auto result = std::format(
+        "{} [{}{}{}] [pid={}]", timestamp, color ? ansi : "", levelTag(level), color ? "\033[0m" : "", getpid()
     );
-
-    std::string prefix(buffer, formattedPrefixLength(length, sizeof(buffer)));
-    if (section != nullptr && section[0] != '\0') {
-      prefix += " [\033[34m";
-      prefix += section;
-      prefix += "\033[0m]";
+    if (section && *section) {
+      const auto available = std::string_view(section, strnlen(section, maximumSectionBytes + 1));
+      const auto length = utf8Boundary(available, maximumSectionBytes);
+      result += std::format(" [{}]", singleLine(available.substr(0, length), maximumSectionBytes));
     }
-    prefix += ' ';
-    return prefix;
+    result += ' ';
+    return result;
   }
 
-  std::string filePrefix(const std::tm& tm, const std::timespec& ts, LogLevel level, const char* section) {
-    char buffer[128];
-    const int length = std::snprintf(
-        buffer, sizeof(buffer), "%04d-%02d-%02d %02d:%02d:%02d.%03ld [%s]", tm.tm_year + 1900, tm.tm_mon + 1,
-        tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec / 1'000'000, levelTagPlain(level)
-    );
-
-    std::string prefix(buffer, formattedPrefixLength(length, sizeof(buffer)));
-    if (section != nullptr && section[0] != '\0') {
-      prefix += " [";
-      prefix += section;
-      prefix += ']';
+  void closeFileUnlocked() {
+    fileActive.store(false, std::memory_order_relaxed);
+    if (logFile) {
+      std::fclose(logFile);
+      logFile = nullptr;
     }
-    prefix += ' ';
-    return prefix;
   }
-
-  std::size_t writeLine(FILE* stream, std::string_view prefix, std::string_view msg) {
-    if (stream == nullptr) {
-      return 0;
-    }
-
-    std::size_t bytes = 0;
-    if (!prefix.empty()) {
-      bytes += std::fwrite(prefix.data(), 1, prefix.size(), stream);
-    }
-    if (!msg.empty()) {
-      bytes += std::fwrite(msg.data(), 1, msg.size(), stream);
-    }
-    if (std::fputc('\n', stream) != EOF) {
-      ++bytes;
-    }
-    return bytes;
+  void closeAllUnlocked() {
+    closeFileUnlocked();
+    if (lockFd >= 0)
+      ::close(lockFd);
+    if (directoryFd >= 0)
+      ::close(directoryFd);
+    lockFd = directoryFd = -1;
   }
-
-  void flushLogFileUnlocked() {
-    if (gLogFile == nullptr) {
-      return;
-    }
-    std::fflush(gLogFile);
-    gBufferedFileLogLines = 0;
-    gLastFileFlushAt = std::chrono::steady_clock::now();
-  }
-
-  void flushLogFileAtExit() {
-    std::scoped_lock lock(gLogMutex);
-    flushLogFileUnlocked();
-  }
-
-  bool shouldFlushLogFile(LogLevel level) {
-    if (level >= LogLevel::Warn) {
+  bool flushUnlocked() {
+    if (!logFile)
       return true;
+    if (std::fflush(logFile) != 0) {
+      closeFileUnlocked();
+      std::fputs("[logging] File output failed; continuing with terminal logging.\n", stderr);
+      return false;
     }
-
-    ++gBufferedFileLogLines;
-    const auto now = std::chrono::steady_clock::now();
-    return gBufferedFileLogLines >= kBufferedFileLogFlushLines
-        || now - gLastFileFlushAt >= kBufferedFileLogFlushInterval;
+    pendingLines = 0;
+    lastFlush = std::chrono::steady_clock::now();
+    return true;
   }
-
-  void closeLogFileUnlocked() {
-    if (gLogFile == nullptr) {
-      return;
+  int openPrivateFile(const char* filename) {
+    const auto fd =
+        ::openat(directoryFd, filename, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 0600);
+    if (fd < 0)
+      return -1;
+    struct stat info{};
+    if (::fstat(fd, &info) != 0
+        || !S_ISREG(info.st_mode)
+        || info.st_uid != ::geteuid()
+        || info.st_nlink != 1
+        || ::fchmod(fd, 0600) != 0) {
+      ::close(fd);
+      return -1;
     }
-
-    std::fflush(gLogFile);
-    std::fclose(gLogFile);
-    gLogFile = nullptr;
+    return fd;
   }
-
-  std::uintmax_t currentLogFileSizeUnlocked() {
-    if (gLogPath.empty()) {
-      return 0;
+  bool openFileUnlocked() {
+    const auto fd = openPrivateFile(currentFilename);
+    if (fd < 0)
+      return false;
+    struct stat info{};
+    if (::fstat(fd, &info) != 0) {
+      ::close(fd);
+      return false;
     }
-
-    std::error_code ec;
-    const auto size = std::filesystem::file_size(gLogPath, ec);
-    return ec ? 0 : size;
-  }
-
-  void openLogFileUnlocked() {
-    if (gLogPath.empty()) {
-      return;
+    logFile = ::fdopen(fd, "a");
+    if (!logFile) {
+      ::close(fd);
+      return false;
     }
-
-    gLogFile = std::fopen(gLogPath.c_str(), "a");
-    gLogSizeBytes = gLogFile == nullptr ? 0 : currentLogFileSizeUnlocked();
-    gBufferedFileLogLines = 0;
-    gLastFileFlushAt = std::chrono::steady_clock::now();
+    logSize = static_cast<std::size_t>(info.st_size);
+    pendingLines = 0;
+    lastFlush = std::chrono::steady_clock::now();
+    fileActive.store(true, std::memory_order_relaxed);
+    return true;
   }
-
-  void rotateLogFileUnlocked() {
-    closeLogFileUnlocked();
-
-    if (gLogPath.empty() || gBackupLogPath.empty()) {
-      return;
-    }
-
-    std::error_code ec;
-    std::filesystem::remove(gBackupLogPath, ec);
-    ec.clear();
-    std::filesystem::rename(gLogPath, gBackupLogPath, ec);
-    openLogFileUnlocked();
+  bool rotateUnlocked() {
+    closeFileUnlocked();
+    return ::renameat(directoryFd, currentFilename, directoryFd, backupFilename) == 0 && openFileUnlocked();
   }
-
 } // namespace
 
 std::string_view logLevelName(LogLevel level) {
@@ -257,120 +202,115 @@ std::string_view logLevelName(LogLevel level) {
   }
   return "unknown";
 }
-
 std::optional<LogLevel> parseLogLevel(std::string_view value) {
-  if (value == "debug") {
+  if (value == "debug")
     return LogLevel::Debug;
-  }
-  if (value == "info") {
+  if (value == "info")
     return LogLevel::Info;
-  }
-  if (value == "warn") {
+  if (value == "warn")
     return LogLevel::Warn;
-  }
-  if (value == "error") {
+  if (value == "error")
     return LogLevel::Error;
-  }
   return std::nullopt;
+}
+LogLevel currentLogLevel() { return minimumLevel.load(std::memory_order_relaxed); }
+void setLogLevel(LogLevel level) { minimumLevel.store(level, std::memory_order_relaxed); }
+void initLogLevelFromEnvironment() {
+  const auto* value = cressida::environment(levelEnvironment, "DISCORD_CPP_LOG_LEVEL");
+  if (!value)
+    return;
+  if (const auto level = parseLogLevel(value))
+    setLogLevel(*level);
+  else
+    logWarn("invalid {}; expected debug, info, warn, or error", levelEnvironment);
 }
 
 void initLogFile() {
-  const char* cacheHome = std::getenv("XDG_CACHE_HOME");
-  const char* home = std::getenv("HOME");
-
-  std::string dir;
-  if (cacheHome != nullptr && cacheHome[0] != '\0') {
-    dir = std::string(cacheHome) + "/cressida";
-  } else if (home != nullptr && home[0] != '\0') {
-    dir = std::string(home) + "/.cache/cressida";
-  } else {
-    return; // no writable location available
+  const auto* base = std::getenv("XDG_CACHE_HOME");
+  std::filesystem::path directory;
+  if (base && *base && std::filesystem::path(base).is_absolute())
+    directory = std::filesystem::path(base) / "cressida/logs";
+  else if (const auto* home = std::getenv("HOME"); home && *home && std::filesystem::path(home).is_absolute())
+    directory = std::filesystem::path(home) / ".cache/cressida/logs";
+  const char* failure = nullptr;
+  {
+    std::scoped_lock lock(logMutex);
+    closeAllUnlocked();
+    std::error_code error;
+    if (!directory.empty())
+      std::filesystem::create_directories(directory, error);
+    if (directory.empty() || error)
+      failure = "cache-directory";
+    else {
+      directoryFd = ::open(directory.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+      struct stat info{};
+      if (directoryFd < 0
+          || ::fstat(directoryFd, &info) != 0
+          || info.st_uid != ::geteuid()
+          || ::fchmod(directoryFd, 0700) != 0)
+        failure = "private-directory";
+      else if ((lockFd = openPrivateFile(lockFilename)) < 0)
+        failure = "lock-file";
+      else if (::flock(lockFd, LOCK_EX | LOCK_NB) != 0)
+        failure = "another-instance-owns-log";
+      else if (!openFileUnlocked())
+        failure = "open-file";
+      else if (logSize >= maximumLogBytes && !rotateUnlocked())
+        failure = "rotation";
+    }
+    if (failure)
+      closeAllUnlocked();
+    else if (!exitRegistered) {
+      std::atexit(closeLogFile);
+      exitRegistered = true;
+    }
   }
-
-  std::error_code ec;
-  std::filesystem::create_directories(dir, ec);
-  if (ec) {
-    return;
-  }
-
-  const std::string logPath = dir + "/cressida.log";
-  const std::string backupPath = dir + "/cressida.log.1";
-
-  std::scoped_lock lock(gLogMutex);
-  closeLogFileUnlocked();
-  gLogPath = logPath;
-  gBackupLogPath = backupPath;
-
-  const auto size = std::filesystem::file_size(gLogPath, ec);
-  if (!ec && size > kMaxLogBytes) {
-    rotateLogFileUnlocked();
-  } else {
-    openLogFileUnlocked();
-  }
-
-  if (gLogFile != nullptr && !gRegisteredExitFlush) {
-    (void)std::atexit(flushLogFileAtExit);
-    gRegisteredExitFlush = true;
-  }
+  if (failure)
+    Logger("logging").warn("file logging unavailable stage={}; using terminal logging", failure);
+}
+void flushLogFile() {
+  std::scoped_lock lock(logMutex);
+  flushUnlocked();
+}
+void closeLogFile() {
+  std::scoped_lock lock(logMutex);
+  closeAllUnlocked();
 }
 
 namespace detail {
-
+  bool logEnabled(LogLevel level) noexcept {
+    return level >= minimumLevel.load(std::memory_order_relaxed) || fileActive.load(std::memory_order_relaxed);
+  }
   void logMessage(LogLevel level, const char* section, std::string_view msg) {
-    std::timespec ts{};
-    std::timespec_get(&ts, TIME_UTC);
-    std::tm tm{};
-    localtime_r(&ts.tv_sec, &tm);
-
-    std::scoped_lock lock(gLogMutex);
-
-    // Console: respects gMinLevel, ANSI colours, time only
-    if (level >= gMinLevel) {
-      const std::string prefix = consolePrefix(tm, ts, level, section);
-      const CappedLogMessage capped = capMessageForLine(msg, prefix.size());
-      (void)writeLine(stderr, prefix, capped.text());
+    if (!logEnabled(level))
+      return;
+    std::scoped_lock lock(logMutex);
+    if (level >= minimumLevel.load(std::memory_order_relaxed)) {
+      const auto heading = prefix(level, section, false, ::isatty(STDERR_FILENO) && !std::getenv("NO_COLOR"));
+      const auto body = singleLine(msg, maximumLineBytes - heading.size() - 1);
+      std::fwrite(heading.data(), 1, heading.size(), stderr);
+      std::fwrite(body.data(), 1, body.size(), stderr);
+      std::fputc('\n', stderr);
     }
-
-    // File: always unfiltered, no ANSI, full date for context
-    if (gLogFile != nullptr) {
-      const std::string prefix = filePrefix(tm, ts, level, section);
-      const CappedLogMessage capped = capMessageForLine(msg, prefix.size());
-      const std::string_view cappedText = capped.text();
-      const std::uintmax_t lineBytes = prefix.size() + cappedText.size() + 1;
-      if (gLogSizeBytes > 0 && gLogSizeBytes + lineBytes > kMaxLogBytes) {
-        rotateLogFileUnlocked();
-      }
-      gLogSizeBytes += writeLine(gLogFile, prefix, cappedText);
-      if (shouldFlushLogFile(level)) {
-        flushLogFileUnlocked();
-      }
+    if (!logFile)
+      return;
+    const auto heading = prefix(level, section, true, false);
+    const auto body = singleLine(msg, maximumLineBytes - heading.size() - 1);
+    const auto line = heading + body + '\n';
+    if (logSize + line.size() > maximumLogBytes && !rotateUnlocked()) {
+      std::fputs("[logging] Log rotation failed; continuing with terminal logging.\n", stderr);
+      return;
     }
+    const auto written = std::fwrite(line.data(), 1, line.size(), logFile);
+    logSize += written;
+    if (written != line.size()) {
+      closeFileUnlocked();
+      std::fputs("[logging] File output failed; continuing with terminal logging.\n", stderr);
+      return;
+    }
+    if (level >= LogLevel::Warn
+        || ++pendingLines >= bufferedLines
+        || std::chrono::steady_clock::now() - lastFlush >= flushInterval)
+      flushUnlocked();
   }
-
 } // namespace detail
-
-LogLevel currentLogLevel() {
-  std::scoped_lock lock(gLogMutex);
-  return gMinLevel;
-}
-
-void setLogLevel(LogLevel level) {
-  std::scoped_lock lock(gLogMutex);
-  gMinLevel = level;
-}
-
-void initLogLevelFromEnvironment() {
-  const char* value = cressida::environment(kLogLevelEnv, "DISCORD_CPP_LOG_LEVEL");
-  if (value == nullptr) {
-    return;
-  }
-
-  const auto level = parseLogLevel(value);
-  if (!level.has_value()) {
-    logWarn("invalid {} '{}'; expected debug, info, warn, or error", kLogLevelEnv, value);
-    return;
-  }
-
-  setLogLevel(*level);
-  logInfo("log level set to {}", logLevelName(*level));
-}

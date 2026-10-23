@@ -553,8 +553,8 @@ LayoutSize Label::measureWithConstraints(Renderer& renderer, const LayoutConstra
     m_measuredLineCount = metrics.lineCount;
   } else if (m_measuredLineCount > 0 && metrics.lineCount != m_measuredLineCount) {
     kLog.warn(
-        "label '{}': line count changed between measure ({}) and arrange ({}); wrap budgets diverged", m_plainText,
-        m_measuredLineCount, metrics.lineCount
+        "label line count changed between measure ({}) and arrange ({}); wrap budgets diverged", m_measuredLineCount,
+        metrics.lineCount
     );
   }
   // Single- vs multi-line is decided by the measured layout, not by the requested

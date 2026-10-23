@@ -5,8 +5,10 @@
 #include "api/models.h"
 #include "app/font_catalog.h"
 #include "app/theme_catalog.h"
+#include "core/log.h"
 
 #include <algorithm>
+#include <atomic>
 #include <charconv>
 #include <cmath>
 #include <cstdlib>
@@ -19,6 +21,26 @@
 
 namespace app {
   namespace {
+    constexpr Logger logger{"session"};
+    enum class StateFailure : unsigned {
+      Open,
+      Read,
+      Size,
+      Parse,
+      Inspect,
+      Directory,
+      Write,
+      Temporary,
+      Permissions,
+      Close,
+      Commit
+    };
+    void stateFailure(StateFailure failure, const char* stage) {
+      static std::atomic_uint reported = 0;
+      const auto bit = 1U << static_cast<unsigned>(failure);
+      if (!(reported.fetch_or(bit, std::memory_order_relaxed) & bit))
+        logger.warn("local state failed stage={} repeated_warnings=suppressed", stage);
+    }
     nlohmann::json appearance(const Preferences& preferences) {
       return {
           {"theme", validColorMode(preferences.theme) ? preferences.theme : "dark"},
@@ -39,29 +61,59 @@ namespace app {
     }
     nlohmann::json read(const std::filesystem::path& path) {
       std::ifstream file(path, std::ios::binary);
+      if (!file.is_open()) {
+        std::error_code error;
+        if (std::filesystem::exists(path, error) || error)
+          stateFailure(StateFailure::Open, "read-open");
+        else {
+          static std::atomic_flag reported = ATOMIC_FLAG_INIT;
+          if (!reported.test_and_set(std::memory_order_relaxed))
+            logger.debug("local state absent; using defaults");
+        }
+        return nlohmann::json::object();
+      }
       std::string bytes(65537, '\0');
       file.read(bytes.data(), bytes.size());
       bytes.resize(file.gcount());
-      if (bytes.size() > 65536)
+      if (file.bad())
+        stateFailure(StateFailure::Read, "read");
+      if (bytes.size() > 65536) {
+        stateFailure(StateFailure::Size, "read-limit");
         return nlohmann::json::object();
+      }
       auto value = nlohmann::json::parse(bytes, nullptr, false);
+      if (!value.is_object())
+        stateFailure(StateFailure::Parse, "parse");
       return value.is_object() ? value : nlohmann::json::object();
     }
     nlohmann::json readState(const std::filesystem::path& path, const std::filesystem::path& legacy) {
       // The new file is authoritative, even when empty or damaged. Only fall
       // back before the first save; keep the previous installation's file intact.
-      if (legacy.empty() || std::filesystem::exists(path))
-        return read(path);
-      return read(legacy);
+      try {
+        if (legacy.empty() || std::filesystem::exists(path))
+          return read(path);
+        return read(legacy);
+      } catch (const std::filesystem::filesystem_error&) {
+        stateFailure(StateFailure::Inspect, "inspect");
+        throw;
+      }
     }
     void writeState(const std::filesystem::path& path, const nlohmann::json& value) {
       const auto bytes = value.dump();
-      std::filesystem::create_directories(path.parent_path());
+      try {
+        std::filesystem::create_directories(path.parent_path());
+      } catch (const std::filesystem::filesystem_error&) {
+        stateFailure(StateFailure::Directory, "write-directory");
+        throw;
+      }
       std::string temporary = (path.parent_path() / ".session-XXXXXX").string();
       const int fd = mkstemp(temporary.data());
-      if (fd < 0)
+      if (fd < 0) {
+        stateFailure(StateFailure::Temporary, "write-open");
         return;
-      fchmod(fd, 0600);
+      }
+      if (fchmod(fd, 0600) != 0)
+        stateFailure(StateFailure::Permissions, "write-permissions");
       std::size_t written = 0;
       while (written < bytes.size()) {
         const auto count = write(fd, bytes.data() + written, bytes.size() - written);
@@ -69,13 +121,16 @@ namespace app {
           break;
         written += count;
       }
-      close(fd);
+      if (close(fd) != 0)
+        stateFailure(StateFailure::Close, "write-close");
       if (written == bytes.size()) {
         std::error_code error;
         std::filesystem::rename(temporary, path, error);
         if (!error)
           return;
-      }
+        stateFailure(StateFailure::Commit, "write-commit");
+      } else
+        stateFailure(StateFailure::Write, "write");
       unlink(temporary.c_str());
     }
   } // namespace

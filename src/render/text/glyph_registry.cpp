@@ -165,14 +165,14 @@ const std::unordered_map<std::string, std::string_view> kAliases = {
     const std::filesystem::path path = paths::assetPath("fonts/tabler.json");
     std::ifstream file(path);
     if (!file.is_open()) {
-      kLog.warn("failed to open Tabler glyph metadata: {}", path.string());
+      kLog.warn("failed to open bundled glyph metadata");
       return icons;
     }
 
     try {
       const auto root = nlohmann::json::parse(file);
       if (!root.is_object()) {
-        kLog.warn("Tabler glyph metadata is not an object: {}", path.string());
+        kLog.warn("bundled glyph metadata is not an object");
         return icons;
       }
 
@@ -200,9 +200,9 @@ const std::unordered_map<std::string, std::string_view> kAliases = {
           );
         }
       }
-      kLog.debug("loaded {} Tabler glyph names from {}", icons.size(), path.string());
-    } catch (const nlohmann::json::exception& e) {
-      kLog.warn("failed to parse Tabler glyph metadata '{}': {}", path.string(), e.what());
+      kLog.debug("loaded {} bundled glyph names", icons.size());
+    } catch (const nlohmann::json::exception&) {
+      kLog.warn("failed to parse bundled glyph metadata");
     }
     return icons;
   }
@@ -253,7 +253,7 @@ char32_t GlyphRegistry::lookup(std::string_view name) {
       return it->second;
     }
 
-    kLog.warn("missing Tabler glyph '{}' for alias '{}'", alias->second, name);
+    kLog.warn("missing bundled glyph for alias");
     return kMissingGlyph;
   }
 
@@ -262,7 +262,7 @@ char32_t GlyphRegistry::lookup(std::string_view name) {
     return it->second;
   }
 
-  kLog.warn("missing glyph: {}", name);
+  kLog.warn("missing glyph");
   return kMissingGlyph;
 }
 

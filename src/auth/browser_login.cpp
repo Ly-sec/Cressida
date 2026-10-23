@@ -1,5 +1,7 @@
 #include "auth/browser_login.h"
 
+#include "core/log.h"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -26,6 +28,7 @@ extern char** environ;
 
 namespace auth {
   namespace {
+    constexpr Logger logger{"browser-login"};
     using namespace std::chrono_literals;
     using Json = nlohmann::json;
     struct Socket {
@@ -295,27 +298,35 @@ namespace auth {
 
   bool BrowserLogin::start() {
     cancel();
+    logger.debug("sign-in starting");
+    const auto fail = [](const char* stage) {
+      logger.warn("sign-in setup failed stage={}", stage);
+      return false;
+    };
     auto key = randomKey();
     if (!key)
-      return false;
+      return fail("randomness");
     Socket listener{socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0)};
     if (listener.fd < 0)
-      return false;
+      return fail("listener-create");
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    if (bind(listener.fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0 || listen(listener.fd, 8) != 0)
-      return false;
+    if (bind(listener.fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0)
+      return fail("listener-bind");
+    if (listen(listener.fd, 8) != 0)
+      return fail("listener-listen");
     socklen_t length = sizeof(address);
     if (getsockname(listener.fd, reinterpret_cast<sockaddr*>(&address), &length) != 0)
-      return false;
+      return fail("listener-address");
     const auto port = ntohs(address.sin_port);
     const std::string handoff = "/handoff?rpc=" + std::to_string(port) + "&key=" + *key;
     // Login handles passwords, MFA and CAPTCHA on Discord's own origin, then returns to handoff.
     // RPC's browser module reads its port when loaded, before the SPA redirects.
     const std::string url = "https://discord.com/login?redirect_to=" + encode(handoff) + "&rpc=" + std::to_string(port);
     if (!m_opener(url))
-      return false;
+      return fail("browser-open");
+    logger.info("waiting for browser sign-in");
     m_active = true;
     m_worker = std::jthread([this, fd = listener.fd, port, key = std::move(*key)](std::stop_token stop) mutable {
       run(stop, fd, port, std::move(key));
@@ -342,11 +353,19 @@ namespace auth {
           break;
         }
       }
-      if (result.handoffToken.empty() && result.error.empty())
+      if (result.handoffToken.empty() && result.error.empty()) {
         result.error = "Browser sign-in timed out. Please try again.";
+        if (!stop.stop_requested())
+          logger.warn("sign-in failed stage=handoff-timeout");
+      } else if (!stop.stop_requested())
+        logger.debug("browser handoff received outcome={}", result.error.empty() ? "ready" : "sign-in-required");
     } catch (...) {
       result = {{}, {}, "Could not complete browser sign-in. Please try again."};
+      if (!stop.stop_requested())
+        logger.warn("sign-in failed stage=handoff-processing");
     }
+    if (stop.stop_requested())
+      logger.debug("sign-in cancelled");
     if (!stop.stop_requested()) {
       std::lock_guard lock(m_mutex);
       m_result = std::move(result);

@@ -911,6 +911,176 @@ int main(int argc, char** argv) {
         code.boxes.size() == 1 && !code.boxes.front().inlineCode && code.runs.back().style.size == 14,
         "Fenced code retains its full-sized font and separate block decoration"
     );
+    const auto checkFencedBody = [&](std::string_view input, std::string_view body, float width = 240) {
+      auto result = app::layoutMessage(input, width, editMeasure);
+      if (result.boxes.size() != 1 || result.boxes.front().inlineCode || result.boxes.front().code != body)
+        std::cerr
+            << "Fence input: "
+            << nlohmann::json(input)
+            << "\nExpected code: "
+            << nlohmann::json(body)
+            << "\nActual code: "
+            << (result.boxes.empty() ? nlohmann::json(nullptr) : nlohmann::json(result.boxes.front().code))
+            << '\n';
+      require(
+          result.boxes.size() == 1 && !result.boxes.front().inlineCode && result.boxes.front().code == body,
+          "Chat fences preserve every original code byte for the code-copy action"
+      );
+      require(result.plainText.contains(body), "The full fenced body remains available to text selection");
+      for (const auto& run : result.runs)
+        require(
+            result.plainText.substr(run.offset, run.text.size()) == run.text,
+            "Fenced text fragments retain UTF-8 byte selection offsets after wrapping"
+        );
+      return result;
+    };
+    constexpr std::string_view terminalBody =
+        "❯ sudo dnf in libdave-devel                                                     2.4s\n"
+        "Updating and loading repositories:\n"
+        "Repositories loaded.\n"
+        "Failed to resolve the transaction:\n"
+        "No match for argument: libdave-devel\n"
+        "You can try to add to command line:\n"
+        "  --skip-unavailable to skip unavailable packages\n"
+        "aditya@adi-fedora ~ [1]\n"
+        "❯                                                                               1.2s";
+    for (const float width : {240.F, 1200.F}) {
+      const auto terminal = checkFencedBody("```" + std::string(terminalBody) + "```", terminalBody, width);
+      require(
+          terminal.plainText.starts_with("code❯ sudo dnf in libdave-devel")
+              && terminal.plainText.ends_with("1.2s\n")
+              && !terminal.plainText.contains("```"),
+          "Same-line terminal fences retain the command and timings instead of treating them as metadata"
+      );
+    }
+    checkFencedBody("```echo hello```", "echo hello");
+    checkFencedBody("__before__ <@1> ```<@1> __literal__ ||secret||``` **after**", "<@1> __literal__ ||secret||");
+    checkFencedBody("```sudo dnf in libdave-devel\noutput```", "sudo dnf in libdave-devel\noutput");
+    checkFencedBody("```❯ sudo dnf in libdave-devel\noutput", "❯ sudo dnf in libdave-devel\noutput");
+    checkFencedBody("```future_lang\noutput", "output\n");
+    checkFencedBody("```text output\nfirst\n```", "text output\nfirst\n");
+    const auto slashLanguage = checkFencedBody("```text/plain\nfirst\n```", "first\n");
+    require(slashLanguage.plainText.starts_with("text/plain"), "Single-word ASCII language labels retain punctuation");
+    checkFencedBody("```sh\nprintf '%s' `literal`\nlast```", "printf '%s' `literal`\nlast");
+    const auto crlfFence = app::layoutMessage("```\r\nfirst\r\nlast```", 240, editMeasure);
+    require(
+        crlfFence.boxes.size() == 1
+            && crlfFence.boxes.front().code == "first\r\nlast"
+            && crlfFence.plainText.contains("first\nlast"),
+        "Code copy preserves original CRLF bytes while rendered line endings use plain-text newlines"
+    );
+    const auto unknownLanguage = checkFencedBody("```future_lang\n**literal**\n```", "**literal**\n");
+    require(
+        unknownLanguage.plainText.starts_with("future_lang")
+            && std::ranges::none_of(unknownLanguage.runs, [](const auto& run) { return run.style.bold; }),
+        "Canonical unknown language headers remain headers and code contents remain literal"
+    );
+    checkFencedBody(
+        "````\nconst char* value = \"```\";\n`one` and ``two``\n````",
+        "const char* value = \"```\";\n`one` and ``two``\n"
+    );
+    checkFencedBody("```cpp\nconst char* value = \"```\";\n```", "const char* value = \"```\";\n");
+    const auto tildeLiteral = app::layoutMessage("~~~text\n```echo hello```\n~~~", 400, editMeasure);
+    require(
+        std::ranges::none_of(tildeLiteral.boxes, [](const auto& box) { return !box.inlineCode; })
+            && tildeLiteral.plainText.contains("echo hello"),
+        "Existing tilde and strike syntax does not create new nested backtick blocks"
+    );
+    const auto nestedFence =
+        app::layoutMessage("> ```future_lang\n> one\n> ```\n\n- ```text\n  two\n  ```", 400, editMeasure);
+    require(
+        std::ranges::any_of(nestedFence.boxes, [](const auto& box) { return box.code == "one\n"; })
+            && std::ranges::any_of(nestedFence.boxes, [](const auto& box) { return box.code == "two\n"; }),
+        "Canonical quote and list fences keep parser-owned indentation handling"
+    );
+    const auto inlineQuoteFence = app::layoutMessage("> ```echo hello``` ", 400, editMeasure);
+    require(
+        inlineQuoteFence.plainText == "echo hello\n"
+            && std::ranges::any_of(inlineQuoteFence.boxes, [](const auto& box) { return box.quote; })
+            && std::ranges::any_of(inlineQuoteFence.boxes, [](const auto& box) { return box.inlineCode; })
+            && std::ranges::none_of(inlineQuoteFence.boxes, [](const auto& box) { return !box.code.empty(); }),
+        "Touching fences inside quotes retain the existing quote container and inline code treatment"
+    );
+    const auto inlineListFence = app::layoutMessage("- ```echo hello``` ", 400, editMeasure);
+    require(
+        inlineListFence.plainText == "• echo hello\n"
+            && std::ranges::any_of(inlineListFence.boxes, [](const auto& box) { return box.inlineCode; })
+            && std::ranges::none_of(inlineListFence.boxes, [](const auto& box) { return !box.code.empty(); }),
+        "Touching fences inside lists retain the existing list marker and inline code treatment"
+    );
+    for (const auto input :
+         {"``literal ``` marker``", "\\`\\`\\`echo hello\\`\\`\\`", "    ```echo hello```", "\t```echo hello```"}) {
+      const auto literal = app::layoutMessage(input, 600, editMeasure);
+      require(
+          std::ranges::none_of(literal.boxes, [](const auto& box) { return !box.inlineCode; }),
+          "Inline, escaped and indented literal backticks never become a new fenced block"
+      );
+      require(
+          literal.plainText.contains("echo hello") || literal.plainText.contains("literal ``` marker"),
+          "Literal backtick content remains readable"
+      );
+    }
+    const auto numericPrefix = app::layoutMessage("123```cpp\ncode\n```", 400, editMeasure);
+    require(
+        numericPrefix.boxes.size() == 1
+            && numericPrefix.boxes.front().code == "code\n"
+            && numericPrefix.plainText.starts_with("123\ncppcode"),
+        "A numeric prose prefix does not masquerade as a numbered-list fence marker"
+    );
+    const auto openInline = app::layoutMessage("before ```unfinished", 400, editMeasure);
+    require(
+        openInline.boxes.empty() && openInline.plainText == "before ```unfinished\n",
+        "Unmatched mid-prose backticks remain literal text"
+    );
+    const auto surrounding = app::layoutMessage(
+        "before ```echo hello``` **after** [same](https://example.com/x) [same](https://example.com/x)", 180,
+        editMeasure
+    );
+    if (surrounding.plainText != "before\ncodeecho hello\nafter same same\n")
+      std::cerr << "Surrounding text: " << nlohmann::json(surrounding.plainText) << '\n';
+    require(
+        surrounding.plainText == "before\ncodeecho hello\nafter same same\n"
+            && std::ranges::any_of(
+                surrounding.runs, [](const auto& run) { return run.text == "after" && run.style.bold; }
+            ),
+        "Moving chat fences onto parser block boundaries preserves surrounding text and formatting"
+    );
+    std::vector<std::size_t> followingLinks;
+    for (const auto& run : surrounding.runs) {
+      require(
+          surrounding.plainText.substr(run.offset, run.text.size()) == run.text,
+          "Text after a normalized fence retains correct selection offsets"
+      );
+      if (!run.style.link.empty())
+        followingLinks.push_back(run.style.linkId);
+    }
+    require(
+        followingLinks.size() == 2 && followingLinks.front() != followingLinks.back(),
+        "Separate links after a chat fence retain independent hover identities"
+    );
+    const auto multiple = app::layoutMessage("```one``` between ```two words``` after", 300, editMeasure);
+    require(
+        multiple.boxes.size() == 2
+            && multiple.boxes[0].code == "one"
+            && multiple.boxes[1].code == "two words"
+            && multiple.plainText.contains("between")
+            && multiple.plainText.ends_with("after\n"),
+        "Multiple same-line fences keep independent bodies and following prose"
+    );
+    const auto placeholderLanguage =
+        app::layoutMessage("```cressida-code\noriginal\n```\n```echo hello```", 300, editMeasure);
+    require(
+        placeholderLanguage.boxes.size() == 2
+            && placeholderLanguage.boxes[0].code == "original\n"
+            && placeholderLanguage.boxes[1].code == "echo hello",
+        "A user language label cannot collide with private fence-body metadata"
+    );
+    const auto blankFence = app::layoutMessage("before\n\n```echo hello```\n\nafter", 400, editMeasure);
+    const auto canonicalBlankFence = app::layoutMessage("before\n\n```\necho hello\n```\n\nafter", 400, editMeasure);
+    require(
+        blankFence.plainText == canonicalBlankFence.plainText && blankFence.height == canonicalBlankFence.height,
+        "Synthetic fence boundaries do not introduce copied or visible blank lines"
+    );
     const auto checkTokens = [&](std::string_view language, std::string_view source,
                                  std::initializer_list<std::pair<std::string_view, app::CodeToken>> expected) {
       const auto spans = app::highlightCode(source, language);

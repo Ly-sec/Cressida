@@ -925,7 +925,10 @@ namespace api {
     for (auto& [index, row] : m_rows)
       if (!row.groupId.empty())
         row.count = m_groupCounts.contains(row.groupId) ? m_groupCounts.at(row.groupId) : -1;
-    auto parse = [&](const nlohmann::json& item, int index) {
+    auto parse = [&](const nlohmann::json& item, int index, const MemberRow* previous = nullptr) {
+      const bool hasGroup = item.contains("group"), hasMember = item.contains("member");
+      if (!item.is_object() || hasGroup == hasMember || !item.at(hasGroup ? "group" : "member").is_object())
+        throw std::runtime_error("Member list item is not a member or group");
       MemberRow row;
       row.index = index;
       if (item.contains("group")) {
@@ -945,20 +948,42 @@ namespace api {
         if (member.contains("user"))
           row.user = parseAccount(member.at("user"));
         else {
-          const auto userId = text(member, "user_id");
-          if (users.contains(userId))
+          const auto userId = member.contains("user_id") ? text(member, "user_id")
+              : previous                                 ? previous->user.id
+                                                         : std::string{};
+          if (!validSnowflake(userId))
+            throw std::runtime_error("Member update has no usable identity");
+          if (previous && previous->user.id == userId)
+            row.user = previous->user;
+          else if (users.contains(userId))
             row.user = users.at(userId);
           else
             row.user = {userId, "Unknown user", avatarPath(nlohmann::json{{"id", userId}})};
         }
-        row.user.name = text(member, "nick", row.user.name);
+        if (previous && !row.user.id.empty() && previous->user.id == row.user.id)
+          row.status = previous->status;
+        if (const auto nickname = member.find("nick"); nickname != member.end() && nickname->is_null()) {
+          row.user.name = row.user.displayName.empty() ? row.user.username : row.user.displayName;
+          if (row.user.name.empty()) {
+            const auto global = users.find(row.user.id);
+            row.user.name =
+                global != users.end() && !global->second.name.empty() ? global->second.name : "Unknown user";
+          }
+        } else
+          row.user.name = text(member, "nick", row.user.name);
         if (member.contains("presence") && member["presence"].is_object())
           row.status = text(member["presence"], "status", "offline");
       }
       return row;
     };
-    if (!update.contains("ops") || !update["ops"].is_array())
+    const auto prune = [&] {
+      if (groupSnapshot)
+        m_rows.erase(m_rows.lower_bound(total), m_rows.end());
+    };
+    if (!update.contains("ops") || !update["ops"].is_array()) {
+      prune();
       return;
+    }
     for (const auto& op : update["ops"]) {
       const auto type = text(op, "op");
       if (type == "SYNC" || type == "INVALIDATE") {
@@ -968,24 +993,32 @@ namespace api {
         const int first = range[0].get<int>(), last = range[1].get<int>();
         if (first < 0 || last < first || last - first > 999)
           continue;
-        for (auto it = m_rows.lower_bound(first); it != m_rows.end() && it->first <= last;)
-          it = m_rows.erase(it);
+        std::map<int, MemberRow> synced;
         if (type == "SYNC") {
           int index = first;
           for (const auto& item : op.at("items")) {
             if (index > last)
               break;
-            m_rows[index] = parse(item, index);
+            synced[index] = parse(item, index);
             ++index;
           }
         }
+        // Keep the old range until every incoming member has been parsed.
+        for (auto it = m_rows.lower_bound(first); it != m_rows.end() && it->first <= last;)
+          it = m_rows.erase(it);
+        m_rows.merge(synced);
       } else {
         const int index = op.value("index", -1);
         if (index < 0 || index > 10000000)
           continue;
-        if (type == "UPDATE")
-          m_rows[index] = parse(op.at("item"), index);
+        if (type == "UPDATE") {
+          const auto previous = m_rows.find(index);
+          m_rows[index] = parse(op.at("item"), index, previous == m_rows.end() ? nullptr : &previous->second);
+        }
         if (type == "INSERT" || type == "DELETE") {
+          std::optional<MemberRow> inserted;
+          if (type == "INSERT")
+            inserted = parse(op.at("item"), index);
           std::map<int, MemberRow> shifted;
           for (auto [position, row] : m_rows) {
             if (type == "DELETE" && position == index)
@@ -995,14 +1028,15 @@ namespace api {
             shifted[next] = std::move(row);
           }
           m_rows = std::move(shifted);
-          if (type == "INSERT")
-            m_rows[index] = parse(op.at("item"), index);
+          if (inserted)
+            m_rows[index] = std::move(*inserted);
         }
       }
     }
     while (m_rows.size() > 1000)
       m_rows.erase(m_rows.begin());
-    if (!m_rows.empty())
+    prune();
+    if (!groupSnapshot && !m_rows.empty())
       total = std::max(total, m_rows.rbegin()->first + 1);
   }
 

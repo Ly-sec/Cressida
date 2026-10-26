@@ -26,6 +26,10 @@ Click a voice channel or its phone button to join. The sidebar then provides
 mute, deafen and disconnect controls. See [Voice chat](voice.md) for audio
 settings and current limits.
 
+The member list shows names, avatars and presence indicators, with role or
+status group headings. These details update as changes arrive. Large lists load
+in sections as you scroll.
+
 ## Use folders
 
 Click a folder to expand or collapse it. An expanded folder keeps its servers

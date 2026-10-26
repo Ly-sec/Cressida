@@ -28,6 +28,8 @@ Message times use your system timezone, including daylight-saving changes for
 the date of each message. This applies to chat headers, hover timestamps,
 forwarded messages and message previews. Pinned-message dates also use your
 local calendar day. Consecutive messages start a new group at local midnight.
+For AM/PM times, enable **Use 12-hour clock** in
+[Appearance settings](appearance.md).
 
 ## Search messages
 

@@ -69,6 +69,7 @@ namespace app {
         {"desktop_decorations", &Preferences::desktopDecorations},
         {"convert_emoticons", &Preferences::convertEmoticons},
         {"randomize_media_filenames", &Preferences::randomizeMediaFilenames},
+        {"twelve_hour_clock", &Preferences::twelveHourClock},
         {"show_reactions", &Preferences::showReactions},
         {"show_role_icons", &Preferences::showRoleIcons},
         {"desktop_notifications", &Preferences::desktopNotifications},

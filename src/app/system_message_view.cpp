@@ -145,16 +145,17 @@ namespace app {
       }
     }
     drawMessageStrikes(parent, layout, layout::Chat::authorGutter, y, automod ? foreground : muted);
-    const auto timestamp = formatMessageTime(message.timestamp);
+    const auto timestamp = formatMessageClock(message.timestamp, m_preferences.twelveHourClock);
     if (!layout.runs.empty() && !timestamp.empty()) {
       const auto headerEnd = automod
           ? std::ranges::find_if(layout.runs, [&](const auto& run) { return run.y >= automod->authorTop; })
           : layout.runs.end();
       const auto& last = *(headerEnd == layout.runs.begin() ? headerEnd : std::prev(headerEnd));
+      const auto caption = timestamp + (message.deleted ? " · Deleted" : "");
+      const auto timestampWidth = m_window.target().renderer().measureText(caption, Style::fontSizeDetail).width;
       label(
           parent, 50 + last.x + last.width + Style::spaceCompact, y + last.y + Style::spaceXs,
-          message.deleted ? 120 : 36, timestamp + (message.deleted ? " · Deleted" : ""), Style::fontSizeDetail,
-          message.deleted ? theme::danger : muted
+          timestampWidth + Style::spaceXxs, caption, Style::fontSizeDetail, message.deleted ? theme::danger : muted
       );
     }
     if (automod) {

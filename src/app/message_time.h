@@ -79,6 +79,12 @@ namespace app {
     char buffer[maximumFormattedTimeBytes]{};
     return std::strftime(buffer, sizeof(buffer), format, &*local) ? buffer : "";
   }
+  inline std::string formatMessageClock(std::string_view value, bool twelveHourClock = false) {
+    auto result = formatMessageTime(value, twelveHourClock ? "%I:%M %p" : "%H:%M");
+    if (twelveHourClock && result.starts_with('0'))
+      result.erase(0, 1);
+    return result;
+  }
   inline bool sameLocalMessageDay(
       std::chrono::sys_time<std::chrono::milliseconds> before, std::chrono::sys_time<std::chrono::milliseconds> after
   ) {

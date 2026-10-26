@@ -261,6 +261,8 @@ namespace app {
       result.emojiImageLinks = value.value("emoji_image_links", false);
       if (const auto at = value.find("randomize_media_filenames"); at != value.end() && at->is_boolean())
         result.randomizeMediaFilenames = at->get<bool>();
+      if (const auto at = value.find("twelve_hour_clock"); at != value.end() && at->is_boolean())
+        result.twelveHourClock = at->get<bool>();
       result.logDeletedMessages = value.value("log_deleted_messages", false);
       result.logEditHistory = value.value("log_edit_history", false);
       result.roleColors = value.value("role_colors", true);
@@ -412,6 +414,7 @@ namespace app {
           {"autoplay_gifs", preferences.autoplayGifs},
           {"emoji_image_links", preferences.emojiImageLinks},
           {"randomize_media_filenames", preferences.randomizeMediaFilenames},
+          {"twelve_hour_clock", preferences.twelveHourClock},
           {"log_deleted_messages", preferences.logDeletedMessages},
           {"log_edit_history", preferences.logEditHistory},
           {"role_colors", preferences.roleColors},

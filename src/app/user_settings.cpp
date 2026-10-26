@@ -1055,6 +1055,10 @@ namespace app {
       }
       cursor += ((3 + columns - 1) / columns) * 30 + 8;
       section("Text & interface");
+      toggle(
+          "Use 12-hour clock", m_preferences.twelveHourClock, "twelve_hour_clock",
+          "Show message and inbox times with AM or PM. Times still use your system timezone."
+      );
       const auto family = actionRow("Font family", "Choose an installed font for the interface and messages.");
       rowAction(
           family, Action::Preference, "font-picker",

@@ -211,15 +211,18 @@ namespace app {
             *content, 0, rowY + Style::spaceXxs, layout::Avatar::member, face, author,
             message.authorId.empty() ? user.id : message.authorId
         );
+        const auto timestamp = formatMessageClock(message.timestamp, m_preferences.twelveHourClock);
+        const auto timestampWidth =
+            m_window.target().renderer().measureText(timestamp, Style::fontSizeDetail).width + Style::spaceXxs;
         label(
-            *content, 46, rowY + Style::borderWidth, std::max(1.0F, inner - 94), author, Style::fontSizeCaption,
-            foreground, FontWeight::SemiBold
+            *content, 46, rowY + Style::borderWidth,
+            std::max(Style::borderWidth, inner - Style::spaceGroup - timestampWidth - Style::spaceSm), author,
+            Style::fontSizeCaption, foreground, FontWeight::SemiBold
         );
-        const auto timestamp = formatMessageTime(message.timestamp);
         if (!timestamp.empty())
           label(
-              *content, inner - (Style::spaceSection + Style::spaceXxs), rowY + (Style::spaceXxs + Style::borderWidth),
-              42, timestamp, Style::fontSizeDetail, muted
+              *content, inner - timestampWidth, rowY + (Style::spaceXxs + Style::borderWidth), timestampWidth,
+              timestamp, Style::fontSizeDetail, muted
           );
         label(
             *content, 46, rowY + (Style::spaceXl + Style::borderWidth),

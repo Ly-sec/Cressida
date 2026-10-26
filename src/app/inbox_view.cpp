@@ -1,4 +1,5 @@
 #include "app/client_application.h"
+#include "app/message_time.h"
 #include "app/notification_preview.h"
 #include "app/theme.h"
 #include "core/files/resource_paths.h"
@@ -30,17 +31,9 @@ namespace app {
       }
       return value;
     }
-    std::string readableTime(const std::string& timestamp) {
-      auto* date = g_date_time_new_from_iso8601(timestamp.c_str(), nullptr);
-      if (!date)
-        return "";
-      auto* local = g_date_time_to_local(date);
-      auto* formatted = g_date_time_format(local, "%d %b, %H:%M");
-      std::string result = formatted ? formatted : "";
-      g_free(formatted);
-      g_date_time_unref(local);
-      g_date_time_unref(date);
-      return result;
+    std::string readableTime(const std::string& timestamp, bool twelveHourClock) {
+      const auto clock = formatMessageClock(timestamp, twelveHourClock);
+      return clock.empty() ? "" : formatMessageTime(timestamp, "%d %b, ") + clock;
     }
   } // namespace
 
@@ -932,7 +925,8 @@ namespace app {
         const auto due = api::inboxTime(row.due);
         label(
             *list, layout::Inbox::padding, by, inner - Style::spaceLg * 2,
-            std::string(due && *due <= std::chrono::system_clock::now() ? "Due: " : "Remind: ") + readableTime(row.due),
+            std::string(due && *due <= std::chrono::system_clock::now() ? "Due: " : "Remind: ")
+                + readableTime(row.due, m_preferences.twelveHourClock),
             Style::fontSizeDescription, accent
         );
         by += Style::spaceXl;
@@ -955,7 +949,7 @@ namespace app {
         );
         label(
             *list, inner - Style::spaceSection * 3, by + Style::spaceXxs, Style::spaceSection * 3 - Style::spaceSm,
-            readableTime(row.message->timestamp), Style::fontSizeDetail, muted
+            readableTime(row.message->timestamp, m_preferences.twelveHourClock), Style::fontSizeDetail, muted
         );
         by += Style::spaceXl;
         const float textX = layout::Inbox::bodyLeft;

@@ -38,6 +38,10 @@ Use the available message text and spacing settings to adjust reading comfort.
 Compact mode changes the conversation's presentation. Appearance settings are
 saved per account.
 
+Enable **Use 12-hour clock** in **Appearance** to show message and inbox times
+with AM or PM, such as **2:46 PM**. Turn it off for 24-hour time, such as
+**14:46**. This choice is saved per account and keeps your system timezone.
+
 Text aligns to the display's pixel grid at the current display scale and client
 zoom, including while scrolling. This happens automatically and keeps text sharp
 without changing the layout.

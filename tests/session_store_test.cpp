@@ -41,6 +41,29 @@ int main() {
   };
   try {
     {
+      const auto clockPath = std::filesystem::path(directory) / "clock.json";
+      app::SessionStore store(clockPath);
+      require(!store.preferences("123").twelveHourClock, "The clock defaults to 24-hour time");
+      app::Preferences preferences;
+      preferences.twelveHourClock = true;
+      store.savePreferences("123", preferences);
+      app::SessionStore restarted(clockPath);
+      require(
+          restarted.preferences("123").twelveHourClock
+              && !restarted.preferences("456").twelveHourClock
+              && !restarted.startupPreferences().twelveHourClock,
+          "The 12-hour clock survives restart and stays scoped to its account"
+      );
+      preferences.twelveHourClock = false;
+      restarted.savePreferences("123", preferences);
+      require(!store.preferences("123").twelveHourClock, "The 24-hour clock can be restored");
+      std::ofstream(clockPath) << R"({"123":{"preferences":{"twelve_hour_clock":"yes","theme":"light"}}})";
+      require(
+          !store.preferences("123").twelveHourClock && store.preferences("123").theme == "light",
+          "A malformed clock choice preserves the default and unrelated settings"
+      );
+    }
+    {
       app::SessionStore store(std::filesystem::path(directory) / "cosmetics.json");
       app::Preferences prefs;
       bool app::Preferences::* fields[] = {

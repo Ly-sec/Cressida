@@ -25,6 +25,15 @@ namespace {
 int main() {
   try {
     setTestTimezone("UTC0");
+    require(
+        app::formatMessageClock("2026-10-24T00:05:00Z", true) == "12:05 AM"
+            && app::formatMessageClock("2026-10-24T12:05:00Z", true) == "12:05 PM"
+            && app::formatMessageClock("2026-10-24T09:05:00Z", true) == "9:05 AM"
+            && app::formatMessageClock("2026-10-24T23:59:00Z", true) == "11:59 PM"
+            && app::formatMessageClock("2026-10-24T23:59:00Z", false) == "23:59",
+        "Clock choices distinguish midnight, noon, morning and evening without changing 24-hour output"
+    );
+    require(app::formatMessageClock("invalid", true).empty(), "Invalid timestamps stay empty in 12-hour mode");
     require(app::formatMessageTime("2026-10-24T09:16:12Z") == "09:16", "UTC displays without an offset");
     require(
         app::formatMessageTime("2026-10-24T14:46:12.123456+05:30") == "09:16",
@@ -44,6 +53,10 @@ int main() {
       require(app::formatMessageTime(invalid).empty(), "Invalid times never display a misleading clock value");
 
     setTestTimezone("IST-5:30");
+    require(
+        app::formatMessageClock("2026-10-24T09:16:12Z", true) == "2:46 PM",
+        "The 12-hour clock keeps the system timezone conversion"
+    );
     require(
         app::formatMessageTime("2026-10-24T09:16:12.123456Z") == "14:46",
         "Half-hour system timezones apply to UTC message times"

@@ -47,7 +47,8 @@
     "label": "Make it yours",
     "items": [
       {
-        "slug": "docs/appearance"
+        "slug": "docs/appearance",
+        "label": "Appearance and clock format"
       },
       {
         "slug": "docs/custom-themes"

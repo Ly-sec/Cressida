@@ -338,7 +338,8 @@ namespace app {
                   inkBottom = hasInk ? std::max(inkBottom, last) : last;
                   hasInk = true;
                 }
-              if (text.text() == formatMessageTime(message.timestamp) && text.fontSize() == Style::fontSizeFine) {
+              if (text.text() == formatMessageClock(message.timestamp, m_preferences.twelveHourClock)
+                  && text.fontSize() == Style::fontSizeFine) {
                 timeCenter = (first + last) / 2;
                 hasTime = true;
               }
@@ -565,7 +566,8 @@ namespace app {
             }
           }
           if (node.type() == NodeType::Text
-              && static_cast<const TextNode&>(node).text() == formatMessageTime(m_messages.front().timestamp)
+              && static_cast<const TextNode&>(node).text()
+                  == formatMessageClock(m_messages.front().timestamp, m_preferences.twelveHourClock)
               && node.x() > 300)
             throw std::runtime_error("Message timestamps must follow the author header instead of the right edge");
           for (const auto& child : node.children())
@@ -2744,6 +2746,7 @@ namespace app {
         } else if (view.starts_with("reply-grouping")) {
           m_demoOverlay = view;
           m_showMembers = false;
+          m_preferences.twelveHourClock = view.contains("12h");
           m_preferences.compact = view.find("compact") != std::string::npos;
           if (view.ends_with("light"))
             m_preferences.theme = "light";
@@ -4637,7 +4640,7 @@ namespace app {
               if (!continuation) {
                 const auto author = userName(message.authorId, message.author);
                 const auto authorTag = m_userDirectory.guildTag(message.authorId, message.authorTag);
-                auto timestamp = formatMessageTime(message.timestamp);
+                auto timestamp = formatMessageClock(message.timestamp, m_preferences.twelveHourClock);
                 if (message.deleted)
                   timestamp += timestamp.empty() ? "Deleted" : " · Deleted";
                 const float timestampWidth =
@@ -4732,7 +4735,7 @@ namespace app {
                       message.deleted ? theme::danger : muted
                   );
               } else if (messageHovered) {
-                const auto timestamp = formatMessageTime(message.timestamp);
+                const auto timestamp = formatMessageClock(message.timestamp, m_preferences.twelveHourClock);
                 const auto metrics = m_window.target().renderer().measureText(timestamp, Style::fontSizeFine);
                 label(
                     *messageContent, 0,
@@ -4740,7 +4743,9 @@ namespace app {
                         + layout::Chat::centeredTextTop(
                             continuationLineCenter, metrics.top, metrics.inkTop, metrics.inkBottom
                         ),
-                    layout::Chat::continuationTimestampWidth, timestamp, Style::fontSizeFine, muted
+                    m_preferences.twelveHourClock ? layout::Chat::authorGutter - Style::spaceXxs
+                                                  : layout::Chat::continuationTimestampWidth,
+                    timestamp, Style::fontSizeFine, muted
                 );
               }
               const float bodyY = y + (continuation ? 0 : 18);
@@ -4789,7 +4794,7 @@ namespace app {
                   }
                   if (origin)
                     source = guild->name + " · #" + origin->name;
-                  const auto time = formatMessageTime(card.timestamp);
+                  const auto time = formatMessageClock(card.timestamp, m_preferences.twelveHourClock);
                   if (!time.empty())
                     source += (source.empty() ? "" : " · ") + time;
                   if (!source.empty()) {
@@ -5248,7 +5253,8 @@ namespace app {
             caption = std::to_string(count)
                 + ((!m_history.atLatest() || m_unreadTimeline.estimated(m_messages)) ? "+" : "")
                 + (count == 1 ? " new message" : " new messages");
-            const auto timestamp = formatMessageTime(m_messages[*unreadIndex].timestamp);
+            const auto timestamp =
+                formatMessageClock(m_messages[*unreadIndex].timestamp, m_preferences.twelveHourClock);
             if (!timestamp.empty())
               caption += " since " + timestamp;
           }

@@ -442,6 +442,10 @@ single_instance_test = executable('single_instance_test', 'tests/single_instance
   include_directories: include_directories('src'), dependencies: dependency('threads'))
 test('single_instance', single_instance_test, args: [client], timeout: 30)
 
+voice_command_test = executable('voice_command_test', 'tests/voice_command_test.cpp',
+  include_directories: include_directories('src'))
+test('voice_command', voice_command_test)
+
 voice_audio_test = executable('voice_audio_test', 'tests/voice_audio_test.cpp', dependencies: voice_dep)
 test('voice_audio', voice_audio_test)
 voice_protocol_test = executable('voice_protocol_test', 'tests/voice_protocol_test.cpp', dependencies: voice_dep)

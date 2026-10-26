@@ -1,13 +1,14 @@
 ---
 title: Command-line reference
 description:
-  Launch options for Cressida, including tray startup, separate instances,
-  offline demos and diagnostic logging.
+  Launch options and voice controls for Cressida, including tray startup,
+  separate instances, offline demos and diagnostic logging.
 ---
 
 ```text
 cressida [--new-instance | -n] [--start-minimized] [--demo] [--smoke-test]
          [--token-file PATH] [--log-level LEVEL]
+cressida voice input-mute toggle|on|off
 ```
 
 | Option                 | Behavior                                                                              |
@@ -43,6 +44,35 @@ cressida --log-level debug
 
 Use your desktop's autostart settings to run the minimized command at login.
 Cressida does not enable autostart itself.
+
+## Voice controls
+
+These commands control the ordinary running client without opening or focusing
+its window. They do not start a client or read account tokens. Instances opened
+with **--new-instance** are separate and are not targeted. Use voice commands on
+their own, without launch options; `cressida voice --help` prints their usage.
+
+| Command                            | Action                       |
+| ---------------------------------- | ---------------------------- |
+| `cressida voice input-mute toggle` | Toggle your microphone mute. |
+| `cressida voice input-mute on`     | Mute your microphone.        |
+| `cressida voice input-mute off`    | Unmute your microphone.      |
+
+Input-mute works while an account is signed in, including between calls. Its
+runtime setting is not saved across restarts or sign-ins. Server mute, deafen
+and speaking restrictions still apply.
+
+Commands wait at most two seconds for a reply from the running client:
+
+| Exit status | Meaning                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------- |
+| `0`         | The running client applied the command.                                                   |
+| `1`         | The client is unavailable, the command was rejected or communication failed or timed out. |
+| `2`         | The command syntax is invalid.                                                            |
+
+A timeout does not prove that an action was ignored. Commands are not retried
+automatically. Check your microphone's mute state in the client before repeating
+a toggle.
 
 ## Environment variables
 

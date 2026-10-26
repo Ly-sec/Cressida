@@ -1,6 +1,7 @@
 #include "app/client_application.h"
 #include "app/restart_process.h"
 #include "app/single_instance.h"
+#include "app/voice_command.h"
 #include "core/environment.h"
 #include "core/log.h"
 
@@ -10,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 namespace {
   constexpr Logger kLog("application");
@@ -28,12 +30,14 @@ int main(int argc, char** argv) {
   bool demo = false, smoke = false, startMinimized = false, newInstance = false;
   std::string tokenFile;
   std::optional<LogLevel> consoleLevel;
+  std::optional<app::VoiceCommand> voiceCommand;
   const char* stage = "startup";
   for (int i = 1; i < argc; ++i) {
     const std::string_view arg(argv[i]);
     if (arg == "--help") {
       std::cout << "Cressida\n\nUsage: cressida [--new-instance | -n] [--start-minimized] [--demo] [--smoke-test] "
                    "[--token-file PATH] [--log-level LEVEL]\n"
+                   "       cressida voice input-mute toggle|on|off\n"
                    "--log-level LEVEL sets terminal verbosity: debug, info, warn, error.\n"
                    "Rotating diagnostic files also retain debug details.\n"
                    "\nAccount tokens can also be entered in the window or provided through CRESSIDA_TOKEN.\n"
@@ -43,12 +47,37 @@ int main(int argc, char** argv) {
                    "seconds.\n"
                    "It is ignored in demo and smoke-test modes.\n"
                    "By default, another launch opens or focuses the running client.\n"
-                   "--new-instance, -n opens a separate client. Demo and smoke-test modes always run separately.\n";
+                   "--new-instance, -n opens a separate client. Demo and smoke-test modes always run separately.\n"
+                   "Voice commands control the running ordinary client without opening its window.\n"
+                   "Voice commands cannot be combined with launch options.\n";
       return 0;
     }
     if (arg == "--version") {
       std::cout << "cressida 0.1.0\n";
       return 0;
+    }
+    if (arg == "voice") {
+      if (i != 1) {
+        std::cerr << "Voice commands cannot be combined with launch options. Use --help.\n";
+        return 2;
+      }
+      if (argc == 3 && std::string_view(argv[2]) == "--help") {
+        std::cout << "Usage: cressida voice input-mute toggle|on|off\n"
+                     "\n"
+                     "Commands require an ordinary running client and do not open its window.\n"
+                     "Input mute requires a signed-in account and can be changed between calls.\n";
+        return 0;
+      }
+      std::vector<std::string_view> arguments;
+      for (int index = i; index < argc; ++index)
+        arguments.emplace_back(argv[index]);
+      const auto parsed = app::parseVoiceCommand(arguments);
+      if (!parsed) {
+        std::cerr << parsed.error() << '\n';
+        return 2;
+      }
+      voiceCommand = *parsed;
+      break;
     }
     if (arg == "--demo")
       demo = true;
@@ -74,6 +103,11 @@ int main(int argc, char** argv) {
   }
   std::unique_ptr<LogLifetime> logging;
   try {
+    if (voiceCommand) {
+      const auto result = app::SingleInstance::sendVoice(*voiceCommand);
+      (result.applied() ? std::cout : std::cerr) << result.message << '\n';
+      return result.applied() ? 0 : 1;
+    }
     int result;
     bool restart;
     {

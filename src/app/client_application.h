@@ -36,6 +36,7 @@
 #include "app/user_account_view.h"
 #include "app/user_settings_form.h"
 #include "app/user_settings_lists.h"
+#include "app/voice_command.h"
 #include "app/window.h"
 #include "app/window_icons.h"
 #include "auth/browser_login.h"
@@ -781,6 +782,7 @@ namespace app {
     void drawVoiceSettings(UserSettingsForm& form);
     void drawVoiceBar(Node& root, float windowHeight);
     void voiceAction(const std::string& action);
+    std::expected<std::string, std::string> applyVoiceCommand(VoiceCommand command);
     void configureVoice();
     void voiceTick();
     void releasePushToTalk();

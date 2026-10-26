@@ -1,5 +1,6 @@
 #include "app/client_application.h"
 #include "app/theme.h"
+#include "app/voice_command.h"
 #include "render/scene/rect_node.h"
 #include "render/scene/text_node.h"
 #include "ui/controls/select.h"
@@ -11,6 +12,7 @@
 #include <linux/input-event-codes.h>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
+#include <utility>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
 namespace app {
@@ -126,6 +128,10 @@ namespace app {
       require(!isSelectDropdownOpen() && m_settingsOpen, "Choosing a voice option closes only its dropdown");
     };
     const auto ptt = [&] { m_window.key({.symbol = XKB_KEY_space, .control = true, .shift = true}); };
+    const auto command = [&](VoiceCommand value) {
+      const auto result = applyVoiceCommand(value);
+      require(result.has_value(), "The voice command succeeds for the current account and call state");
+    };
     const auto speakingVisible = [&] {
       bool ring = false, name = false;
       const auto inspect = [&](auto&& self, const Node& node, float x, float y) -> void {
@@ -155,6 +161,27 @@ namespace app {
     switch (step) {
     case 0:
       require(m_settingsOpen && m_settingsPage == "voice", "The voice replay starts on its native settings page");
+      {
+        const auto account = std::exchange(m_account.id, {});
+        require(
+            !applyVoiceCommand(VoiceCommand::InputMuteToggle)
+                && !applyVoiceCommand(VoiceCommand::InputMuteOn)
+                && !applyVoiceCommand(VoiceCommand::InputMuteOff)
+                && !m_voiceMuted,
+            "Mute commands cannot change microphone state without a signed-in account"
+        );
+        m_account.id = account;
+      }
+      command(VoiceCommand::InputMuteOn);
+      command(VoiceCommand::InputMuteOn);
+      require(m_voiceMuted, "Repeated explicit mute commands remain muted before joining a call");
+      command(VoiceCommand::InputMuteOff);
+      command(VoiceCommand::InputMuteOff);
+      require(!m_voiceMuted, "Repeated explicit unmute commands remain unmuted before joining a call");
+      command(VoiceCommand::InputMuteToggle);
+      require(m_voiceMuted, "The mute toggle changes the current account's local state");
+      command(VoiceCommand::InputMuteToggle);
+      require(!m_voiceMuted, "A second mute toggle restores the original local state");
       require(
           static_cast<Select*>(widget("user-account-select:voice-input"))->selectedIndex() == 0,
           "Input starts with the system default"
@@ -285,6 +312,20 @@ namespace app {
               "Every voice action stays inside its shared bar bounds"
           );
       }
+      ptt();
+      require(m_voicePtt, "The configured shortcut opens native push to talk");
+      command(VoiceCommand::InputMuteOn);
+      command(VoiceCommand::InputMuteOn);
+      require(
+          m_voiceMuted && m_voiceState.muted && !m_voicePtt,
+          "An idempotent mute command mutes the current call and releases a native held key"
+      );
+      command(VoiceCommand::InputMuteOff);
+      require(!m_voiceMuted && !m_voiceState.muted, "An explicit unmute command restores the call's local input state");
+      ptt();
+      require(m_voicePtt, "Native push to talk can be pressed after an explicit unmute");
+      command(VoiceCommand::InputMuteOff);
+      require(!m_voicePtt && !m_voiceMuted, "An idempotent unmute command also releases a native held key");
       clickAction(Action::VoiceAction, "mute");
       require(m_voiceMuted && m_voiceState.muted, "The native mute control updates the joined conversation");
       clickAction(Action::VoiceAction, "deafen");
@@ -311,7 +352,7 @@ namespace app {
           "The voice-bar settings control preserves the joined conversation"
       );
       ptt();
-      require(!m_voicePtt, "Covered settings controls cannot activate push to talk");
+      require(!m_voicePtt, "Covered settings controls cannot activate native push to talk");
       break;
     case 11:
       require(
@@ -332,7 +373,7 @@ namespace app {
       clickAction(Action::VoiceAction, "leave");
       require(
           !voiceBarVisible() && !m_voicePtt && m_voiceState.phase == voice::Phase::Disconnected,
-          "The native disconnect control retires the voice state and held shortcut"
+          "The native disconnect control retires the call and held shortcut"
       );
       clickAction(Action::Channel, "101");
       require(
@@ -361,6 +402,11 @@ namespace app {
           connected && alone && !speakingVisible(),
           "A lone connected member sees an explicit alone state without a stuck server message"
       );
+      m_window.focusChanged(true);
+      ptt();
+      require(m_voicePtt, "The native shortcut also works in a joined solo channel");
+      command(VoiceCommand::InputMuteOff);
+      require(!m_voicePtt && !m_voiceMuted, "A mute command releases the native shortcut in a solo call");
       clickAction(Action::VoiceAction, "leave");
       break;
     }

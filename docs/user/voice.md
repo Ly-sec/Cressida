@@ -28,7 +28,8 @@ settings or disconnect. Mute and deafen stay highlighted while active. The phone
 button at the upper right disconnects the call. Hover over the connection status
 to see the full channel and server name. Deafening stops both microphone
 transmission and received call audio. Changing the selected text conversation
-does not leave your call.
+does not leave your call. You can also change microphone mute using the
+[voice control commands](command-line.md#voice-controls).
 
 ## Choose devices and volume
 
@@ -55,13 +56,13 @@ Under **Microphone activation**, choose an **Input mode**:
 - **Push to talk** sends audio while you hold **Ctrl+Shift+Space**. Change this
   shortcut under **Keybinds**.
 
-Push to talk works only while Cressida has keyboard focus. Releasing the
-shortcut, switching to another window or hiding Cressida releases it. It is not
-a desktop-wide shortcut.
+The built-in shortcut works while Cressida has keyboard focus. Releasing the
+shortcut, switching to another window, opening settings or hiding Cressida
+releases that hold.
 
 With voice activity selected, a connected call continues when the window is
-hidden in the tray. Use **Mute microphone** or **Disconnect voice** before
-hiding the window when you want to stop transmitting.
+hidden in the tray. Use **Mute microphone** or **Disconnect voice** when you
+want to stop transmitting.
 
 ## Test your microphone
 

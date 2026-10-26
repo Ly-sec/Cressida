@@ -20,6 +20,25 @@ namespace app {
     m_voicePttKey = 0;
     configureVoice();
   }
+  std::expected<std::string, std::string> ClientApplication::applyVoiceCommand(VoiceCommand command) {
+    if (m_account.id.empty())
+      return std::unexpected("Sign in to Cressida before using voice controls.");
+    switch (command) {
+    case VoiceCommand::InputMuteToggle:
+    case VoiceCommand::InputMuteOn:
+    case VoiceCommand::InputMuteOff:
+      m_voiceMuted = command == VoiceCommand::InputMuteToggle ? !m_voiceMuted : command == VoiceCommand::InputMuteOn;
+      releasePushToTalk();
+      m_voiceState.muted = m_voiceMuted;
+      configureVoice();
+      m_window.invalidate();
+      return m_voiceMuted   ? "Microphone muted."
+          : m_voiceDeafened ? "Microphone unmuted; deafening still blocks transmission."
+                            : "Microphone unmuted.";
+    default:
+      return std::unexpected("Unknown voice command.");
+    }
+  }
   void ClientApplication::configureVoice() {
     if (m_demo)
       return;
@@ -43,6 +62,7 @@ namespace app {
             || m_voiceState.phase == voice::Phase::WaitingForParticipants
             || m_voiceState.phase == voice::Phase::Securing)) {
       m_client.leaveVoice();
+      releasePushToTalk();
       m_voiceState.phase = voice::Phase::Failed;
       m_voiceState.error = state.error;
     }
@@ -139,6 +159,7 @@ namespace app {
           if (m_voiceState.phase != voice::Phase::Connecting && m_voiceState.phase != voice::Phase::Securing)
             return;
           m_client.leaveVoice();
+          releasePushToTalk();
           m_voiceState.phase = voice::Phase::Failed;
           m_voiceState.error = "Voice connection timed out. Join again to retry.";
           m_window.invalidate();

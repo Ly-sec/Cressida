@@ -6645,9 +6645,16 @@ namespace app {
 
   void ClientApplication::tick() {
     voiceTick();
-    if (m_instance)
+    if (m_instance) {
       if (auto activation = m_instance->poll())
         trayEvent({.command = TrayCommand::Open, .activationToken = std::move(*activation)});
+      for (const auto& request : m_instance->pollVoice()) {
+        if (!m_instance->voicePending(request))
+          continue;
+        const auto result = applyVoiceCommand(request.command);
+        m_instance->replyVoice(request, result.has_value(), result ? *result : result.error());
+      }
+    }
     while (auto event = m_tray.poll())
       trayEvent(std::move(*event));
     if (m_demo && m_demoOverlay.starts_with("tray-") && !m_window.visible())
@@ -6771,10 +6778,19 @@ namespace app {
         continue;
       if (event.operation == api::Operation::VoiceRoster && event.voiceRoster) {
         m_voiceRoster.apply(*event.voiceRoster);
+        for (const auto& member : m_voiceRoster.members(m_voiceGuild, m_voiceState.channel))
+          if (member.user == m_account.id && (member.muted || member.deafened || member.suppressed))
+            releasePushToTalk();
         m_window.invalidate();
         continue;
       }
       if (event.operation == api::Operation::Voice && event.voice) {
+        if (event.voice->phase == voice::Phase::Disconnected
+            || event.voice->phase == voice::Phase::Failed
+            || event.voice->channel != m_voiceState.channel
+            || event.voice->muted
+            || event.voice->deafened)
+          releasePushToTalk();
         if (event.voice->phase != voice::Phase::Disconnected || m_voiceState.phase != voice::Phase::Failed)
           m_voiceState = std::move(*event.voice);
         if (m_voiceState.phase == voice::Phase::Connected

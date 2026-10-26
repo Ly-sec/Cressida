@@ -1,12 +1,14 @@
 #include "app/desktop_activation.h"
 #include "app/single_instance.h"
 
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <fcntl.h>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <limits>
 #include <poll.h>
@@ -16,7 +18,9 @@
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
+#include <vector>
 
 namespace {
   void require(bool value, const char* reason) {
@@ -56,6 +60,57 @@ namespace {
     ::close(fd);
     require(count == static_cast<ssize_t>(data.size()), "Send the complete test activation");
   }
+  std::uint64_t milliseconds() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+  }
+  std::string voicePacket(
+      std::string nonce, std::string action = "input-mute toggle", std::uint64_t expires = milliseconds() + 1500
+  ) {
+    return "Cressida.Voice/1\n" + nonce + '\n' + std::to_string(expires) + '\n' + action;
+  }
+  struct VoicePeer {
+    int fd = -1;
+    explicit VoicePeer(const Runtime& runtime) {
+      fd = ::socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+      require(fd >= 0, "Create a voice command peer");
+      sockaddr_un source{};
+      source.sun_family = AF_UNIX;
+      require(
+          ::bind(fd, reinterpret_cast<const sockaddr*>(&source), offsetof(sockaddr_un, sun_path)) == 0,
+          "Allocate an ephemeral reply address without creating a file"
+      );
+      sockaddr_un target{};
+      target.sun_family = AF_UNIX;
+      const auto path = (runtime.path / "cressida/instance.sock").string();
+      require(path.size() < sizeof(target.sun_path), "The voice fixture endpoint fits");
+      path.copy(target.sun_path, sizeof(target.sun_path) - 1);
+      require(
+          ::connect(fd, reinterpret_cast<const sockaddr*>(&target), offsetof(sockaddr_un, sun_path) + path.size() + 1)
+              == 0,
+          "Connect the voice peer to the owner"
+      );
+    }
+    ~VoicePeer() { ::close(fd); }
+    void send(const std::string& bytes) const {
+      require(
+          ::send(fd, bytes.data(), bytes.size(), MSG_NOSIGNAL) == static_cast<ssize_t>(bytes.size()),
+          "Send a bounded synthetic voice request"
+      );
+    }
+    std::string reply() const {
+      pollfd ready{fd, POLLIN, 0};
+      require(::poll(&ready, 1, 1000) == 1, "A reply arrives within its deadline");
+      std::array<char, 1024> bytes{};
+      const auto count = ::recv(fd, bytes.data(), bytes.size(), MSG_DONTWAIT);
+      require(count > 0, "Receive the voice acknowledgement");
+      return {bytes.data(), static_cast<std::size_t>(count)};
+    }
+  };
+  void ready(const app::SingleInstance& owner) {
+    pollfd descriptor{owner.eventFd(), POLLIN, 0};
+    require(::poll(&descriptor, 1, 1500) == 1, "A voice request wakes the native event loop");
+  }
   int wait(pid_t child) {
     int status = 0;
     require(::waitpid(child, &status, 0) == child && WIFEXITED(status), "The child exits normally");
@@ -85,6 +140,31 @@ namespace {
     }
     return wait(child);
   }
+  pid_t launchVoice(const Runtime& runtime, const char* binary, std::initializer_list<const char*> arguments) {
+    const auto child = ::fork();
+    require(child >= 0, "Fork the real voice command launcher");
+    if (child == 0) {
+      ::setenv("XDG_RUNTIME_DIR", runtime.path.c_str(), 1);
+      ::setenv("XDG_ACTIVATION_TOKEN", "must-not-activate", 1);
+      ::setenv("XDG_CONFIG_HOME", (runtime.path / "config").c_str(), 1);
+      ::setenv("XDG_STATE_HOME", (runtime.path / "state").c_str(), 1);
+      ::setenv("XDG_CACHE_HOME", (runtime.path / "cache").c_str(), 1);
+      ::setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/cressida-test-no-session-bus", 1);
+      ::setenv("WAYLAND_DISPLAY", (runtime.path / "no-wayland-display").c_str(), 1);
+      ::unsetenv("CRESSIDA_TOKEN");
+      const int sink = ::open("/dev/null", O_WRONLY);
+      ::dup2(sink, STDOUT_FILENO);
+      ::dup2(sink, STDERR_FILENO);
+      ::close(sink);
+      std::vector<char*> values{const_cast<char*>(binary)};
+      for (const auto argument : arguments)
+        values.push_back(const_cast<char*>(argument));
+      values.push_back(nullptr);
+      ::execv(binary, values.data());
+      ::_exit(127);
+    }
+    return child;
+  }
   char readReport(int fd) {
     pollfd descriptor{fd, POLLIN, 0};
     constexpr int deadlineMs = 10000;
@@ -96,6 +176,240 @@ namespace {
 } // namespace
 int main(int argc, char** argv) {
   try {
+    {
+      Runtime runtime;
+      using Status = app::SingleInstance::VoiceResult::Status;
+      require(
+          app::SingleInstance::sendVoice(app::VoiceCommand::InputMuteToggle, runtime.path).status == Status::NotRunning
+              && std::filesystem::is_empty(runtime.path),
+          "A voice command without an owner never creates the application directory or claims its lock"
+      );
+      require(
+          app::SingleInstance::sendVoice(app::VoiceCommand::InputMuteOff, runtime.path / "missing").status
+                  == Status::NotRunning
+              && std::filesystem::is_empty(runtime.path),
+          "An absent runtime remains absent after a voice command"
+      );
+      for (const auto unknown : {0, 4, 5})
+        require(
+            app::SingleInstance::sendVoice(static_cast<app::VoiceCommand>(unknown), runtime.path).status
+                == Status::TransportError,
+            "Unrecognized typed commands cannot reach the socket"
+        );
+      if (argc > 1) {
+        require(
+            wait(launchVoice(runtime, argv[1], {"voice", "input-mute", "toggle"})) == 1
+                && std::filesystem::is_empty(runtime.path),
+            "The actual CLI exits without credentials, graphics, logging or an owner election when no client runs"
+        );
+      }
+    }
+    {
+      Runtime runtime;
+      app::SingleInstance owner(runtime.path);
+      require(owner.claim() == app::SingleInstance::Launch::Owner, "Elect an owner for voice commands");
+      std::uint64_t previousId = 0;
+      for (const auto& [command, name] : app::voiceCommandNames) {
+        auto response =
+            std::async(std::launch::async, [&] { return app::SingleInstance::sendVoice(command, runtime.path); });
+        ready(owner);
+        require(!owner.poll(), "A voice command never requests an Open or activation token");
+        const auto requests = owner.pollVoice();
+        require(
+            requests.size() == 1 && requests.front().command == command && requests.front().id > previousId,
+            "Each supported voice action has an individual ordered request"
+        );
+        previousId = requests.front().id;
+        require(
+            !owner.replyVoice({app::VoiceCommand::InputMuteToggle, previousId + 1}, true),
+            "An unrelated reply handle cannot acknowledge a request"
+        );
+        require(owner.replyVoice(requests.front(), true, name), "A same-user command receives an explicit owner reply");
+        require(!owner.replyVoice(requests.front(), true), "A request cannot be acknowledged twice");
+        const auto result = response.get();
+        require(
+            result.applied() && result.message == name, "The requester receives the matching bounded success result"
+        );
+        require(owner.pollVoice().empty() && !owner.poll(), "A successful command never repeats or opens the window");
+      }
+      auto rejected = std::async(std::launch::async, [&] {
+        return app::SingleInstance::sendVoice(app::VoiceCommand::InputMuteOn, runtime.path);
+      });
+      ready(owner);
+      send(runtime, packet("independent-open"));
+      require(owner.poll() == "independent-open", "Open activation survives a simultaneous voice command");
+      const auto pending = owner.pollVoice();
+      require(pending.size() == 1, "The simultaneous voice command remains available separately");
+      require(
+          owner.replyVoice(pending.front(), false, "Sign in before using voice controls."),
+          "Reply with a domain rejection"
+      );
+      const auto result = rejected.get();
+      require(
+          result.status == app::SingleInstance::VoiceResult::Status::Rejected
+              && result.message == "Sign in before using voice controls.",
+          "Domain rejection is distinct from transport failure"
+      );
+      send(runtime, packet("next-open"));
+      require(owner.pollVoice().empty(), "Voice retrieval never drains a newly arrived Open");
+      require(owner.poll() == "next-open", "The next owning-loop drain delivers that Open normally");
+      auto bounded = std::async(std::launch::async, [&] {
+        return app::SingleInstance::sendVoice(app::VoiceCommand::InputMuteOn, runtime.path);
+      });
+      ready(owner);
+      require(!owner.poll(), "The bounded reply fixture does not activate");
+      const auto boundedRequest = owner.pollVoice();
+      require(
+          boundedRequest.size() == 1 && owner.replyVoice(boundedRequest.front(), true, std::string(512, 'x')),
+          "Oversized status output is replaced with bounded text"
+      );
+      require(bounded.get().message == "Voice command applied.", "The peer receives only the bounded fallback message");
+      auto timeout = std::async(std::launch::async, [&] {
+        return app::SingleInstance::sendVoice(
+            app::VoiceCommand::InputMuteToggle, runtime.path, std::chrono::milliseconds(30)
+        );
+      });
+      ready(owner);
+      require(
+          timeout.get().status == app::SingleInstance::VoiceResult::Status::TimedOut,
+          "An unacknowledged command has a finite uncertain outcome"
+      );
+      require(
+          !owner.poll() && owner.pollVoice().empty(),
+          "An expired queued toggle is discarded without replay or application"
+      );
+      require(!owner.poll(), "The requester sent the timed-out toggle only once");
+      auto detachedTimeout = std::async(std::launch::async, [&] {
+        return app::SingleInstance::sendVoice(
+            app::VoiceCommand::InputMuteToggle, runtime.path, std::chrono::milliseconds(200)
+        );
+      });
+      ready(owner);
+      require(!owner.poll(), "A detached request remains independent of activation");
+      const auto detached = owner.pollVoice();
+      require(
+          detached.size() == 1 && owner.voicePending(detached.front()),
+          "A freshly detached command can be checked immediately before application"
+      );
+      require(
+          detachedTimeout.get().status == app::SingleInstance::VoiceResult::Status::TimedOut,
+          "A detached command can expire while earlier owning-loop work is pending"
+      );
+      require(
+          !owner.voicePending(detached.front())
+              && !owner.replyVoice(detached.front(), true)
+              && owner.pollVoice().empty(),
+          "The final pre-application guard rejects an expired detached request and its late acknowledgement"
+      );
+      if (argc > 1) {
+        for (const auto& [command, name] : app::voiceCommandNames) {
+          const auto separator = name.find(' ');
+          const std::string action(name.substr(0, separator)), value(name.substr(separator + 1));
+          const auto child = launchVoice(runtime, argv[1], {"voice", action.c_str(), value.c_str()});
+          ready(owner);
+          require(!owner.poll(), "The executable voice route never opens the window");
+          const auto requests = owner.pollVoice();
+          require(
+              requests.size() == 1 && requests.front().command == command,
+              "The executable forwards every supported microphone mute action"
+          );
+          require(
+              owner.replyVoice(requests.front(), true, "Applied by the offline owner."),
+              "Acknowledge the executable command"
+          );
+          require(wait(child) == 0, "An applied executable command exits successfully");
+        }
+        const auto rejectedChild = launchVoice(runtime, argv[1], {"voice", "input-mute", "on"});
+        ready(owner);
+        require(!owner.poll(), "A rejected command never activates the owner");
+        const auto request = owner.pollVoice();
+        require(
+            request.size() == 1 && owner.replyVoice(request.front(), false, "Sign in first."),
+            "Reject a real CLI request"
+        );
+        require(wait(rejectedChild) == 1, "The actual CLI reports an owner rejection as failure");
+        for (const auto arguments :
+             {std::initializer_list<const char*>{"voice", "input-mute", "invalid"},
+              {"voice", "push-to-talk", "toggle"},
+              {"voice", "push-to-talk", "on"},
+              {"voice", "push-to-talk", "off"},
+              {"voice", "input-mute", "on", "--new-instance"},
+              {"--new-instance", "voice", "input-mute", "on"}})
+          require(
+              wait(launchVoice(runtime, argv[1], arguments)) == 2 && !owner.poll() && owner.pollVoice().empty(),
+              "Invalid CLI arguments fail before IPC or account startup"
+          );
+        require(
+            wait(launchVoice(runtime, argv[1], {"voice", "--help"})) == 0 && !owner.poll(),
+            "Voice help never contacts the running client"
+        );
+        const auto timedOutChild = launchVoice(runtime, argv[1], {"voice", "input-mute", "toggle"});
+        ready(owner);
+        require(wait(timedOutChild) == 1, "The actual CLI stops waiting at its bounded reply deadline");
+        require(
+            !owner.poll() && owner.pollVoice().empty(), "The real timed-out command cannot apply after its deadline"
+        );
+        for (const char* path : {"config", "state", "cache"})
+          require(
+              !std::filesystem::exists(runtime.path / path),
+              "The voice CLI never starts account storage or diagnostic logging"
+          );
+      }
+    }
+    {
+      Runtime runtime;
+      app::SingleInstance owner(runtime.path);
+      require(owner.claim() == app::SingleInstance::Launch::Owner, "Elect the malformed voice fixture owner");
+      VoicePeer peer(runtime);
+      const std::string nonce(32, 'a');
+      for (const auto& invalid :
+           {voicePacket("short"), voicePacket(nonce, "input-mute on", 0),
+            voicePacket(nonce, "input-mute on", milliseconds() + 10000), voicePacket(nonce, "input-mute maybe"),
+            voicePacket(nonce, "push-to-talk on"), voicePacket(nonce, "push-to-talk off"),
+            voicePacket(nonce, std::string("input-mute on\0", 14)), voicePacket(nonce, std::string(4096, 'x'))}) {
+        peer.send(invalid);
+        require(
+            !owner.poll() && owner.pollVoice().empty(), "Malformed, expired and future voice payloads have no effects"
+        );
+      }
+      send(runtime, voicePacket(nonce));
+      require(!owner.poll() && owner.pollVoice().empty(), "Voice requests without a reply address cannot execute");
+      const auto duplicate = voicePacket(nonce);
+      peer.send(duplicate);
+      peer.send(duplicate);
+      require(!owner.poll(), "Repeated voice datagrams never activate");
+      const auto requests = owner.pollVoice();
+      require(requests.size() == 1, "A repeated nonce produces at most one state-changing request");
+      require(owner.replyVoice(requests.front(), true, "applied"), "Acknowledge the unique request");
+      require(peer.reply().ends_with("\nok\napplied"), "The acknowledgement includes the expected success framing");
+      peer.send(duplicate);
+      require(
+          !owner.poll() && owner.pollVoice().empty(), "Acknowledged toggles remain protected against duplicate delivery"
+      );
+    }
+    {
+      Runtime runtime;
+      app::SingleInstance owner(runtime.path);
+      require(owner.claim() == app::SingleInstance::Launch::Owner, "Elect the bounded queue fixture owner");
+      VoicePeer peer(runtime);
+      constexpr unsigned requestLimit = 32;
+      for (unsigned index = 0; index <= requestLimit; ++index) {
+        const auto suffix = std::to_string(index);
+        peer.send(voicePacket(std::string(32 - suffix.size(), '0') + suffix));
+        require(!owner.poll(), "Queued commands remain separate from window activation");
+      }
+      const auto requests = owner.pollVoice();
+      require(requests.size() == requestLimit, "The command queue has a fixed bound without coalescing toggles");
+      for (unsigned index = 0; index < requests.size(); ++index)
+        require(
+            requests[index].command == app::VoiceCommand::InputMuteToggle && requests[index].id == index + 1,
+            "Independent toggles retain their arrival order"
+        );
+      require(
+          peer.reply().ends_with("\nerror\nThe local voice command queue is busy."),
+          "Queue overflow receives a bounded rejection"
+      );
+    }
     {
       Runtime runtime;
       app::SingleInstance owner(runtime.path);
@@ -176,6 +490,15 @@ int main(int argc, char** argv) {
       }
       require(wait(child) == 0, "The crashed fixture acquired the lock");
       require(std::filesystem::exists(runtime.path / "cressida/instance.sock"), "Abrupt exit leaves a stale socket");
+      struct stat before{}, after{};
+      require(::stat((runtime.path / "cressida/instance.sock").c_str(), &before) == 0, "Inspect the crashed endpoint");
+      require(
+          app::SingleInstance::sendVoice(app::VoiceCommand::InputMuteToggle, runtime.path).status
+                  == app::SingleInstance::VoiceResult::Status::NotRunning
+              && ::stat((runtime.path / "cressida/instance.sock").c_str(), &after) == 0
+              && before.st_ino == after.st_ino,
+          "A voice command neither claims a dead owner's lock nor replaces its stale socket"
+      );
       app::SingleInstance replacement(runtime.path);
       require(
           replacement.claim() == app::SingleInstance::Launch::Owner, "A fresh launch safely replaces a crashed owner"
@@ -225,6 +548,12 @@ int main(int argc, char** argv) {
       ::chmod((runtime.path / "cressida").c_str(), 0700);
       const auto path = runtime.path / "cressida/instance.sock";
       std::ofstream(path) << "preserve this ordinary file";
+      require(
+          app::SingleInstance::sendVoice(app::VoiceCommand::InputMuteOff, runtime.path).status
+                  == app::SingleInstance::VoiceResult::Status::TransportError
+              && !std::filesystem::exists(runtime.path / "cressida/instance.lock"),
+          "A command rejects an ordinary-file endpoint without opening the instance lock"
+      );
       bool rejected = false;
       try {
         app::SingleInstance instance(runtime.path);
@@ -244,6 +573,12 @@ int main(int argc, char** argv) {
       if (directory) {
         std::filesystem::remove(runtime.path / "cressida");
         std::filesystem::create_directory_symlink(outside.path, runtime.path / "cressida");
+        require(
+            app::SingleInstance::sendVoice(app::VoiceCommand::InputMuteOn, runtime.path).status
+                    == app::SingleInstance::VoiceResult::Status::TransportError
+                && std::filesystem::is_empty(outside.path),
+            "Voice commands reject a symlinked application directory without following it"
+        );
       } else
         std::filesystem::create_symlink(outside.path / "untouched", runtime.path / "cressida/instance.lock");
       bool rejected = false;
@@ -258,7 +593,8 @@ int main(int argc, char** argv) {
           "Activation startup never follows directory or lock symlinks"
       );
     }
-    std::cout << "Single-instance election, activation, stale recovery, race and bootstrap checks passed\n";
+    std::cout
+        << "Single-instance election, activation, voice commands, stale recovery, race and bootstrap checks passed\n";
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;

@@ -38,6 +38,16 @@
 namespace app {
   using namespace theme;
   namespace {
+    constexpr std::string_view terminalSyntaxBody =
+        "❯ sudo dnf in libdave-devel                                                     2.4s\n"
+        "Updating and loading repositories:\n"
+        "Repositories loaded.\n"
+        "Failed to resolve the transaction:\n"
+        "No match for argument: libdave-devel\n"
+        "You can try to add to command line:\n"
+        "  --skip-unavailable to skip unavailable packages\n"
+        "aditya@adi-fedora ~ [1]\n"
+        "❯                                                                               1.2s";
     struct ChannelListRow {
       const api::Channel* channel;
       float top, height, advance;
@@ -159,6 +169,32 @@ namespace app {
         if (surfaces != 1)
           throw std::runtime_error("Fenced code must retain its surface when rail and chat colors match");
         std::clog << "Offline code surface check passed\n";
+      }
+      if (m_demo && m_demoOverlay.starts_with("syntax-terminal") && m_demoInteractionStep == 0) {
+        const auto& message = m_messages.front();
+        const auto& layout = m_messageLayouts.at(message.id).layout;
+        const auto code = std::ranges::find_if(layout.boxes, [](const auto& box) { return !box.code.empty(); });
+        if (code == layout.boxes.end()
+            || code->code != terminalSyntaxBody
+            || !layout.plainText.contains(terminalSyntaxBody)
+            || !layout.plainText.contains("The terminal output:")
+            || !layout.plainText.contains("The command output remains complete.")
+            || !m_messageText.at(m_messages.back().id).contains("The following message remains readable too."))
+          throw std::runtime_error("Terminal fences must preserve commands, output and surrounding messages");
+        std::vector<std::string> fragments;
+        const auto inspect = [&](auto&& self, const Node& node) -> void {
+          if (const auto* text = dynamic_cast<const TextNode*>(&node); text && text->useMarkup())
+            fragments.push_back(text->text());
+          for (const auto& child : node.children())
+            self(self, *child);
+        };
+        inspect(inspect, *m_scene);
+        for (const auto& run : layout.runs)
+          if (layout.plainText.substr(run.offset, run.text.size()) != run.text
+              || std::ranges::find(fragments, messageMarkup(run.text, run.style, false)) == fragments.end())
+            throw std::runtime_error("Terminal text must retain native fragments and selection byte offsets");
+        ++m_demoInteractionStep;
+        std::clog << "Offline terminal fence check passed\n";
       }
       if (m_demo && m_demoOverlay.starts_with("login-themed")) {
         const bool light = m_demoOverlay == "login-themed-light" || m_demoOverlay == "login-themed-system-light";
@@ -1892,6 +1928,8 @@ namespace app {
         if (view == "syntax"
             || view == "syntax-light"
             || view == "syntax-compact"
+            || view == "syntax-terminal"
+            || view == "syntax-terminal-light"
             || view == "syntax-nix"
             || view == "syntax-nix-light"
             || view == "syntax-nix-compact"
@@ -1932,6 +1970,22 @@ namespace app {
 }
 ```)NIX";
           }
+          if (view.starts_with("syntax-terminal"))
+            m_messages = api::parseMessages(
+                nlohmann::json::array(
+                    {{{"id", "9701"},
+                      {"author", {{"id", "11"}, {"username", "Maya"}}},
+                      {"timestamp", "2026-10-18T11:26:00Z"},
+                      {"content",
+                       "The terminal output:\n```"
+                           + std::string(terminalSyntaxBody)
+                           + "```\nThe command output remains complete."}},
+                     {{"id", "9702"},
+                      {"author", {{"id", "12"}, {"username", "Alex"}}},
+                      {"timestamp", "2026-10-18T11:27:00Z"},
+                      {"content", "The following message remains readable too."}}}
+                )
+            );
           for (auto& message : m_messages)
             message.channelId = m_channelId;
           m_pointerX = chatLeft() + 100;

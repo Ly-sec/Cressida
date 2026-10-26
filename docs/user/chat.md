@@ -107,7 +107,7 @@ readable names and emoji display their images while you compose.
 | `*italic*`                     | Italic text                                |
 | `__underlined__`               | Underlined text                            |
 | `~~crossed out~~`              | Strikethrough                              |
-| `                              |                                            | hidden text |     | `   | A spoiler, revealed on click |
+| `\|\|hidden text\|\|`          | A spoiler, revealed on click               |
 | `` `inline code` ``            | Inline code                                |
 | `[label](https://example.com)` | A labeled link                             |
 | `> quoted text`                | A quote                                    |
@@ -115,8 +115,11 @@ readable names and emoji display their images while you compose.
 | `-# Small text`                | Smaller, muted text at the start of a line |
 
 Use three backticks on their own lines for a code block. You can put a language
-name after the opening backticks. Spoilers and strikethrough cover spaces within
-the formatted text. Link underlines appear when you hover the link.
+name after the opening backticks. Outside quotes and lists, received code blocks
+also display their full content when the opening or closing backticks share a
+line with code. Use the block's Copy button to copy its body with spacing and
+line breaks preserved. Spoilers and strikethrough cover spaces within the
+formatted text. Link underlines appear when you hover the link.
 
 ## Images and embeds
 

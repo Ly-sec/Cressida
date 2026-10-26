@@ -280,7 +280,9 @@ int main() {
     api::MemberList members;
     const json alice = {
         {"member",
-         {{"user", {{"id", "1"}, {"username", "alice"}}}, {"nick", "Alice"}, {"presence", {{"status", "online"}}}}}
+         {{"user", {{"id", "1"}, {"username", "alice"}, {"global_name", "Global Alice"}}},
+          {"nick", "Alice"},
+          {"presence", {{"status", "online"}}}}}
     };
     const json bob = {{"member", {{"user_id", "2"}, {"presence", {{"status", "idle"}}}}}};
     members.apply(
@@ -309,6 +311,183 @@ int main() {
         rows[1].status == "online" && rows[2].status == "idle" && members.total == 3,
         "Preserve member presence and list indices"
     );
+    {
+      auto partial = members;
+      partial.apply(
+          json{
+              {"ops",
+               json::array(
+                   {{{"op", "UPDATE"}, {"index", 1}, {"item", {{"member", {{"presence", {{"status", "dnd"}}}}}}}}}
+               )}
+          },
+          {}
+      );
+      auto updated = partial.rows();
+      require(
+          updated.size() == 3
+              && updated[1].index == 1
+              && updated[1].user.id == "1"
+              && updated[1].user.name == "Alice"
+              && updated[1].status == "dnd"
+              && updated[2].user.id == "2",
+          "A presence-only member update preserves the visible identity and neighboring remote slots"
+      );
+      partial.apply(
+          json{
+              {"ops",
+               json::array({{{"op", "UPDATE"}, {"index", 1}, {"item", {{"member", {{"nick", "Renamed Alice"}}}}}}})}
+          },
+          {}
+      );
+      updated = partial.rows();
+      require(
+          updated[1].user.id == "1" && updated[1].user.name == "Renamed Alice" && updated[1].status == "dnd",
+          "Nickname-only updates retain the member identity and previous presence"
+      );
+      partial.apply(
+          json{{"ops", json::array({{{"op", "UPDATE"}, {"index", 1}, {"item", {{"member", {{"nick", nullptr}}}}}}})}},
+          {}
+      );
+      updated = partial.rows();
+      require(
+          updated[1].user.id == "1"
+              && updated[1].user.name == "Global Alice"
+              && updated[1].user.username == "alice"
+              && updated[1].status == "dnd",
+          "An explicit null nickname restores the global display name from the retained account profile"
+      );
+      partial.apply(
+          json{
+              {"ops",
+               json::array(
+                   {{{"op", "UPDATE"}, {"index", 1}, {"item", {{"member", {{"presence", {{"status", "idle"}}}}}}}}}
+               )}
+          },
+          {}
+      );
+      require(
+          partial.rows()[1].user.name == "Global Alice",
+          "Omitting a nickname after a clear preserves the restored display name"
+      );
+      partial.apply(
+          json{
+              {"ops", json::array({{{"op", "UPDATE"}, {"index", 2}, {"item", {{"member", {{"nick", "Team Bob"}}}}}}})}
+          },
+          {}
+      );
+      partial.apply(
+          json{{"ops", json::array({{{"op", "UPDATE"}, {"index", 2}, {"item", {{"member", {{"nick", nullptr}}}}}}})}},
+          {}, {{"2", {"2", "Bob", ""}}}
+      );
+      require(
+          partial.rows()[2].user.name == "Bob" && partial.rows()[2].status == "idle",
+          "Clearing a nickname uses the account directory when retained profile name fields are unavailable"
+      );
+      partial.apply(
+          json{{"ops", json::array({{{"op", "UPDATE"}, {"index", 1}, {"item", {{"member", {{"user_id", "2"}}}}}}})}},
+          {}, {{"2", {"2", "Bob", ""}}}
+      );
+      updated = partial.rows();
+      require(
+          updated[1].user.id == "2" && updated[1].user.name == "Bob" && updated[1].status == "offline",
+          "Replacing an indexed member with a different identity does not inherit the former profile or presence"
+      );
+    }
+    {
+      auto atomic = members;
+      bool rejected = false;
+      try {
+        atomic.apply(
+            json{
+                {"ops",
+                 json::array(
+                     {{{"op", "SYNC"},
+                       {"range", json::array({0, 99})},
+                       {"items",
+                        json::array(
+                            {{{"group", {{"id", "9"}}}}, alice, {{"member", {{"user", {{"id", "invalid"}}}}}}}
+                        )}}}
+                 )}
+            },
+            {{"9", "Team"}}
+        );
+      } catch (const std::exception&) {
+        rejected = true;
+      }
+      const auto retained = atomic.rows();
+      require(
+          rejected
+              && retained.size() == 3
+              && retained[0].group == "Team"
+              && retained[1].user.id == "1"
+              && retained[2].user.id == "2",
+          "A rejected member SYNC preserves the previous complete range instead of exposing partial blank slots"
+      );
+    }
+    for (const auto& operation : json::array(
+             {{{"op", "INSERT"}, {"index", 1}, {"item", {{"member", {{"user", {{"id", "invalid"}}}}}}}},
+              {{"op", "UPDATE"}, {"index", 1}, {"item", json::object()}},
+              {{"op", "UPDATE"}, {"index", 1}, {"item", {{"unknown", json::object()}}}},
+              {{"op", "UPDATE"}, {"index", 1}, {"item", {{"member", {{"user", json::object()}}}}}},
+              {{"op", "UPDATE"}, {"index", 1}, {"item", {{"member", nullptr}}}},
+              {{"op", "UPDATE"}, {"index", 1}, {"item", {{"group", nullptr}}}}}
+         )) {
+      auto retainedList = members;
+      bool rejected = false;
+      try {
+        retainedList.apply(json{{"ops", json::array({operation})}}, {});
+      } catch (const std::exception&) {
+        rejected = true;
+      }
+      const auto retained = retainedList.rows();
+      require(
+          rejected
+              && retainedList.total == 3
+              && retained.size() == 3
+              && retained[0].index == 0
+              && retained[0].group == "Team"
+              && retained[1].index == 1
+              && retained[1].user.id == "1"
+              && retained[1].user.name == "Alice"
+              && retained[2].index == 2
+              && retained[2].user.id == "2",
+          "Malformed inserts and unsupported updates preserve visible member rows and their original indices"
+      );
+    }
+    {
+      auto shrinking = members;
+      shrinking.apply(
+          json{
+              {"ops",
+               json::array(
+                   {{{"op", "SYNC"},
+                     {"range", json::array({100, 102})},
+                     {"items", json::array({{{"group", {{"id", "offline"}}}}, alice, bob})}}}
+               )}
+          },
+          {}
+      );
+      require(
+          shrinking.rows().size() == 6 && shrinking.rows()[3].index == 100,
+          "Unloaded member pages retain their remote index gaps"
+      );
+      shrinking.apply(
+          json{
+              {"groups", json::array({{{"id", "9"}, {"count", 2}}})},
+              {"ops",
+               json::array(
+                   {{{"op", "SYNC"},
+                     {"range", json::array({0, 99})},
+                     {"items", json::array({{{"group", {{"id", "9"}}}}, alice, bob})}}}
+               )}
+          },
+          {{"9", "Team"}}, {{"2", {"2", "Bob", ""}}}
+      );
+      require(
+          shrinking.total == 3 && shrinking.rows().size() == 3,
+          "An authoritative smaller group snapshot retires stale cached rows beyond its visible list"
+      );
+    }
     members.apply(
         json{
             {"ops", json::array({{{"op", "DELETE"}, {"index", 1}}, {{"op", "INSERT"}, {"index", 2}, {"item", alice}}})}

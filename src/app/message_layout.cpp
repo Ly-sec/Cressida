@@ -146,7 +146,14 @@ namespace app {
     // MD4C handles Markdown nesting/escaping; these tokens preserve Discord's
     // double-underscore underline and spoilers without interpreting raw HTML.
     constexpr std::string_view underline = "\uE000", spoiler = "\uE001", strike = "\uE004", subtext = "\uE005";
-    std::string discordSyntax(std::string_view text, bool timestamps) {
+    struct FenceBody {
+      std::string text, language;
+    };
+    struct PreparedFences {
+      std::string input;
+      std::map<std::size_t, FenceBody> bodies;
+    };
+    std::string discordSyntax(std::string_view text, bool timestamps, std::map<std::size_t, FenceBody>& fences) {
       std::vector<std::size_t> underscores, spoilers, strikes;
       std::string fence;
       for (std::size_t i = 0; i < text.size();) {
@@ -186,7 +193,13 @@ namespace app {
       if (strikes.size() % 2)
         strikes.pop_back();
       std::string result;
+      std::map<std::size_t, FenceBody> rebased;
+      auto fenceBody = fences.begin();
       for (std::size_t i = 0; i < text.size();) {
+        if (fenceBody != fences.end() && fenceBody->first == i) {
+          rebased.emplace(result.size(), std::move(fenceBody->second));
+          ++fenceBody;
+        }
         if (std::binary_search(underscores.begin(), underscores.end(), i)) {
           result += underline;
           i += 2;
@@ -216,6 +229,7 @@ namespace app {
         } else
           result += text[i++];
       }
+      fences = std::move(rebased);
       return result;
     }
     std::string restoreEmoji(std::string text) {
@@ -236,6 +250,153 @@ namespace app {
           text.replace(pos, marker.size(), original);
       return restoreEmoji(std::move(text));
     }
+    PreparedFences prepareFences(std::string_view text) {
+      constexpr std::size_t blockFenceLength = 3;
+      constexpr std::size_t indentTabWidth = 4;
+      constexpr std::string_view placeholder = "cressida-code";
+      const auto runEnd = [&](std::size_t at) {
+        auto end = at + 1;
+        while (end < text.size() && text[end] == text[at])
+          ++end;
+        return end;
+      };
+      const auto linePrefix = [&](std::size_t at) {
+        const auto previous = at == 0 ? std::string_view::npos : text.find_last_of("\r\n", at - 1);
+        return text.substr(
+            previous == std::string_view::npos ? 0 : previous + 1,
+            at - (previous == std::string_view::npos ? 0 : previous + 1)
+        );
+      };
+      const auto blockPrefix = [&](std::size_t at) {
+        auto prefix = linePrefix(at);
+        while (!prefix.empty()) {
+          const auto first = prefix.find_first_not_of(" \t");
+          if (first == std::string_view::npos)
+            return true;
+          prefix.remove_prefix(first);
+          if (prefix.front() == '>')
+            prefix.remove_prefix(1);
+          else if (
+              prefix.size() > 1
+              && std::string_view("-+*").contains(prefix.front())
+              && std::string_view(" \t").contains(prefix[1])
+          )
+            prefix.remove_prefix(2);
+          else {
+            const auto digits = prefix.find_first_not_of("0123456789");
+            if (digits == 0
+                || digits == std::string_view::npos
+                || digits + 1 >= prefix.size()
+                || !std::string_view(".)").contains(prefix[digits])
+                || !std::string_view(" \t").contains(prefix[digits + 1]))
+              return false;
+            prefix.remove_prefix(digits + 2);
+          }
+        }
+        return true;
+      };
+      const auto standaloneEnd = [&](std::size_t at, std::size_t end) {
+        if (linePrefix(at).find_first_not_of(" \t>") != std::string_view::npos)
+          return false;
+        const auto newline = text.find_first_of("\r\n", end);
+        return text.substr(end, newline == std::string_view::npos ? text.size() - end : newline - end)
+                   .find_first_not_of(" \t")
+            == std::string_view::npos;
+      };
+      const auto findEnd = [&](std::size_t from, char delimiter, std::size_t length, bool standalone) {
+        for (auto at = text.find(delimiter, from); at != std::string_view::npos; at = text.find(delimiter, runEnd(at)))
+          if (runEnd(at) - at >= length && (!standalone || standaloneEnd(at, runEnd(at))))
+            return at;
+        return std::string_view::npos;
+      };
+      PreparedFences result;
+      for (std::size_t at = 0; at < text.size();) {
+        if (text[at] == '\\') {
+          const auto size = std::min<std::size_t>(2, text.size() - at);
+          result.input.append(text.substr(at, size));
+          at += size;
+          continue;
+        }
+        if (text[at] != '`' && text[at] != '~') {
+          result.input += text[at++];
+          continue;
+        }
+        const auto openingEnd = runEnd(at), length = openingEnd - at;
+        if (text[at] == '~') {
+          const bool fence = length >= blockFenceLength && blockPrefix(at);
+          const auto closing = fence ? findEnd(openingEnd, '~', length, true) : std::string_view::npos;
+          const auto end = closing != std::string_view::npos ? runEnd(closing) : fence ? text.size() : openingEnd;
+          result.input.append(text.substr(at, end - at));
+          at = end;
+          continue;
+        }
+        if (length < blockFenceLength) {
+          auto closing = text.find('`', openingEnd);
+          while (closing != std::string_view::npos && runEnd(closing) - closing != length)
+            closing = text.find('`', runEnd(closing));
+          const auto end = closing == std::string_view::npos ? openingEnd : runEnd(closing);
+          result.input.append(text.substr(at, end - at));
+          at = end;
+          continue;
+        }
+        const bool blockOpening = blockPrefix(at);
+        auto firstBreak = text.find_first_of("\r\n", openingEnd);
+        auto header = firstBreak == std::string_view::npos ? std::string_view{}
+                                                           : text.substr(openingEnd, firstBreak - openingEnd);
+        const auto first = header.find_first_not_of(" \t"), last = header.find_last_not_of(" \t");
+        header = first == std::string_view::npos ? std::string_view{} : header.substr(first, last - first + 1);
+        const bool languageHeader = firstBreak != std::string_view::npos
+            && std::ranges::all_of(header, [](unsigned char c) { return c >= '!' && c <= '~' && c != '`'; });
+        auto closing = blockOpening && languageHeader ? findEnd(openingEnd, '`', length, true) : std::string_view::npos;
+        if (closing == std::string_view::npos)
+          closing = findEnd(openingEnd, '`', length, false);
+        const bool unterminated = closing == std::string_view::npos;
+        if (unterminated && (!blockOpening || languageHeader)) {
+          result.input.append(text.substr(at));
+          break;
+        }
+        if (unterminated)
+          closing = text.size();
+        const auto closingEnd = unterminated ? closing : runEnd(closing);
+        const auto prefix = linePrefix(at);
+        std::size_t indentation = 0;
+        for (const auto c : prefix)
+          indentation += c == '\t' ? indentTabWidth - indentation % indentTabWidth : 1;
+        const bool indentedLiteral =
+            indentation >= indentTabWidth && prefix.find_first_not_of(" \t") == std::string_view::npos;
+        const bool containerFence = blockOpening && prefix.find_first_not_of(" \t") != std::string_view::npos;
+        if (containerFence
+            || indentedLiteral
+            || (blockOpening && languageHeader && standaloneEnd(closing, closingEnd))) {
+          result.input.append(text.substr(at, closingEnd - at));
+          at = closingEnd;
+          continue;
+        }
+        auto body = openingEnd;
+        if (languageHeader) {
+          body = firstBreak + 1;
+          if (text[firstBreak] == '\r' && body < closing && text[body] == '\n')
+            ++body;
+        }
+        // Keep chat fence contents outside the parser's info-string and newline rules.
+        if (!result.input.empty() && result.input.back() != '\n' && result.input.back() != '\r')
+          result.input += '\n';
+        result.input.append(text.substr(at, length));
+        result.bodies.emplace(
+            result.input.size(),
+            FenceBody{
+                std::string(text.substr(body, closing - body)), languageHeader ? std::string(header) : std::string{}
+            }
+        );
+        result.input += placeholder;
+        result.input += '\n';
+        result.input.append(unterminated ? text.substr(at, length) : text.substr(closing, closingEnd - closing));
+        if (closingEnd < text.size() && text[closingEnd] != '\n' && text[closingEnd] != '\r')
+          result.input += '\n';
+        at = closingEnd;
+      }
+      return result;
+    }
     struct Layout {
       MessageLayout output;
       float width, x = 0, y = 0, indent = 0, lineHeight = 22, fontSize = 14;
@@ -250,6 +411,8 @@ namespace app {
       bool codeBlock = false;
       std::size_t codeBox = 0;
       std::string codeLanguage;
+      const std::map<std::size_t, FenceBody>* fenceBodies = nullptr;
+      bool preservedCode = false;
       std::optional<std::size_t> inlineBox;
       bool underlineOn = false, spoilerOn = false, strikeOn = false, subtextOn = false;
       float emojiSize = 22;
@@ -686,10 +849,18 @@ namespace app {
         l.y += 10;
         l.codeBlock = true;
         l.style.code = true;
-        const auto& lang = static_cast<MD_BLOCK_CODE_DETAIL*>(detail)->lang;
+        const auto& code = *static_cast<MD_BLOCK_CODE_DETAIL*>(detail);
+        const auto& lang = code.lang;
         l.codeLanguage.assign(lang.text ? lang.text : "", lang.size);
+        if (const auto offset = l.sourceOffset(code.info.text, code.info.size); offset && l.fenceBodies) {
+          if (const auto body = l.fenceBodies->find(*offset); body != l.fenceBodies->end()) {
+            l.preservedCode = true;
+            l.output.boxes[l.codeBox].code = body->second.text;
+            l.codeLanguage = body->second.language;
+          }
+        }
         l.style.size = l.fontSize * 11 / 14;
-        l.text(lang.size ? std::string_view(lang.text, lang.size) : std::string_view("code"), true);
+        l.text(l.codeLanguage.empty() ? std::string_view("code") : l.codeLanguage, true);
         l.newline();
         l.style.size = l.fontSize;
         break;
@@ -749,6 +920,7 @@ namespace app {
         l.y += 6;
         l.style.code = false;
         l.codeBlock = false;
+        l.preservedCode = false;
         l.sourceEnd.reset();
         break;
       }
@@ -812,9 +984,9 @@ namespace app {
       else if (type == MD_TEXT_CODE) {
         l.flush();
         auto raw = restore(std::string(text, size));
-        if (l.codeBlock)
+        if (l.codeBlock && !l.preservedCode)
           l.output.boxes[l.codeBox].code += raw;
-        else
+        else if (!l.codeBlock)
           l.text(raw, true);
       } else
         l.pending.append(text, size);
@@ -849,8 +1021,10 @@ namespace app {
           .leave_span = leaveSpan,
           .text = textCallback
       };
-      const auto input = discordSyntax(content, options.discordTimestamps);
+      auto prepared = prepareFences(content);
+      const auto input = discordSyntax(prepared.input, options.discordTimestamps, prepared.bodies);
       layout.source = input;
+      layout.fenceBodies = &prepared.bodies;
       md_parse(input.data(), input.size(), &parser, &layout);
       layout.alignLine();
       layout.output.height = layout.y + (layout.x > layout.indent ? layout.lineHeight : 0);

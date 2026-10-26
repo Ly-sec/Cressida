@@ -471,7 +471,10 @@ namespace api {
     }
   } // namespace
 
-  Client::Client(std::unique_ptr<auth::CredentialBackend> credentials, std::filesystem::path disabledLogin) {
+  Client::Client(
+      std::unique_ptr<auth::CredentialBackend> credentials, std::filesystem::path disabledLogin,
+      std::shared_ptr<voice::Audio> audio
+  ) {
     m_credentials = std::make_unique<auth::CredentialStore>(std::move(credentials), std::move(disabledLogin));
     // libcurl initialization is process-wide; this static lives beyond every client worker.
     struct CurlRuntime {
@@ -488,6 +491,12 @@ namespace api {
     m_gateway = std::make_unique<Gateway>(m_session, [this](auto session, const auto& type, const auto& data) {
       gatewayEvent(session, type, data);
     });
+    m_voiceAudio = audio ? std::move(audio) : voice::makeAudio();
+    m_voice = std::make_unique<voice::Connection>(m_voiceAudio, [this](voice::State state) {
+      if (!state.generation || state.generation != m_session || state.revision != m_voiceRevision)
+        return;
+      publish(Event{.operation = Operation::Voice, .session = state.generation, .voice = std::move(state)});
+    });
     for (std::size_t lane = 0; lane < m_readWake.size(); ++lane) {
       if (!m_readWake[lane].valid())
         throw std::runtime_error("Could not create a read event pipe");
@@ -498,6 +507,8 @@ namespace api {
 
   Client::~Client() {
     ++m_session;
+    resetVoice(false);
+    m_voice.reset();
     m_worker.request_stop();
     for (auto& worker : m_readWorkers)
       worker.request_stop();
@@ -526,6 +537,7 @@ namespace api {
   std::uint64_t Client::beginConnect(std::string credential, std::optional<std::string> handoffKey) {
     m_credentials->cancelLoad();
     const auto session = ++m_session;
+    resetVoice(false);
     m_restRestrictions.reset(session);
     m_authenticatedSession = 0;
     m_restoringSession = 0;
@@ -549,6 +561,7 @@ namespace api {
   std::uint64_t Client::disconnect() {
     m_credentials->cancelLoad();
     const auto session = ++m_session;
+    resetVoice(false);
     m_restRestrictions.reset(session);
     m_authenticatedSession = 0;
     m_restoringSession = 0;
@@ -1019,6 +1032,14 @@ namespace api {
   void Client::gatewayEvent(std::uint64_t session, const std::string& type, const Json& data) {
     if (session != m_session)
       return;
+    if (type == "VOICE_STATE_UPDATE" || type == "VOICE_SERVER_UPDATE") {
+      if (type == "VOICE_STATE_UPDATE")
+        voiceRosterEvent(session, type, data);
+      voiceEvent(session, type, data);
+      return;
+    }
+    if (type == "RECONNECTING" || type == "CONNECTION_FAILED")
+      leaveVoice(session);
     bool readyBatch = false;
     ScopeExit finishReady{[this, session, &readyBatch] {
       if (readyBatch && m_authenticatedSession == session) {
@@ -1096,6 +1117,14 @@ namespace api {
       }
       if (m_authenticatedSession != session)
         return;
+      if (type == "READY"
+          || type == "READY_SUPPLEMENTAL"
+          || type == "GUILD_CREATE"
+          || type == "GUILD_DELETE"
+          || type == "CHANNEL_DELETE"
+          || type == "GUILD_MEMBER_REMOVE"
+          || type == "GUILD_MEMBER_UPDATE")
+        voiceRosterEvent(session, type, data);
       if (m_memberSession != session) {
         m_memberSession = session;
         m_memberStream.clear();
@@ -1594,6 +1623,8 @@ namespace api {
   void Client::publish(Event event) {
     std::lock_guard lock(m_mutex);
     if (event.session != m_session)
+      return;
+    if (event.operation == Operation::Voice && event.voice && event.voice->revision != m_voiceRevision)
       return;
     if (m_events.size() >= 2048) {
       // Keep bounded UI delivery. REST history can resynchronize the selected channel.

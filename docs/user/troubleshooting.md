@@ -78,6 +78,23 @@ message contents.
 - For video playback, check the package's libmpv and FFmpeg dependencies.
 - For saving images, check that your desktop portal's FileChooser backend works.
 
+## Voice does not connect or has no audio
+
+Check that PulseAudio or PipeWire's PulseAudio-compatible service is running.
+Open **Voice & Video**, use **Refresh devices** and select a working input and
+output. Disconnect before using **Start test** to check your microphone locally.
+
+Confirm that your microphone is not muted and that you are not deafened. In
+voice activity mode, lower the activity threshold if speech does not transmit.
+In push-to-talk mode, hold the configured shortcut while Cressida has keyboard
+focus. Server permissions or a server mute can also prevent speaking.
+
+**Voice connected** with **No other participants** means the channel is ready
+and you are alone. Your microphone can show local activity; audio waits for
+encrypted group keys before transmission. A device or network error needs an
+explicit rejoin after you correct the problem. Automatic call resume is not
+implemented. See [Voice chat](voice.md) for the supported call types.
+
 ## A source build fails
 
 Use the [build dependency reference](building.md). In particular:

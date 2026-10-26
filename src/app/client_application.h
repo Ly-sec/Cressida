@@ -82,8 +82,10 @@ namespace app {
     static constexpr int mediaGalleryReplayFrames = 13;
     static constexpr int imageMenuReplayFrames = 13;
     static constexpr int trayReplayFrames = 4;
+    static constexpr int voiceReplayFrames = 15;
     enum class Action {
       Settings,
+      VoiceAction,
       DmPage,
       DmAction,
       GuildMenu,
@@ -776,6 +778,18 @@ namespace app {
     void openSettings();
     bool settingsVisible() const { return m_settingsOpen || m_serverSettings.open; }
     void selectSettingsPage(const std::string& page);
+    void drawVoiceSettings(UserSettingsForm& form);
+    void drawVoiceBar(Node& root, float windowHeight);
+    void voiceAction(const std::string& action);
+    void configureVoice();
+    void voiceTick();
+    void releasePushToTalk();
+    bool voiceBarVisible() const;
+    std::size_t voiceMemberCount(const api::Channel& channel) const;
+    float voiceMembersHeight(const api::Channel& channel) const;
+    void drawVoiceMembers(Node& root, const api::Channel& channel, float y, float top, float bottom);
+    void prepareVoiceDemo(const std::string& view);
+    void demoVoiceStep();
     void clearAccountSettings();
     void resetProfile();
     void settingsKey(const Key& key);
@@ -876,6 +890,13 @@ namespace app {
     std::array<std::string, windowIconNames.size()> m_windowIconErrors;
     ScrollMotion m_scrolling;
     api::Client m_client;
+    voice::State m_voiceState;
+    api::VoiceRoster m_voiceRoster;
+    std::string m_voiceGuild;
+    voice::AudioState m_voiceAudioState;
+    Timer m_voiceJoinTimer;
+    bool m_voiceMuted = false, m_voiceDeafened = false, m_voicePtt = false;
+    std::uint32_t m_voicePttKey = 0;
     DesktopTray m_tray;
     bool m_trayAvailable = false, m_restartRequested = false;
     Timer m_trayStartupTimer;

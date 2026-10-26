@@ -38,6 +38,7 @@ namespace api {
     searchMembers(std::uint64_t session, const std::string& guild, const std::string& query, const std::string& nonce);
     bool setPresence(std::uint64_t session, std::string status, std::optional<std::string> customText = {});
     bool restorePresence(std::uint64_t session, Presence presence);
+    bool setVoice(std::uint64_t session, std::string guild, std::string channel, bool muted, bool deafened);
     void subscribe(std::string guild, std::string channel, int first, bool force = false, bool thread = false);
 
   private:
@@ -53,6 +54,9 @@ namespace api {
     Presence m_presence;
     bool m_presenceChosen = false, m_presenceRestored = false;
     std::uint64_t m_presenceVersion = 0;
+    std::string m_voiceGuild, m_voiceChannel;
+    bool m_voiceMuted = false, m_voiceDeafened = false, m_voiceChosen = false;
+    std::uint64_t m_voiceVersion = 0;
     int m_first = 0;
     bool m_thread = false;
     std::set<std::pair<std::string, std::string>> m_memberRequested;

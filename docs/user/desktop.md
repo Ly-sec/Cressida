@@ -19,6 +19,10 @@ Closing the window with a tray host available hides it and keeps the connection
 alive. Without a tray host, closing the window exits normally. If the tray host
 disappears while the window is hidden, Cressida restores the window.
 
+A connected [voice call](voice.md) also continues while the window is hidden.
+Voice activity can keep transmitting; mute or disconnect when you want to stop.
+Hiding the window releases push to talk.
+
 Tray support depends on your desktop. Some desktops need a compatible tray
 extension or panel applet.
 

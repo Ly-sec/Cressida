@@ -263,6 +263,29 @@ namespace app {
         result.randomizeMediaFilenames = at->get<bool>();
       if (const auto at = value.find("twelve_hour_clock"); at != value.end() && at->is_boolean())
         result.twelveHourClock = at->get<bool>();
+      if (const auto at = value.find("voice"); at != value.end() && at->is_object()) {
+        auto& settings = result.voice;
+        const auto device = [&](const char* key) {
+          constexpr std::size_t maximumDeviceBytes = 256;
+          const auto field = at->find(key);
+          return field != at->end()
+                  && field->is_string()
+                  && field->get_ref<const std::string&>().size() <= maximumDeviceBytes
+              ? field->get<std::string>()
+              : std::string{};
+        };
+        settings.inputDevice = device("input");
+        settings.outputDevice = device("output");
+        for (const auto& [key, member] :
+             {std::pair{"input_volume", &voice::AudioSettings::inputVolume},
+              std::pair{"output_volume", &voice::AudioSettings::outputVolume},
+              std::pair{"threshold", &voice::AudioSettings::threshold}})
+          if (const auto field = at->find(key); field != at->end() && field->is_number())
+            settings.*member = field->get<float>();
+        if (const auto field = at->find("push_to_talk"); field != at->end() && field->is_boolean())
+          settings.pushToTalk = field->get<bool>();
+        settings = voice::sanitizeAudioSettings(std::move(settings));
+      }
       result.logDeletedMessages = value.value("log_deleted_messages", false);
       result.logEditHistory = value.value("log_edit_history", false);
       result.roleColors = value.value("role_colors", true);
@@ -415,6 +438,13 @@ namespace app {
           {"emoji_image_links", preferences.emojiImageLinks},
           {"randomize_media_filenames", preferences.randomizeMediaFilenames},
           {"twelve_hour_clock", preferences.twelveHourClock},
+          {"voice",
+           {{"input", preferences.voice.inputDevice},
+            {"output", preferences.voice.outputDevice},
+            {"input_volume", preferences.voice.inputVolume},
+            {"output_volume", preferences.voice.outputVolume},
+            {"threshold", preferences.voice.threshold},
+            {"push_to_talk", preferences.voice.pushToTalk}}},
           {"log_deleted_messages", preferences.logDeletedMessages},
           {"log_edit_history", preferences.logEditHistory},
           {"role_colors", preferences.roleColors},

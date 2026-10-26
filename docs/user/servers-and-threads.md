@@ -9,6 +9,10 @@ Choose a server from the rail, then a channel from its sidebar. Threads appear
 under their parent channel with an L-shaped branch. Forum channels provide a
 place to browse posts and their conversations.
 
+By default, text channels appear before voice and Stage channels within each
+category and in the uncategorized list, keeping the server's saved order within
+each group.
+
 Unread markers sit inside the channel sidebar. Mention counts appear on rail
 icons and folders. Large counts use `99+`; hover a count to see its full value.
 Muted channels and categories appear dimmer, while hovered, selected and
@@ -17,6 +21,10 @@ mentioned items remain readable.
 Automatic read receipts are grouped while you read active conversations. Local
 unread indicators update immediately. Explicit **Mark as Read** actions are sent
 immediately.
+
+Click a voice channel or its phone button to join. The sidebar then provides
+mute, deafen and disconnect controls. See [Voice chat](voice.md) for audio
+settings and current limits.
 
 ## Use folders
 

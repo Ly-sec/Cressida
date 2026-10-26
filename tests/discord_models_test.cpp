@@ -1,5 +1,6 @@
 #include "api/models.h"
 
+#include <algorithm>
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
@@ -25,8 +26,8 @@ int main() {
     );
     require(
         specialChannels.size() == 4
-            && specialChannels[1].kind() == api::ChannelType::GuildStageVoice
-            && specialChannels[2].kind() == api::ChannelType::GuildDirectory,
+            && specialChannels[1].kind() == api::ChannelType::GuildDirectory
+            && specialChannels[3].kind() == api::ChannelType::GuildStageVoice,
         "Guild snapshots retain announcements, stages, directories and media while threads stay separate"
     );
     api::Message replyMessage;
@@ -167,8 +168,8 @@ int main() {
         })
     );
     require(
-        channels.size() == 4 && channels.front().id == "4" && channels.front().type == 2 && channels.back().type == 4,
-        "Retain voice channel text chats, filter unsupported channel types and preserve position order"
+        channels.size() == 4 && channels.front().id == "2" && channels[2].id == "4" && channels.back().type == 4,
+        "Retain voice channel text chats after text channels and filter unsupported channel types"
     );
     auto messages = api::parseMessages(
         json::array({
@@ -217,6 +218,53 @@ int main() {
             && categorized[2].id == "10"
             && categorized[3].id == "11",
         "Keep channels under their ordered parent categories"
+    );
+    auto mixedChannelPayload = json::array({
+        {{"id", "93"}, {"type", 2}, {"position", 0}, {"parent_id", "90"}},
+        {{"id", "100"}, {"type", 4}, {"position", 1}},
+        {{"id", "10"}, {"type", 13}, {"position", 0}},
+        {{"id", "30"}, {"type", 0}, {"position", 5}},
+        {{"id", "103"}, {"type", 2}, {"position", 0}, {"parent_id", "100"}},
+        {{"id", "92"}, {"type", 16}, {"position", 0}, {"parent_id", "90"}},
+        {{"id", "31"}, {"type", 15}, {"position", 0}},
+        {{"id", "11"}, {"type", 2}, {"position", 2}},
+        {{"id", "91"}, {"type", 0}, {"position", 3}, {"parent_id", "90"}},
+        {{"id", "90"}, {"type", 4}, {"position", 1}},
+        {{"id", "102"}, {"type", 2}, {"position", 1}, {"parent_id", "100"}},
+        {{"id", "32"}, {"type", 5}, {"position", 5}},
+        {{"id", "101"}, {"type", 0}, {"position", 8}, {"parent_id", "100"}},
+        {{"id", "9"}, {"type", 2}, {"position", 0}},
+        {{"id", "33"}, {"type", 14}, {"position", 0}},
+    });
+    const auto channelIds = [](const std::vector<api::Channel>& items) {
+      std::vector<std::string> ids;
+      for (const auto& item : items)
+        ids.push_back(item.id);
+      return ids;
+    };
+    const std::vector<std::string> expectedChannelOrder{"31", "33", "30", "32",  "9",   "10",  "11", "90",
+                                                        "92", "91", "93", "100", "101", "103", "102"};
+    auto mixedChannels = api::parseChannels(mixedChannelPayload);
+    require(
+        channelIds(mixedChannels) == expectedChannelOrder,
+        "Order text-like and voice/stage groups by position and numeric ID within their own category"
+    );
+    std::reverse(mixedChannelPayload.begin(), mixedChannelPayload.end());
+    require(
+        channelIds(api::parseChannels(mixedChannelPayload)) == expectedChannelOrder,
+        "Channel ordering is independent of the server response array order"
+    );
+    for (auto& channel : mixedChannels) {
+      if (channel.id == "103")
+        channel.position = 2;
+      if (channel.id == "11")
+        channel.parentId = "90";
+    }
+    const std::vector<std::string> movedChannelOrder{"31", "33", "30", "32",  "9",   "10",  "90", "92",
+                                                     "91", "93", "11", "100", "101", "102", "103"};
+    require(
+        channelIds(api::orderChannels(std::move(mixedChannels))) == movedChannelOrder,
+        "Reordering positions and moving a voice channel into a category preserve grouped server order"
     );
     const auto conversations = api::parsePrivateChannels(
         json::array(

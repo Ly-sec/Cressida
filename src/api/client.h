@@ -20,6 +20,8 @@
 #include "api/typing.h"
 #include "api/user_directory.h"
 #include "api/user_settings.h"
+#include "api/voice_roster.h"
+#include "api/voice_session.h"
 #include "auth/credentials.h"
 #include "core/process/wake_event.h"
 
@@ -94,7 +96,9 @@ namespace api {
     InboxRead,
     InboxWrite,
     InboxUpdate,
-    AccountRestriction
+    AccountRestriction,
+    Voice,
+    VoiceRoster
   };
 
   struct Event {
@@ -164,6 +168,8 @@ namespace api {
     std::optional<api::TypingStart> typing;
     std::optional<InboxQuery> inboxQuery;
     std::optional<InboxPage> inboxPage;
+    std::optional<voice::State> voice;
+    std::optional<api::VoiceRosterUpdate> voiceRoster;
   };
 
   // An ordered account/mutation owner and three independent, bounded GET lanes.
@@ -171,7 +177,8 @@ namespace api {
   class Client {
   public:
     explicit Client(
-        std::unique_ptr<auth::CredentialBackend> credentials = {}, std::filesystem::path disabledLogin = {}
+        std::unique_ptr<auth::CredentialBackend> credentials = {}, std::filesystem::path disabledLogin = {},
+        std::shared_ptr<voice::Audio> audio = {}
     );
     ~Client();
     Client(const Client&) = delete;
@@ -182,6 +189,10 @@ namespace api {
     std::uint64_t restoreLogin();
     std::uint64_t logout();
     std::uint64_t disconnect();
+    bool joinVoice(const std::string& guild, const std::string& channel, voice::AudioSettings settings);
+    void leaveVoice(std::uint64_t expectedSession = 0);
+    void configureVoice(voice::AudioSettings settings);
+    std::shared_ptr<voice::Audio> voiceAudio() const { return m_voiceAudio; }
     bool channels(const std::string& guildId);
     bool privateChannels();
     bool threads(ThreadQuery query);
@@ -267,6 +278,9 @@ namespace api {
     void saveLogin(std::uint64_t session, const std::string& token);
     void forgetLogin(std::uint64_t session);
     void gatewayEvent(std::uint64_t session, const std::string& type, const nlohmann::json& data);
+    void voiceEvent(std::uint64_t session, const std::string& type, const nlohmann::json& data);
+    void voiceRosterEvent(std::uint64_t session, const std::string& type, const nlohmann::json& data);
+    voice::State resetVoice(bool notifyGateway, std::uint64_t expectedSession = 0);
 
     process::WakeEvent m_wake;
     process::WakeEvent m_requestWake;
@@ -291,6 +305,13 @@ namespace api {
     std::vector<PreloadRead> m_preloadReads;
     std::vector<Event> m_events;
     std::unique_ptr<Gateway> m_gateway;
+    std::mutex m_voiceMutex;
+    std::atomic<std::uint64_t> m_voiceRevision{0};
+    VoiceSession m_voiceSession;
+    api::VoiceRoster m_voiceRoster;
+    voice::AudioSettings m_voiceSettings;
+    std::shared_ptr<voice::Audio> m_voiceAudio;
+    std::unique_ptr<voice::Connection> m_voice;
     std::unique_ptr<auth::CredentialStore> m_credentials;
     std::string m_selectedGuild, m_selectedChannel;
     std::optional<MemberListIdentity> m_selectedMemberIdentity;

@@ -14,16 +14,24 @@ description:
 | Rich content  | Markdown, embeds, custom emoji, GIFs and stickers.                       |
 | Uploads       | Pasted images.                                                           |
 | Media viewing | Image galleries and native received-video playback.                      |
+| Voice         | Server voice channels and joining existing direct or group calls.        |
 | Profiles      | Rich profiles, equipped cosmetics and a profile panel in one-to-one DMs. |
 | Appearance    | Dark, Light and System modes; bundled and custom palettes.               |
 | Desktop       | Tray, notification activation and reuse of the running window.           |
 
 ## What is not supported yet?
 
-Voice and video calls, arbitrary file uploads, file drag-and-drop and multiple
-remembered accounts are not available yet. Some account, moderation and other
-settings or actions remain incomplete. A visible unavailable control should not
-be taken as a working feature.
+Video calls, arbitrary file uploads, file drag-and-drop and multiple remembered
+accounts are not available yet. Some account, moderation and other settings or
+actions remain incomplete. A visible unavailable control should not be taken as
+a working feature.
+
+## Can I use voice chat?
+
+You can join server voice channels and existing direct or group calls. Device
+selection, input/output volume, voice activity, push to talk and a local
+microphone test are available under **Voice & Video**. Outgoing ringing and
+incoming-call notifications are not implemented. See [Voice chat](voice.md).
 
 ## Is video supported?
 

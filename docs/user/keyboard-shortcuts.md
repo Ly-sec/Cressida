@@ -57,6 +57,16 @@ See [Search messages](chat.md#search-messages) for filters and examples.
 See [Inbox](inbox.md) for unread conversations, mentions, bookmarks and
 reminders.
 
+## Voice chat
+
+| Shortcut         | Action                                          |
+| ---------------- | ----------------------------------------------- |
+| Ctrl+Shift+Space | Hold to transmit when Push to talk is selected. |
+
+Change the shortcut under **Keybinds**. It works while Cressida has keyboard
+focus; switching windows or hiding Cressida releases it. See
+[Voice chat](voice.md) for activation and microphone settings.
+
 ## Image viewer
 
 | Shortcut     | Action                  |

@@ -42,10 +42,11 @@ namespace app {
       const api::Channel* channel;
       float top, height, advance;
     };
-    template <class Muted, class MentionCount, class Visible>
+    template <class Muted, class MentionCount, class Visible, class VoiceHeight>
     std::vector<ChannelListRow> channelListRows(
         const std::vector<api::Channel>& channels, const std::set<std::string>& collapsed, const std::string& selected,
-        const ChannelListPreferences& preferences, Muted muted, MentionCount mentions, Visible visible
+        const ChannelListPreferences& preferences, Muted muted, MentionCount mentions, Visible visible,
+        VoiceHeight voiceHeight
     ) {
       std::vector<ChannelListRow> rows;
       float top = 0;
@@ -83,8 +84,9 @@ namespace app {
         const float advance = channel.type == 4 ? layout::Sidebar::categoryHeight
             : direct                            ? layout::DmSidebar::conversationStep
                                                 : layout::Sidebar::rowStep;
-        rows.push_back({&channel, top, height, advance});
-        top += advance;
+        const float totalAdvance = advance + voiceHeight(channel);
+        rows.push_back({&channel, top, height, totalAdvance});
+        top += totalAdvance;
       }
       return rows;
     }
@@ -407,6 +409,8 @@ namespace app {
         demoFloatingStep();
       if (m_demo && m_demoOverlay.starts_with("reply-cycle") && m_demoInteractionStep < composerReplyReplayFrames)
         demoComposerReplyStep();
+      if (m_demo && m_demoOverlay.starts_with("voice-cycle") && m_demoInteractionStep < voiceReplayFrames)
+        demoVoiceStep();
       if (m_demo && m_demoOverlay == "user-preferences-cycle" && m_demoInteractionStep < 12)
         demoUserPreferencesStep();
       if (m_demo
@@ -1052,6 +1056,18 @@ namespace app {
       openContext(x, y);
     };
     m_window.key = [this](const Key& key) { onKey(key); };
+    m_window.keyReleased = [this](std::uint32_t symbol) {
+      if (symbol == m_voicePttKey
+          || symbol == XKB_KEY_Control_L
+          || symbol == XKB_KEY_Control_R
+          || symbol == XKB_KEY_Shift_L
+          || symbol == XKB_KEY_Shift_R
+          || symbol == XKB_KEY_Alt_L
+          || symbol == XKB_KEY_Alt_R
+          || symbol == XKB_KEY_Super_L
+          || symbol == XKB_KEY_Super_R)
+        releasePushToTalk();
+    };
     m_window.focusChanged = [this](bool focused) { windowFocusChanged(focused); };
     m_window.animate = [this] {
       const bool active = m_scrolling.tick();
@@ -1424,6 +1440,7 @@ namespace app {
                    : m_demo && view && std::string_view(view).starts_with("decorations-cycle") ? 4
                    : m_demo && view && std::string_view(view).starts_with("reduced-motion-cycle")
                    ? reducedMotionReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("voice-cycle")             ? voiceReplayFrames
                    : m_demo && view && std::string_view(view) == "user-preferences-cycle"            ? 12
                    : m_demo && view && std::string_view(view) == "user-account-cycle"                ? 16
                    : m_demo && view && std::string_view(view) == "user-settings-lists-cycle"         ? 30
@@ -1466,7 +1483,7 @@ namespace app {
             : 0,
         m_assets.eventFd(), m_video.eventFd(), m_themes.eventFd(), m_filePicker.eventFd(), m_soundPreview.eventFd(),
         m_desktopNotifications.eventFd(), m_tray.eventFd(), m_windowIcons.eventFd(),
-        m_instance ? m_instance->eventFd() : -1
+        m_instance ? m_instance->eventFd() : -1, m_client.voiceAudio()->eventFd()
     );
     if (m_demoOverlay == "server-settings-commands-cycle" && m_demoInteractionStep != 12)
       throw std::runtime_error("Server command permissions replay did not finish");
@@ -1518,6 +1535,8 @@ namespace app {
       throw std::runtime_error("Desktop decorations replay did not finish");
     if (m_demoOverlay.starts_with("reduced-motion-cycle") && m_demoInteractionStep != reducedMotionReplayFrames)
       throw std::runtime_error("Reduced motion media replay did not finish");
+    if (m_demoOverlay.starts_with("voice-cycle") && m_demoInteractionStep != voiceReplayFrames)
+      throw std::runtime_error("The voice replay did not complete");
     if (m_demoOverlay == "user-preferences-cycle" && m_demoInteractionStep != 12)
       throw std::runtime_error("Client preferences replay did not finish");
     if (m_demoOverlay == "dm-compose-cycle" && m_demoInteractionStep != 16)
@@ -2998,6 +3017,8 @@ namespace app {
           selectSettingsPage("accessibility");
           m_demoOverlay = view;
           m_demoInteractionStep = 0;
+        } else if (view.starts_with("voice-cycle")) {
+          prepareVoiceDemo(view);
         } else if (view == "user-preferences-cycle") {
           openSettings();
           selectSettingsPage("keybinds");
@@ -3596,14 +3617,17 @@ namespace app {
           0, layout::Window::titlebarHeight, layout::Sidebar::railWidth,
           account.y - layout::Floating::inset - layout::Window::titlebarHeight
       );
-      const float sidebarBottom = railFrame.y + railFrame.height;
+      const float sidebarBottom = railFrame.y + railFrame.height - (voiceBarVisible() ? layout::Voice::reserve : 0);
       floatingPanel(root, railFrame, theme::railBackground);
       const float sidebarWidth = channelSidebarWidth();
       floatingPanel(
           root,
           layout::floatingFrame(
               layout::Sidebar::railWidth, layout::Window::titlebarHeight, sidebarWidth,
-              account.y - layout::Floating::inset - layout::Window::titlebarHeight
+              account.y
+                  - layout::Floating::inset
+                  - layout::Window::titlebarHeight
+                  - (voiceBarVisible() ? layout::Voice::reserve : 0)
           ),
           background
       );
@@ -3683,7 +3707,7 @@ namespace app {
           messageRequestCount(), true, "pending message request"
       );
 
-      drawServerRail(root, sidebarBottom);
+      drawServerRail(root, railFrame.y + railFrame.height);
       auto listedChannels = m_channels;
       if (m_dmMode && !m_dmSearch.empty())
         std::erase_if(listedChannels, [&](const auto& channel) { return !dmMatches(channelName(channel)); });
@@ -3691,7 +3715,8 @@ namespace app {
           listedChannels, m_collapsedCategories, m_channelId, m_channelListPreferences,
           [&](const auto& id) { return channelMuted(id); },
           [&](const auto& id) { return m_unreadTimeline.mentions(id); },
-          [&](const auto& channel) { return m_dmMode || serverChannelVisible(channel); }
+          [&](const auto& channel) { return m_dmMode || serverChannelVisible(channel); },
+          [this](const auto& channel) { return voiceMembersHeight(channel); }
       );
       if (m_dmMode)
         iconButton(
@@ -3701,7 +3726,7 @@ namespace app {
             "plus", "New message"
         );
       const float channelTop = m_dmMode ? layout::DmSidebar::channelsTop : layout::Sidebar::channelsTop;
-      const float accountTop = account.y;
+      const float accountTop = account.y - (voiceBarVisible() ? layout::Voice::reserve : 0);
       const float channelListHeight =
           visibleChannels.empty() ? 0 : visibleChannels.back().top + visibleChannels.back().advance;
       m_scrolling.limit(
@@ -3726,8 +3751,11 @@ namespace app {
           if (nextMention.empty())
             nextMention = channel.id;
         }
-        if (y < channelTop - Style::spaceXs || y + row.height > sidebarBottom)
+        if (y < channelTop - Style::spaceXs || y + row.height > sidebarBottom) {
+          if (channel.type == 2)
+            drawVoiceMembers(root, channel, y + layout::Sidebar::rowStep, channelTop - Style::spaceXs, sidebarBottom);
           continue;
+        }
         const auto rowContent = [&](bool dim) -> Node& {
           if (!dim)
             return root;
@@ -3914,6 +3942,8 @@ namespace app {
         m_contextTargets.push_back(
             {rowX, y, rowWidth, row.height, m_dmMode ? Action::ConversationMenu : Action::ChannelMenu, channel.id}
         );
+        if (channel.type == 2)
+          drawVoiceMembers(root, channel, y + layout::Sidebar::rowStep, channelTop - Style::spaceXs, sidebarBottom);
       }
       if (mentionsBelow > 0) {
         const auto text = (mentionsBelow > 99 ? "99+" : std::to_string(mentionsBelow))
@@ -3971,7 +4001,7 @@ namespace app {
       const float accountDetailHeight =
           std::max(Style::fontSizeDetail + Style::spaceXs, accountDetailMetrics.bottom - accountDetailMetrics.top);
       const float accountTextTop =
-          accountTop + layout::Sidebar::accountOffset(accountNameHeight + accountDetailHeight + Style::spaceXxs);
+          account.y + layout::Sidebar::accountOffset(accountNameHeight + accountDetailHeight + Style::spaceXxs);
       label(
           root, account.nameX, accountTextTop, account.nameWidth, m_account.name, Style::fontSizeCaption, foreground,
           FontWeight::Medium
@@ -3992,6 +4022,7 @@ namespace app {
           "settings", "User settings"
       );
 
+      drawVoiceBar(root, h);
       const bool forum = forumView();
       const float panelWidth = m_channelPanel.empty() ? 0 : channelPanelWidth();
       const float memberWidth = memberPaneWidth();
@@ -5821,6 +5852,12 @@ namespace app {
   }
 
   void ClientApplication::demo() {
+    m_voiceJoinTimer.stop();
+    m_voiceState = {};
+    m_voiceRoster.clear();
+    m_voiceGuild.clear();
+    m_voiceMuted = m_voiceDeafened = m_voicePtt = false;
+    m_voicePttKey = 0;
     finishSidebarResize();
     closeVideo();
     clearEmojiState();
@@ -6249,13 +6286,19 @@ namespace app {
              m_channels, m_collapsedCategories, m_channelId, m_channelListPreferences,
              [&](const auto& id) { return channelMuted(id); },
              [&](const auto& channel) { return m_unreadTimeline.mentions(channel); },
-             [&](const auto& channel) { return m_dmMode || serverChannelVisible(channel); }
+             [&](const auto& channel) { return m_dmMode || serverChannelVisible(channel); },
+             [this](const auto& channel) { return voiceMembersHeight(channel); }
          )) {
       if (row.channel->id == id) {
         const float sceneHeight = m_window.height() + layout::Window::titlebarHeight - m_window.titlebarHeight();
         const float listTop = m_dmMode ? layout::DmSidebar::channelsTop : layout::Sidebar::channelsTop;
-        const auto view =
-            std::max(row.advance, layout::accountFrame(sceneHeight, chatLeft()).y - layout::Floating::gap - listTop);
+        const auto view = std::max(
+            row.advance,
+            layout::accountFrame(sceneHeight, chatLeft()).y
+                - layout::Floating::gap
+                - (voiceBarVisible() ? layout::Voice::reserve : 0)
+                - listTop
+        );
         m_channelScroll = std::clamp(m_channelScroll, std::max(0.0F, row.top - view + row.advance), row.top);
         break;
       }
@@ -6601,6 +6644,7 @@ namespace app {
   }
 
   void ClientApplication::tick() {
+    voiceTick();
     if (m_instance)
       if (auto activation = m_instance->poll())
         trayEvent({.command = TrayCommand::Open, .activationToken = std::move(*activation)});
@@ -6725,6 +6769,22 @@ namespace app {
     for (auto& event : m_client.drain()) {
       if (event.session != m_session || m_demo)
         continue;
+      if (event.operation == api::Operation::VoiceRoster && event.voiceRoster) {
+        m_voiceRoster.apply(*event.voiceRoster);
+        m_window.invalidate();
+        continue;
+      }
+      if (event.operation == api::Operation::Voice && event.voice) {
+        if (event.voice->phase != voice::Phase::Disconnected || m_voiceState.phase != voice::Phase::Failed)
+          m_voiceState = std::move(*event.voice);
+        if (m_voiceState.phase == voice::Phase::Connected
+            || m_voiceState.phase == voice::Phase::Failed
+            || m_voiceState.phase == voice::Phase::WaitingForParticipants
+            || m_voiceState.phase == voice::Phase::Disconnected)
+          m_voiceJoinTimer.stop();
+        m_window.invalidate();
+        continue;
+      }
       if (event.operation == api::Operation::TypingStart) {
         typingEvent(event);
         continue;
@@ -6832,6 +6892,7 @@ namespace app {
           m_savingProfile = m_loadingProfile = false;
           m_desiredPresence.clear();
           m_preferences = m_sessionStore.preferences(m_account.id);
+          configureVoice();
           releaseDisabledCosmetics();
           m_sessionStore.saveAppearance(m_preferences);
           m_frequentReactions = m_sessionStore.frequentReactions(m_account.id);
@@ -7644,6 +7705,7 @@ namespace app {
       openSettings();
       break;
     case Action::CloseSettings:
+      m_client.voiceAudio()->stopTest();
       if (m_userAccount.busy || m_userSettingsLists.busy)
         break;
       if (!m_userAccount.draft.empty() || m_userAccount.crop) {
@@ -7784,7 +7846,9 @@ namespace app {
       markChannelRead(true);
       break;
     case Action::UserAccountAction:
-      if (!userSettingsListsAction(hit.id))
+      if (hit.id.starts_with("voice:"))
+        voiceAction(hit.id.substr(6));
+      else if (!userSettingsListsAction(hit.id))
         userAccountAction(hit.id);
       break;
     case Action::Preference:
@@ -7938,14 +8002,21 @@ namespace app {
       break;
     case Action::Channel:
       m_pendingDiscordLink.reset();
+      if (const auto channel = std::ranges::find(m_channels, hit.id, &api::Channel::id);
+          channel != m_channels.end() && channel->type == 2)
+        voiceAction("join:" + hit.id);
       selectChannel(hit.id);
+      break;
+    case Action::VoiceAction:
+      voiceAction(hit.id);
       break;
     case Action::JumpChannelMention: {
       for (const auto& row : channelListRows(
                m_channels, m_collapsedCategories, m_channelId, m_channelListPreferences,
                [&](const auto& id) { return channelMuted(id); },
                [&](const auto& channel) { return m_unreadTimeline.mentions(channel); },
-               [&](const auto& channel) { return m_dmMode || serverChannelVisible(channel); }
+               [&](const auto& channel) { return m_dmMode || serverChannelVisible(channel); },
+               [this](const auto& channel) { return voiceMembersHeight(channel); }
            )) {
         if (row.channel->id == hit.id) {
           m_scrolling.stop(m_channelScroll);

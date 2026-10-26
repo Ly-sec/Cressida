@@ -7,13 +7,16 @@ set -eu
 test -f /etc/alpine-release
 apk upgrade --no-cache
 apk add --no-cache \
-    bash binutils build-base ca-certificates curl dbus ffmpeg meson ninja \
+    bash binutils build-base ca-certificates cmake curl dbus ffmpeg meson ninja \
     pkgconf python3 su-exec cairo-dev curl-dev fontconfig-dev freetype-dev \
     glib-dev harfbuzz-dev libjxl-dev librsvg-dev libsecret-dev libwebp-dev \
     libxkbcommon-dev md4c-dev mesa-dev mpv-dev nlohmann-json pango-dev \
     rlottie-dev tomlplusplus-dev wayland-dev wayland-protocols zstd-dev \
+    opus-dev libsodium-dev pulseaudio-dev openssl-dev \
     font-dejavu font-noto-emoji shared-mime-info xdg-utils \
     mesa-dri-gallium mesa-egl
+
+sh scripts/build-voice-dependencies.sh /usr/local
 
 # Alpine's stb package predates resize2; match the revision in nix/stb.nix.
 stb_revision=f1c79c02822848a9bed4315b12c8c8f3761e1296

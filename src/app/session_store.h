@@ -1,6 +1,7 @@
 #pragma once
 #include "app/layout_metrics.h"
 #include "app/window_controls.h"
+#include "voice/audio.h"
 
 #include <filesystem>
 #include <map>
@@ -42,6 +43,7 @@ namespace app {
     int cornerRadius = Style::cornerRadiusDefaultPercent;
     bool randomizeMediaFilenames = false;
     bool twelveHourClock = false;
+    voice::AudioSettings voice;
   };
   struct LastChannel {
     std::string guild, channel;

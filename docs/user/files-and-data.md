@@ -28,6 +28,10 @@ Local UI state includes navigation and account preferences. Color mode, palette
 and supported settings are kept per account. Custom themes remain separate TOML
 files; the state file stores the selected palette's ID, not its contents.
 
+Voice device choices, input/output volume, activation mode and activity
+threshold are also saved per account. Active calls, mute/deafen state,
+microphone audio and voice-session encryption keys are not saved.
+
 Saved login credentials belong in the desktop keyring. Signing out removes the
 saved login. Closing or restarting the client does not sign out.
 

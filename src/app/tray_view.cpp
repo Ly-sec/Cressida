@@ -18,6 +18,8 @@ namespace app {
     });
   }
   void ClientApplication::closeToTray() {
+    releasePushToTalk();
+    m_client.voiceAudio()->stopTest();
     // A window must remain reachable when the desktop has no tray host.
     if (!m_trayAvailable) {
       m_window.close();

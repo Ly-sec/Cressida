@@ -53,6 +53,20 @@ them to the installed client's runtime dependencies.
 
 ### Libraries and headers
 
+Voice requires C++23-compatible libdave and MLS builds, libsodium, Opus and
+libpulse. The supplied Nix recipe in [nix/libdave.nix](nix/libdave.nix) pins the
+encryption dependencies. Other packagers must supply the libdave C API
+(`dave/dave.h`) and `libdave` pkg-config metadata. The encryption regression
+test also needs MLS C++ headers and `mlspp` metadata. Meson never downloads
+these dependencies during configuration.
+
+For builds outside Nix, `sh scripts/build-voice-dependencies.sh /usr/local`
+builds the same immutable, checksum-verified encryption sources with C++23.
+It requires CMake, Ninja, Python 3, curl, OpenSSL development files and the
+JSON headers. An optional absolute prefix selects the installation directory;
+add its `lib/pkgconfig` directory to `PKG_CONFIG_PATH` for a custom prefix.
+`CRESSIDA_VOICE_BUILD_JOBS` sets parallel compilation and defaults to four.
+
 | Dependency | pkg-config module / requirement | Purpose |
 |---|---|---|
 | Wayland | `wayland-client`, `wayland-egl`, `wayland-protocols` | Native windows and generated protocol bindings |
@@ -236,6 +250,10 @@ writes into the system prefix or changes desktop caches, and preserves any
 existing uninstall manifest.
 
 ## Runtime integration
+
+Voice needs a running PulseAudio service or PipeWire's PulseAudio-compatible
+service, plus the voice libraries listed above. Cressida does not install or
+start an audio daemon.
 
 | Dependency | Requirement |
 |---|---|

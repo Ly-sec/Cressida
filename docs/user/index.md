@@ -22,13 +22,14 @@ sample conversations. Demo mode does not sign in or connect to your account.
 ## What is available?
 
 Text chat, one-to-one and group DMs, threads, forum posts, rich profiles, image
-uploads and native media viewing are available. Desktop tray integration,
-notifications and per-account appearance settings help it fit into your session.
+uploads, native media viewing and voice chat are available. Desktop tray
+integration, notifications and per-account appearance settings help it fit into
+your session.
 
-:::caution[Early development] Voice and video calls, arbitrary file uploads and
-file drag-and-drop are not available yet. Some settings and actions are
-incomplete. See the [capabilities and FAQ](faq.md) before making Cressida your
-main client. :::
+:::caution[Early development] Video calls, arbitrary file uploads and file
+drag-and-drop are not available yet. Some settings and actions are incomplete.
+See the [capabilities and FAQ](faq.md) before making Cressida your main client.
+:::
 
 ## Find a guide
 
@@ -39,6 +40,7 @@ main client. :::
 | See statuses and profiles in DMs  | [Direct messages](direct-messages.md)         |
 | Organize my server list           | [Servers and threads](servers-and-threads.md) |
 | View, save or send an image       | [Images and video](media.md)                  |
+| Join voice or set up a microphone | [Voice chat](voice.md)                        |
 | Start in the tray                 | [Desktop integration](desktop.md)             |
 | Write my own palette              | [Custom themes](custom-themes.md)             |
 | Fix a startup or sign-in problem  | [Troubleshooting](troubleshooting.md)         |

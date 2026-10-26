@@ -140,7 +140,7 @@ namespace app {
         event.channels.push_back(*selected);
       }
     }
-    m_guildChannels[event.resource] = std::move(event.channels);
+    m_guildChannels[event.resource] = api::orderChannels(std::move(event.channels));
     m_messageLayouts.clear();
     m_completionDirty = true;
     if (m_dmMode || event.resource != m_guildId)
@@ -194,7 +194,9 @@ namespace app {
     } else if (step == 2) {
       event.resource = "2";
       event.operation = api::Operation::ChannelSnapshot;
-      event.channels = {{"101", "general"}, {"102", "other"}};
+      event.channels = {
+          {"200", "Primary", 4}, {"101", "general", 0, 0, "200"}, {"300", "Saved", 4}, {"102", "other", 0, 0, "300"}
+      };
       channelSnapshotEvent(event);
       require(
           !m_loadingChannels && m_channelId == "101",
@@ -207,7 +209,7 @@ namespace app {
       m_scrolling.stop(m_messageScroll);
       m_messageLayouts.clear();
       event.operation = api::Operation::Channels;
-      event.channels = {{"101", "general"}};
+      event.channels = {{"200", "Primary", 4, 1}, {"101", "general", 0, 0, "200"}};
       channelSnapshotEvent(event);
       require(
           m_channelId == "102"
@@ -215,6 +217,17 @@ namespace app {
               && m_messages.front().content == "Keep the loaded conversation"
               && m_messageScroll == 42,
           "Late REST channels cannot replace the user's selection, draft or timeline"
+      );
+      const auto& ordered = m_guildChannels.at("2");
+      require(
+          ordered.size() == 4
+              && ordered[0].id == "300"
+              && ordered[1].id == "102"
+              && ordered[2].id == "200"
+              && ordered[3].id == "101"
+              && m_channels[0].id == "300"
+              && m_channels[1].id == "102",
+          "Preserved live channels and their categories return to server order after the REST snapshot merge"
       );
     } else if (step == 3) {
       m_openFolders.erase("50");

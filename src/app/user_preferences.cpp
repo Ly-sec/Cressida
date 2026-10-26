@@ -14,6 +14,7 @@ namespace app {
         {"inbox", "Ctrl+i"},
         {"jump_latest", "Ctrl+End"},
         {"toggle_members", "Ctrl+u"},
+        {"push_to_talk", "Ctrl+Shift+space"},
         {"next_channel", "Alt+Down"},
         {"previous_channel", "Alt+Up"},
         {"next_server", "Ctrl+Alt+Down"},
@@ -196,7 +197,18 @@ namespace app {
         saveSelection();
       } else if (settingsVisible())
         return false;
-      else if (name == "jump_latest")
+      else if (name == "push_to_talk") {
+        if (!m_preferences.voice.pushToTalk
+            || (m_voiceState.phase != voice::Phase::Connected
+                && m_voiceState.phase != voice::Phase::WaitingForParticipants
+                && m_voiceState.phase != voice::Phase::Securing))
+          return false;
+        if (!m_voicePtt) {
+          m_voicePtt = true;
+          m_voicePttKey = key.symbol;
+          configureVoice();
+        }
+      } else if (name == "jump_latest")
         activate({0, 0, 0, 0, Action::JumpLatest, {}});
       else if (name == "inbox")
         toggleInbox();

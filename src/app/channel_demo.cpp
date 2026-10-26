@@ -395,6 +395,71 @@ namespace app {
           std::ranges::none_of(m_hits, [](const auto& h) { return h.action == Action::DismissEphemeral; }),
           "Dismissed messages remove their footer and button hit regions"
       );
+      {
+        const auto originalChannels = m_channels;
+        const auto originalBase = m_guildChannels.at(m_guildId);
+        const auto originalThreads = m_threads;
+        const auto originalRequests = m_channelDetailRequests;
+        const auto originalLoaded = m_channelDetailsLoaded;
+        const auto originalErrors = m_channelDetailErrors;
+        const auto originalSelection = m_channelId;
+        const auto originalMessage = m_messages.front().id;
+        const auto ids = [](const auto& channels) {
+          std::vector<std::string> result;
+          for (const auto& channel : channels)
+            result.push_back(channel.id);
+          return result;
+        };
+        api::Channel moving{"951", "Moving channel", 0, 2, "900"};
+        m_guildChannels[m_guildId] = api::orderChannels(
+            {{"900", "First category", 4},
+             {"901", "Second category", 4, 1},
+             {"910", "Earlier text", 0, 1, "900"},
+             moving,
+             {"920", "Voice", 2, 0, "900"}}
+        );
+        api::Channel thread{"930", "Retained thread", 11, 0, moving.id};
+        thread.joined = true;
+        thread.archived = false;
+        m_threads.apply(
+            {.changes = {
+                 {.kind = api::ThreadChange::Kind::Upsert, .guild = m_guildId, .id = thread.id, .threads = {thread}}
+             }}
+        );
+        rebuildThreadChannels();
+        moving.parentId = "901";
+        moving.position = 0;
+        api::Event details{.operation = api::Operation::ChannelDetails, .resource = moving.id, .channels = {moving}};
+        channelFeatureEvent(details);
+        require(
+            ids(m_guildChannels.at(m_guildId)) == std::vector<std::string>{"900", "910", "920", "901", "951"}
+                && ids(m_channels) == std::vector<std::string>{"900", "910", "920", "901", "951", "930"},
+            "Full channel details reinsert a moved parent in server order and retain its joined thread"
+        );
+        moving.parentId = "900";
+        api::Event acknowledged{
+            .operation = api::Operation::Interaction,
+            .channels = {moving},
+            .interaction = api::Interaction{.kind = Kind::EditChannel, .channel = moving.id, .guild = m_guildId}
+        };
+        require(
+            channelFeatureInteraction(acknowledged, false), "Channel metadata acknowledgements use their real handler"
+        );
+        require(
+            ids(m_guildChannels.at(m_guildId)) == std::vector<std::string>{"900", "951", "910", "920", "901"}
+                && ids(m_channels) == std::vector<std::string>{"900", "951", "930", "910", "920", "901"}
+                && m_channelId == originalSelection
+                && m_messages.front().id == originalMessage,
+            "Acknowledged parent and position changes reorder only base channels while threads and the timeline stay "
+            "intact"
+        );
+        m_channels = originalChannels;
+        m_guildChannels[m_guildId] = originalBase;
+        m_threads = originalThreads;
+        m_channelDetailRequests = originalRequests;
+        m_channelDetailsLoaded = originalLoaded;
+        m_channelDetailErrors = originalErrors;
+      }
       const auto deleted = m_channels.front();
       m_channels.push_back({"102", "other-channel"});
       m_guildChannels["1"] = m_channels;

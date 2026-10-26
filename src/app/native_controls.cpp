@@ -164,8 +164,10 @@ namespace app {
     }
   }
   void ClientApplication::windowFocusChanged(bool focused) {
-    if (!focused)
+    if (!focused) {
+      releasePushToTalk();
       finishRailDrag(true);
+    }
     if (focused)
       focusChatComposer();
   }

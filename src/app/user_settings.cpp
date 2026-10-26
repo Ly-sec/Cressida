@@ -74,6 +74,13 @@ namespace app {
     }
   } // namespace
   void ClientApplication::clearAccountSettings() {
+    m_voiceJoinTimer.stop();
+    releasePushToTalk();
+    m_client.voiceAudio()->stopTest();
+    m_voiceState = {};
+    m_voiceRoster.clear();
+    m_voiceGuild.clear();
+    m_voiceMuted = m_voiceDeafened = false;
     m_desktopNotifications.clear();
     m_notifiedMessages.clear();
     resetUserAccountSettings();
@@ -101,6 +108,10 @@ namespace app {
     if (std::ranges::none_of(pages, [&](const auto& item) { return item.id == page; }))
       return;
     m_settingsPage = page;
+    releasePushToTalk();
+    m_client.voiceAudio()->stopTest();
+    if (page == "voice" && !m_demo)
+      m_client.voiceAudio()->refreshDevices();
     if (page == "advanced")
       for (std::size_t i = 0; i < m_preferences.windowControls.icons.size(); ++i)
         m_settingsFields["window-icon:" + std::to_string(i)] = m_preferences.windowControls.icons[i];
@@ -185,6 +196,7 @@ namespace app {
     selectSettingsPage(m_settingsPage);
   }
   void ClientApplication::savePreferences() {
+    configureVoice();
     releaseDisabledCosmetics();
     m_window.setDesktopDecorations(m_preferences.desktopDecorations);
     m_window.setWindowControls(m_preferences.windowControls);
@@ -1394,6 +1406,7 @@ namespace app {
             {"search", "Search this conversation"},
             {"jump_latest", "Jump to latest message"},
             {"toggle_members", "Toggle member list"},
+            {"push_to_talk", "Push to talk"},
             {"inbox", "Open inbox"},
             {"next_channel", "Next channel"},
             {"previous_channel", "Previous channel"},
@@ -1489,9 +1502,7 @@ namespace app {
       drawWindowControlSettings(form);
     } else if (m_settingsPage == "voice") {
       section("Voice and video");
-      row("Calls and audio devices",
-          "Voice connections, microphone capture, camera capture and screen sharing are not implemented in this "
-          "Cressida build. Input, output and processing controls will be available with the native calling engine.");
+      drawVoiceSettings(form);
       section("Video preferences");
       accountToggle(
           "Preview video before joining", "always_preview_video",

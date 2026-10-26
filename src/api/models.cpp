@@ -240,7 +240,24 @@ namespace api {
     return orderChannels(std::move(result));
   }
   std::vector<Channel> orderChannels(std::vector<Channel> result) {
-    std::ranges::stable_sort(result, {}, &Channel::position);
+    const auto bucket = [](const Channel& channel) {
+      switch (channel.kind()) {
+      case ChannelType::GuildVoice:
+      case ChannelType::GuildStageVoice:
+        return ChannelType::GuildVoice;
+      case ChannelType::GuildCategory:
+        return ChannelType::GuildCategory;
+      default:
+        return ChannelType::GuildText;
+      }
+    };
+    std::ranges::sort(result, [&](const Channel& a, const Channel& b) {
+      if (const auto left = bucket(a), right = bucket(b); left != right)
+        return left < right;
+      if (a.position != b.position)
+        return a.position < b.position;
+      return a.id.size() != b.id.size() ? a.id.size() < b.id.size() : a.id < b.id;
+    });
     std::vector<Channel> ordered;
     std::set<std::string> placed;
     for (const auto& channel : result)

@@ -119,7 +119,7 @@ format-check:
 # Validate workflow syntax, shell helpers and repository automation.
 lint: format-check
     actionlint
-    shellcheck .github/workflows/scripts/*.sh
+    shellcheck .github/workflows/scripts/*.sh scripts/*.sh
     python3 -m unittest discover -s .github/workflows/scripts -p 'test_*.py'
 
 # Exercise offline UI replays in a private software-rendered Wayland session.

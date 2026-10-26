@@ -449,8 +449,12 @@ namespace app {
                   self.repeatKey = key + 8;
                   self.repeatAt = Clock::now() + std::chrono::milliseconds(self.repeatDelay);
                 }
-              } else if (self.repeatKey == key + 8)
-                self.repeatKey = 0;
+              } else {
+                if (self.repeatKey == key + 8)
+                  self.repeatKey = 0;
+                if (self.state && self.owner.keyReleased)
+                  self.owner.keyReleased(xkb_state_key_get_one_sym(self.state, key + 8));
+              }
             },
         .modifiers =
             [](void* data, wl_keyboard*, std::uint32_t, std::uint32_t depressed, std::uint32_t latched,
@@ -823,7 +827,7 @@ namespace app {
 
   void Window::run(
       int wakeFd, std::function<void()> tick, int frameLimit, int assetFd, int videoFd, int themeFd, int pickerFd,
-      int audioFd, int notificationFd, int trayFd, int iconFd, int instanceFd
+      int audioFd, int notificationFd, int trayFd, int iconFd, int instanceFd, int voiceFd
   ) {
     int frames = 0;
     while (m->running) {
@@ -897,6 +901,7 @@ namespace app {
       descriptors.push_back({trayFd, POLLIN, 0});
       descriptors.push_back({iconFd, POLLIN, 0});
       descriptors.push_back({instanceFd, POLLIN, 0});
+      descriptors.push_back({voiceFd, POLLIN, 0});
       const int ready = ::poll(descriptors.data(), descriptors.size(), timeout);
       if (ready > 0 && (descriptors[0].revents & POLLIN)) {
         if (wl_display_read_events(m->display) < 0)

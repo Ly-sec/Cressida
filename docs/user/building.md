@@ -38,6 +38,8 @@ libraries.
 | Markdown          | `md4c`                                                 |
 | Video             | `libavformat`, `libavcodec`, `libavutil`, `libswscale` |
 | Native playback   | `mpv >= 2.3` pkg-config API version                    |
+| Voice audio       | `libpulse`, `opus`                                     |
+| Voice encryption  | `libsodium`, `libdave`                                 |
 | Animated stickers | `rlottie`                                              |
 | Image headers     | `stb_image_resize2.h`, `stb_image_write.h`             |
 
@@ -50,6 +52,13 @@ The **linked libcurl** must support secure WebSockets. A separate curl
 executable with different features does not fix the library. Native Meson
 configuration checks the linked library; cross-build packagers must verify their
 target library.
+
+Voice builds require the libdave C API, including `dave/dave.h`, and compatible
+MLS libraries. The supplied Nix build pins and builds these dependencies with
+C++23. Outside Nix, packagers must provide compatible C++23 libdave and MLS
+builds, along with pkg-config metadata for `libdave`. The encryption regression
+fixture also needs the MLS C++ headers and `mlspp` metadata. See
+[Packaging](packaging.md#voice-dependencies) for the source references.
 
 Wuffs is bundled in the source tree. The project does not download missing
 dependencies during Meson configuration.

@@ -41,6 +41,55 @@ int main() {
   };
   try {
     {
+      const auto voicePath = std::filesystem::path(directory) / "voice.json";
+      app::SessionStore store(voicePath);
+      app::Preferences preferences;
+      preferences.voice = {
+          .inputDevice = "test-microphone",
+          .outputDevice = "test-headset",
+          .inputVolume = 1.5F,
+          .outputVolume = 0.5F,
+          .muted = true,
+          .deafened = true,
+          .pushToTalk = true,
+          .threshold = 0.15F,
+          .pttPressed = true
+      };
+      store.savePreferences("123", preferences);
+      app::SessionStore restarted(voicePath);
+      const auto voice = restarted.preferences("123").voice;
+      require(
+          voice.inputDevice == "test-microphone"
+              && voice.outputDevice == "test-headset"
+              && voice.inputVolume == 1.5F
+              && voice.outputVolume == 0.5F
+              && voice.pushToTalk
+              && voice.threshold == 0.15F
+              && !voice.muted
+              && !voice.deafened
+              && !voice.pttPressed,
+          "Voice device and activation preferences persist without restoring a microphone state"
+      );
+      require(
+          restarted.preferences("456").voice == voice::AudioSettings{}
+              && restarted.startupPreferences().voice == voice::AudioSettings{},
+          "Voice preferences stay isolated to the signed-in account"
+      );
+      std::ofstream(
+          voicePath
+      ) << R"({"123":{"preferences":{"theme":"light","voice":{"input":false,"output_volume":999,"input_volume":-1,"threshold":"bad","push_to_talk":"yes"}}}})";
+      const auto malformed = store.preferences("123");
+      require(
+          malformed.theme == "light"
+              && malformed.voice.inputDevice.empty()
+              && malformed.voice.outputVolume <= voice::maximumAudioVolume
+              && malformed.voice.inputVolume >= 0
+              && malformed.voice.threshold == voice::defaultActivityThreshold
+              && !malformed.voice.pushToTalk,
+          "Malformed voice preferences are bounded without discarding unrelated settings"
+      );
+    }
+    {
       const auto clockPath = std::filesystem::path(directory) / "clock.json";
       app::SessionStore store(clockPath);
       require(!store.preferences("123").twelveHourClock, "The clock defaults to 24-hour time");

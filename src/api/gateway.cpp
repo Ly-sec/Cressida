@@ -23,6 +23,7 @@ namespace api {
     using Clock = std::chrono::steady_clock;
     const Logger gatewayLog("gateway");
     constexpr std::string_view gatewayQuery = "?v=9&encoding=json";
+    constexpr auto voiceUpdateSpacing = 250ms;
 
     enum class IdentifyCapability : std::uint64_t {
       VersionedReadStates = 1ULL << 2,
@@ -161,6 +162,10 @@ namespace api {
       m_memberSearch.reset();
       m_presenceChosen = false;
       m_presenceRestored = false;
+      m_voiceChosen = false;
+      m_voiceGuild.clear();
+      m_voiceChannel.clear();
+      m_voiceVersion = 0;
     }
     m_session = session;
     m_token = std::move(token);
@@ -184,6 +189,10 @@ namespace api {
     m_presenceVersion = 0;
     m_presenceChosen = false;
     m_presenceRestored = false;
+    m_voiceChosen = false;
+    m_voiceGuild.clear();
+    m_voiceChannel.clear();
+    m_voiceVersion = 0;
     m_guild.clear();
     m_channel.clear();
     m_thread = false;
@@ -286,6 +295,22 @@ namespace api {
     return true;
   }
 
+  bool Gateway::setVoice(std::uint64_t session, std::string guild, std::string channel, bool muted, bool deafened) {
+    if ((!guild.empty() && !validSnowflake(guild)) || (!channel.empty() && !validSnowflake(channel)))
+      return false;
+    std::lock_guard lock(m_mutex);
+    if (session != m_generation || session != m_session || m_token.empty())
+      return false;
+    m_voiceGuild = std::move(guild);
+    m_voiceChannel = std::move(channel);
+    m_voiceMuted = muted;
+    m_voiceDeafened = deafened;
+    m_voiceChosen = true;
+    ++m_voiceVersion;
+    (void)m_wake.signal();
+    return true;
+  }
+
   void Gateway::run(std::stop_token stop) {
     gateway_pacing::ApplicationBudget applicationBudget;
     gateway_pacing::ReconnectBudget reconnectBudget;
@@ -362,7 +387,8 @@ namespace api {
         phase = "hello";
         gatewayLog.info("Transport connected");
         std::string message, subscribedGuild;
-        std::uint64_t subscription = 0, presenceVersion = 0;
+        std::uint64_t subscription = 0, presenceVersion = 0, voiceVersion = 0;
+        auto voiceAt = Clock::time_point{};
         auto subscribedAt = Clock::time_point{};
         auto heartbeatAt = Clock::now() + 20s;
         std::chrono::milliseconds interval{30000};
@@ -380,6 +406,30 @@ namespace api {
           }
           auto nextControl = heartbeatAt;
           if (ready) {
+            Json voiceUpdate;
+            std::uint64_t desiredVoiceVersion = 0;
+            {
+              std::lock_guard lock(m_mutex);
+              if (m_voiceChosen && voiceVersion != m_voiceVersion) {
+                desiredVoiceVersion = m_voiceVersion;
+                voiceUpdate = {
+                    {"guild_id", m_voiceGuild.empty() ? Json(nullptr) : Json(m_voiceGuild)},
+                    {"channel_id", m_voiceChannel.empty() ? Json(nullptr) : Json(m_voiceChannel)},
+                    {"self_mute", m_voiceMuted},
+                    {"self_deaf", m_voiceDeafened},
+                    {"self_video", false}
+                };
+              }
+            }
+            if (desiredVoiceVersion) {
+              const auto sendAt = std::max(voiceAt, applicationBudget.ready(now));
+              nextControl = std::min(nextControl, sendAt);
+              if (now >= sendAt && applicationBudget.acquire(now)) {
+                send(curl.get(), Json{{"op", 4}, {"d", std::move(voiceUpdate)}}, connection);
+                voiceVersion = desiredVoiceVersion;
+                voiceAt = now + voiceUpdateSpacing;
+              }
+            }
             Presence presence;
             std::uint64_t desiredVersion;
             {

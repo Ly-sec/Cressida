@@ -35,6 +35,9 @@
   mpv-unwrapped,
   rlottie,
   shared-mime-info,
+  opus,
+  libsodium,
+  libpulseaudio,
 }:
 stdenv.mkDerivation {
   pname = "cressida";
@@ -93,6 +96,10 @@ stdenv.mkDerivation {
     ffmpeg-headless
     mpv-unwrapped
     rlottie
+    opus
+    libsodium
+    libpulseaudio
+    (callPackage ./libdave.nix { })
     (curl.override { websocketSupport = true; })
     (callPackage ./stb.nix { })
   ];

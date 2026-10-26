@@ -14,6 +14,7 @@
 #include <glib.h>
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include <set>
 
 namespace app {
   using namespace theme;
@@ -31,6 +32,9 @@ namespace app {
           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
               .count();
       return std::to_string((static_cast<std::uint64_t>(milliseconds - 1420070400000LL) << 22) | (serial & 0x3FFFFF));
+    }
+    bool channelOrderChanged(const api::Channel& before, const api::Channel& after) {
+      return before.position != after.position || before.parentId != after.parentId || before.type != after.type;
     }
   } // namespace
   const api::Channel* ClientApplication::selectedChannel() const {
@@ -231,6 +235,16 @@ namespace app {
         dmRecipient() ? "Profile panel" : "Member list", m_showMembers && m_channelPanel.empty()
     );
     float nameX = left + (Style::spaceXl - Style::spaceXxs);
+    if (m_dmMode || channel->type == 2) {
+      icons -= layout::ChannelHeader::actionStep;
+      iconButton(
+          root,
+          {icons, layout::ChannelHeader::centerY - Style::controlHeight / 2, Style::controlHeight, Style::controlHeight,
+           Action::VoiceAction, "join:" + channel->id},
+          "phone", m_dmMode ? "Join voice call" : "Join voice channel",
+          m_voiceState.channel == channel->id && voiceBarVisible()
+      );
+    }
     if (thread) {
       iconButton(
           root, {left + (Style::spaceMd + Style::borderWidth), 52, 28, 32, Action::ThreadParent, channel->parentId},
@@ -495,6 +509,7 @@ namespace app {
       else {
         m_channelDetailsLoaded.insert(event.resource);
         m_channelDetailErrors.erase(event.resource);
+        std::set<std::string> reordered;
         for (const auto& fresh : event.channels) {
           if (m_channelEditOriginal.id == fresh.id) {
             if (m_dialogKind == "channel-info")
@@ -513,12 +528,19 @@ namespace app {
           }
           for (auto& [guild, channels] : m_guildChannels)
             for (auto& old : channels)
-              if (old.id == fresh.id)
+              if (old.id == fresh.id) {
+                if (channelOrderChanged(old, fresh))
+                  reordered.insert(guild);
                 old = fresh;
+              }
           for (auto& old : m_channels)
             if (old.id == fresh.id)
               old = fresh;
         }
+        for (const auto& guild : reordered)
+          m_guildChannels[guild] = api::orderChannels(std::move(m_guildChannels[guild]));
+        if (!m_dmMode && reordered.contains(m_guildId))
+          rebuildThreadChannels();
         const auto selected = selectedChannel();
         if (!m_demo
             && !m_dmMode
@@ -1703,15 +1725,23 @@ namespace app {
         && action.kind != api::InteractionKind::GrantChannelAccess
         && action.kind != api::InteractionKind::EditChannelPermission)
       return false;
+    std::set<std::string> reordered;
     for (const auto& fresh : event.channels) {
       for (auto& [guild, channels] : m_guildChannels)
         for (auto& channel : channels)
-          if (channel.id == fresh.id)
+          if (channel.id == fresh.id) {
+            if (channelOrderChanged(channel, fresh))
+              reordered.insert(guild);
             channel = fresh;
+          }
       for (auto& channel : m_channels)
         if (channel.id == fresh.id)
           channel = fresh;
     }
+    for (const auto& guild : reordered)
+      m_guildChannels[guild] = api::orderChannels(std::move(m_guildChannels[guild]));
+    if (!m_dmMode && reordered.contains(m_guildId))
+      rebuildThreadChannels();
     if (event.channels.empty() && !m_demo)
       m_client.channelDetails(action.channel);
     if (dialog && (m_dialogKind == "channel-edit" || m_dialogKind == "channel-access")) {

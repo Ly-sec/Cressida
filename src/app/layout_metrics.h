@@ -617,6 +617,48 @@ namespace app::layout {
         settingsX - x
     };
   }
+  struct Voice {
+    static constexpr float height = Style::controlHeight + Style::spaceSection + Style::spaceMd;
+    static constexpr float reserve = height + Floating::gap;
+    static constexpr float padding = Style::spaceSm;
+    static constexpr float memberStep = Style::controlHeightSm + Style::spaceXxs;
+    static constexpr float memberHeight = Style::controlHeightSm;
+    static constexpr float memberAvatar = Avatar::tiny;
+    static constexpr float memberSpeakingStroke = Style::borderWidth * 2;
+    static constexpr float memberAvatarX = memberSpeakingStroke;
+    static constexpr float memberIndent = Sidebar::rowInset * 2 + Sidebar::iconSize;
+    static constexpr float memberStatus = Style::baseGlyphSize;
+    static constexpr float memberTail = Style::spaceXs;
+    static constexpr float membersHeight(std::size_t count) { return count ? count * memberStep + memberTail : 0; }
+    static Frame frame(float windowHeight, float sidebarRight) {
+      const auto account = accountFrame(windowHeight, sidebarRight);
+      return {
+          Sidebar::railWidth + Floating::inset, account.y - reserve,
+          sidebarRight - Sidebar::railWidth - Floating::inset * 2, height
+      };
+    }
+    static std::array<Frame, 4> controls(const Frame& bar) {
+      std::array<Frame, 4> frames;
+      const float width =
+          std::max(0.0F, (bar.width - padding * 2 - Style::spaceXs * (frames.size() - 2)) / (frames.size() - 1));
+      const float y = bar.y + bar.height - padding - Style::controlHeightSm;
+      for (std::size_t i = 0; i + 1 < frames.size(); ++i)
+        frames[i] = {bar.x + padding + i * (width + Style::spaceXs), y, width, Style::controlHeightSm};
+      frames.back() = {
+          bar.x + bar.width - padding - Style::controlHeightSm, bar.y + padding, Style::controlHeightSm,
+          Style::controlHeightSm
+      };
+      return frames;
+    }
+    static Frame connectionIcon(const Frame& bar) {
+      return {bar.x + padding, bar.y + padding, Style::controlHeightSm, Style::controlHeightSm};
+    }
+    static Frame connectionText(const Frame& bar) {
+      const auto icon = connectionIcon(bar), disconnect = controls(bar).back();
+      const float x = icon.x + icon.width + Style::spaceSm;
+      return {x, icon.y, std::max(0.0F, disconnect.x - Style::spaceXs - x), icon.height};
+    }
+  };
   struct CountBadge {
     static constexpr float height = Style::glyphSizeMedium;
     static constexpr float fontSize = Style::fontSizeDescription;

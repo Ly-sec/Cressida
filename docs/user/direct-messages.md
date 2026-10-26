@@ -41,4 +41,8 @@ separately without hiding the profile panel.
 Group DMs show the participant list instead of a single-person profile panel.
 Opening a group does not replace its participants with one member's profile.
 
+Use the header's phone button to join an existing direct or group call. Outgoing
+ringing and incoming-call notifications are not implemented. See
+[Voice chat](voice.md) for microphone, device and volume settings.
+
 For message formatting and replies, see [Chat and Markdown](chat.md).

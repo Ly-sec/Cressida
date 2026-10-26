@@ -15,8 +15,8 @@
 
 A native Discord desktop client for Linux and Wayland.
 
-**Early development:** text chat is available; voice and video calls are not yet
-supported. Expect missing features and occasional rough edges.
+**Early development:** text chat and voice are available. Video calls and some
+other features remain incomplete. Expect occasional rough edges.
 
 A few highlights:
 
@@ -64,7 +64,9 @@ can remember your sign-in. Signing out removes the saved login.
 
 ## Current limitations
 
-Voice/video calls, arbitrary file uploads and file drag-and-drop are not available yet.
+Video calls, arbitrary file uploads and file drag-and-drop are not available yet.
+Voice supports server channels and joining existing direct or group calls; see
+the [voice guide](docs/user/voice.md) for settings and current limits.
 Image uploads are supported. Some Discord controls and settings remain incomplete.
 
 ## Contributing

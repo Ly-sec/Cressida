@@ -1,5 +1,6 @@
 #include "app/automod_message.h"
 #include "app/client_application.h"
+#include "app/message_time.h"
 #include "app/system_message.h"
 #include "app/theme.h"
 #include "render/scene/text_node.h"
@@ -144,15 +145,16 @@ namespace app {
       }
     }
     drawMessageStrikes(parent, layout, layout::Chat::authorGutter, y, automod ? foreground : muted);
-    if (!layout.runs.empty() && message.timestamp.size() >= 16) {
+    const auto timestamp = formatMessageTime(message.timestamp);
+    if (!layout.runs.empty() && !timestamp.empty()) {
       const auto headerEnd = automod
           ? std::ranges::find_if(layout.runs, [&](const auto& run) { return run.y >= automod->authorTop; })
           : layout.runs.end();
       const auto& last = *(headerEnd == layout.runs.begin() ? headerEnd : std::prev(headerEnd));
       label(
           parent, 50 + last.x + last.width + Style::spaceCompact, y + last.y + Style::spaceXs,
-          message.deleted ? 120 : 36, message.timestamp.substr(11, 5) + (message.deleted ? " · Deleted" : ""),
-          Style::fontSizeDetail, message.deleted ? theme::danger : muted
+          message.deleted ? 120 : 36, timestamp + (message.deleted ? " · Deleted" : ""), Style::fontSizeDetail,
+          message.deleted ? theme::danger : muted
       );
     }
     if (automod) {

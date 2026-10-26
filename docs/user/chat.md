@@ -24,6 +24,11 @@ composer. Your newer draft is kept until you clear it. Cressida does not retry
 automatically, since a delayed confirmation could mean the message already
 arrived. Pending messages are kept for the current session only.
 
+Message times use your system timezone, including daylight-saving changes for
+the date of each message. This applies to chat headers, hover timestamps,
+forwarded messages and message previews. Pinned-message dates also use your
+local calendar day. Consecutive messages start a new group at local midnight.
+
 ## Search messages
 
 Click the search field in the upper right or press **Ctrl+F**. The menu offers

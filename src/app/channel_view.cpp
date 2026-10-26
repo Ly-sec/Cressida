@@ -1,4 +1,5 @@
 #include "app/client_application.h"
+#include "app/message_time.h"
 #include "app/reply_preview.h"
 #include "app/theme.h"
 #include "ui/controls/button.h"
@@ -648,7 +649,9 @@ namespace app {
       const auto channel = std::ranges::find(m_channels, message.channelId, &api::Channel::id);
       label(
           *content, 12, ry + ((Style::space2Xl + Style::spaceXxs) + Style::borderWidth), width - 56,
-          (channel == m_channels.end() ? "Channel" : "#" + channel->name) + " · " + message.timestamp.substr(0, 10),
+          (channel == m_channels.end() ? "Channel" : "#" + channel->name)
+              + " · "
+              + formatMessageTime(message.timestamp, "%Y-%m-%d"),
           Style::fontSizeDetail, muted
       );
       auto text = oneLineReplyText(message.content);

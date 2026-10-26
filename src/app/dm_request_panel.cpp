@@ -1,4 +1,5 @@
 #include "app/client_application.h"
+#include "app/message_time.h"
 #include "app/notification_preview.h"
 #include "app/theme.h"
 #include "render/scene/text_node.h"
@@ -214,10 +215,11 @@ namespace app {
             *content, 46, rowY + Style::borderWidth, std::max(1.0F, inner - 94), author, Style::fontSizeCaption,
             foreground, FontWeight::SemiBold
         );
-        if (message.timestamp.size() >= 16)
+        const auto timestamp = formatMessageTime(message.timestamp);
+        if (!timestamp.empty())
           label(
               *content, inner - (Style::spaceSection + Style::spaceXxs), rowY + (Style::spaceXxs + Style::borderWidth),
-              42, message.timestamp.substr(11, 5), Style::fontSizeDetail, muted
+              42, timestamp, Style::fontSizeDetail, muted
           );
         label(
             *content, 46, rowY + (Style::spaceXl + Style::borderWidth),

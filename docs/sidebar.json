@@ -20,7 +20,8 @@
     "label": "Using Cressida",
     "items": [
       {
-        "slug": "docs/chat"
+        "slug": "docs/chat",
+        "label": "Chat and Markdown"
       },
       {
         "slug": "docs/inbox"

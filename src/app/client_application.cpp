@@ -338,7 +338,7 @@ namespace app {
                   inkBottom = hasInk ? std::max(inkBottom, last) : last;
                   hasInk = true;
                 }
-              if (text.text() == message.timestamp.substr(11, 5) && text.fontSize() == Style::fontSizeFine) {
+              if (text.text() == formatMessageTime(message.timestamp) && text.fontSize() == Style::fontSizeFine) {
                 timeCenter = (first + last) / 2;
                 hasTime = true;
               }
@@ -564,7 +564,9 @@ namespace app {
               ++highlights;
             }
           }
-          if (node.type() == NodeType::Text && static_cast<const TextNode&>(node).text() == "09:41" && node.x() > 300)
+          if (node.type() == NodeType::Text
+              && static_cast<const TextNode&>(node).text() == formatMessageTime(m_messages.front().timestamp)
+              && node.x() > 300)
             throw std::runtime_error("Message timestamps must follow the author header instead of the right edge");
           for (const auto& child : node.children())
             self(self, *child);
@@ -4635,8 +4637,9 @@ namespace app {
               if (!continuation) {
                 const auto author = userName(message.authorId, message.author);
                 const auto authorTag = m_userDirectory.guildTag(message.authorId, message.authorTag);
-                const std::string timestamp = (message.timestamp.size() >= 16 ? message.timestamp.substr(11, 5) : "")
-                    + (message.deleted ? (message.timestamp.size() >= 16 ? " · Deleted" : "Deleted") : "");
+                auto timestamp = formatMessageTime(message.timestamp);
+                if (message.deleted)
+                  timestamp += timestamp.empty() ? "Deleted" : " · Deleted";
                 const float timestampWidth =
                     m_window.target().renderer().measureText(timestamp, Style::fontSizeDetail).width;
                 const float headerWidth =
@@ -4729,7 +4732,7 @@ namespace app {
                       message.deleted ? theme::danger : muted
                   );
               } else if (messageHovered) {
-                const std::string timestamp = message.timestamp.size() >= 16 ? message.timestamp.substr(11, 5) : "";
+                const auto timestamp = formatMessageTime(message.timestamp);
                 const auto metrics = m_window.target().renderer().measureText(timestamp, Style::fontSizeFine);
                 label(
                     *messageContent, 0,
@@ -4786,7 +4789,7 @@ namespace app {
                   }
                   if (origin)
                     source = guild->name + " · #" + origin->name;
-                  const auto time = card.timestamp.size() >= 16 ? card.timestamp.substr(11, 5) : std::string{};
+                  const auto time = formatMessageTime(card.timestamp);
                   if (!time.empty())
                     source += (source.empty() ? "" : " · ") + time;
                   if (!source.empty()) {
@@ -5245,9 +5248,9 @@ namespace app {
             caption = std::to_string(count)
                 + ((!m_history.atLatest() || m_unreadTimeline.estimated(m_messages)) ? "+" : "")
                 + (count == 1 ? " new message" : " new messages");
-            const auto& timestamp = m_messages[*unreadIndex].timestamp;
-            if (timestamp.size() >= 16)
-              caption += " since " + timestamp.substr(11, 5);
+            const auto timestamp = formatMessageTime(m_messages[*unreadIndex].timestamp);
+            if (!timestamp.empty())
+              caption += " since " + timestamp;
           }
           const float x = left + Style::spaceLg, y = 110, width = bodyWidth - Style::space2Xl;
           const float readWidth = 144;

@@ -3,6 +3,8 @@
 #include "ui/text_input_client.h"
 
 #include <cstdint>
+#include <functional>
+#include <optional>
 
 struct wl_seat;
 struct wl_surface;
@@ -21,6 +23,12 @@ public:
   void cleanup();
 
   [[nodiscard]] bool isAvailable() const noexcept;
+  [[nodiscard]] bool isEnabled() const noexcept;
+  [[nodiscard]] bool hasComposition() const noexcept;
+  [[nodiscard]] bool hasPendingEdit() const noexcept;
+  [[nodiscard]] std::uint64_t focusGeneration() const noexcept { return m_focusGeneration; }
+  void setStateChanged(std::function<void()> changed);
+  void setCoordinateScale(float scale);
 
   void setFocusedClient(
       wl_surface* surface, TextInputClient* client, bool acceptKeyboardFocusActivation = false,
@@ -45,6 +53,8 @@ private:
   void commitActiveState(TextInputChangeCause cause);
   void commitProtocolState();
   void deactivateClient(TextInputClient* client);
+  void resetEdits();
+  void stateChanged();
 
   zwp_text_input_manager_v3* m_manager = nullptr;
   wl_seat* m_seat = nullptr;
@@ -56,7 +66,15 @@ private:
   TextInputClient* m_activeClient = nullptr;
   bool m_activeAcceptsKeyboardFocusActivation = false;
   TextInputEdit m_pendingEdit;
+  std::optional<TextInputState> m_sentState;
+  std::function<void()> m_changed;
   std::uint32_t m_commitSerial = 0;
+  std::uint32_t m_enabledSerial = 0;
+  std::uint64_t m_focusGeneration = 0;
   std::uint32_t m_textInputVersion = 0;
+  float m_coordinateScale = 1;
   bool m_enabled = false;
+  bool m_composing = false;
+  bool m_applyingEdit = false;
+  bool m_deferState = false;
 };

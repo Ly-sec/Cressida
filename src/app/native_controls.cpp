@@ -87,6 +87,7 @@ namespace app {
     );
   }
   ClientApplication::~ClientApplication() {
+    m_window.setTextInputDispatcher(nullptr);
     clearOutgoing();
     m_inboxReminderTimer.stop();
     m_readAcknowledgementTimer.stop();
@@ -477,6 +478,7 @@ namespace app {
       }
     }
     m_buildingScene = false;
+    m_window.updateTextInput();
   }
   void ClientApplication::pasteControl(const std::string& id, std::string text) {
     auto input = m_inputs.find(id);
@@ -706,6 +708,7 @@ namespace app {
                     || m_demoOverlay == "sidebar-cycle"
                     || m_demoOverlay == "inline-edit-cycle"
                     || m_demoOverlay.starts_with("outgoing-cycle")
+                    || m_demoOverlay.starts_with("ime-cycle")
                     || m_demoOverlay.starts_with("reply-cycle")
                     || m_demoOverlay.starts_with("chat-links-cycle")
                     || m_demoOverlay.starts_with("autocomplete")

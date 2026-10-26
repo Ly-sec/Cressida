@@ -52,6 +52,29 @@ Open **Cressida > Themes** and read the reported error. Check the filename,
 keys are rejected. The last valid version remains active during invalid edits.
 Use the [complete starter](custom-themes.md#complete-starter) to compare.
 
+## Input-method text does not compose
+
+Confirm that your input-method service is running, its language engine is
+installed and selected, and composition works in another native Wayland app.
+Cressida needs your compositor's text-input-v3 support and a working connection
+between the compositor and input method.
+
+For Fcitx 5, follow its
+[Wayland setup guidance](https://fcitx-im.org/wiki/Using_Fcitx_5_on_Wayland). On
+KDE Plasma, choose **Fcitx 5** under **Virtual Keyboard** in System Settings.
+`GTK_IM_MODULE`, `QT_IM_MODULE` and `XMODIFIERS` configure other toolkits or
+X11; they do not enable Cressida's native Wayland connection.
+
+If candidates appear in the wrong place or do not appear, check the input
+method's desktop integration as well as its engine configuration. Candidate
+windows are supplied by that integration. The official
+[Fcitx troubleshooting guide](https://fcitx-im.org/wiki/Troubleshooting)
+explains how to check the service and installed engines.
+
+When reporting a problem, include your compositor, input method and engine
+versions, the affected field and a short example of the keys typed and expected
+text. Use synthetic text rather than a private conversation or password.
+
 ## Account restrictions or security checks
 
 If the service asks for verification, restricts messaging or challenges an

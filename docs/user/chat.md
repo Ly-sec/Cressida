@@ -86,6 +86,20 @@ Consecutive messages from the same person can share a header. A message
 following your reply can join that group; each message keeps its own actions and
 timestamp.
 
+## Input methods
+
+Cressida uses your desktop's Wayland input method, including Fcitx 5, in the
+composer, message editor, search and settings fields. Your compositor must
+provide text-input-v3 support, and your input-method service and language engine
+must be running and configured. See
+[Input-method setup](installation.md#input-methods).
+
+Composition remains temporary until your input method commits it. Temporary text
+stays out of the retained draft and settings values. While composing, **Enter**,
+**Tab** and **Escape** do not send the message, choose an app suggestion or move
+focus. Your input method supplies any candidate popup; Cressida reports the
+caret position to your desktop.
+
 ## Mentions and emoji
 
 Type `@` to choose a member, role, everyone or here. Type `:` followed by at

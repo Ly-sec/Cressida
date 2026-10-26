@@ -414,6 +414,8 @@ void Input::setValue(std::string_view value) {
   m_selectionAnchor = m_cursorPos;
   m_preeditStart = 0;
   m_preeditLen = 0;
+  m_preeditSnapshot.reset();
+  m_preeditCursorHidden = false;
   m_goalCaretX = -1.0F;
   clearEditHistory();
   updateDisplayText();
@@ -626,6 +628,11 @@ void Input::setEnabled(bool enabled) {
     return;
   }
   m_enabled = enabled;
+  if (!enabled) {
+    textInputResetPreedit();
+    if (m_textInputService)
+      m_textInputService->clearFocusedClient(this);
+  }
   if (m_inputArea != nullptr) {
     m_inputArea->setEnabled(enabled);
   }
@@ -732,8 +739,8 @@ TextInputState Input::textInputState() const {
   const float cursorHeight = m_cursor != nullptr ? m_cursor->height() : m_controlHeight;
   return TextInputState{
       .surroundingText = password ? std::string{} : std::move(surrounding),
-      .cursor = byteOffsetToProtocolInt(cursor),
-      .anchor = byteOffsetToProtocolInt(anchor),
+      .cursor = password ? 0 : byteOffsetToProtocolInt(cursor),
+      .anchor = password ? 0 : byteOffsetToProtocolInt(anchor),
       .cursorRectX = static_cast<std::int32_t>(std::round(cursorSceneX)),
       .cursorRectY = static_cast<std::int32_t>(std::round(cursorSceneY)),
       .cursorRectWidth = static_cast<std::int32_t>(std::max(1.0F, std::round(cursorWidth))),
@@ -743,18 +750,25 @@ TextInputState Input::textInputState() const {
       .sensitiveData = password,
       .hiddenText = password,
       .preeditVisible = !password,
+      .multiline = m_multiline,
   };
 }
 
 void Input::textInputApplyEdit(const TextInputEdit& edit) {
+  if (!m_enabled
+      || (edit.hasCommitText && !g_utf8_validate(edit.commitText.data(), edit.commitText.size(), nullptr))
+      || (edit.hasPreedit && !g_utf8_validate(edit.preeditText.data(), edit.preeditText.size(), nullptr)))
+    return;
   clampEditState();
-
+  const bool compositionWasActive = hasPreedit();
+  bool displayChanged = removePreeditText();
+  if (displayChanged)
+    updateTextPresentation();
   const bool permanentEdit = edit.hasDelete || edit.hasCommitText;
   if (permanentEdit) {
     pushUndoSnapshot(EditCoalesceKind::Discrete);
   }
 
-  bool displayChanged = removePreeditText();
   bool permanentChanged = false;
   std::optional<std::string> permanentValue;
 
@@ -784,13 +798,13 @@ void Input::textInputApplyEdit(const TextInputEdit& edit) {
   }
 
   if (edit.hasPreedit) {
-    if (hasSelection()) {
-      deleteSelection();
-      displayChanged = true;
-    }
     if (!edit.preeditText.empty()) {
+      m_preeditSnapshot = currentEditSnapshot();
+      if (hasSelection())
+        deleteSelection();
       m_preeditStart = m_cursorPos;
       m_preeditLen = edit.preeditText.size();
+      m_preeditCursorHidden = edit.preeditCursorBegin == -1 && edit.preeditCursorEnd == -1;
       m_value.insert(m_cursorPos, edit.preeditText);
       const std::size_t preeditEnd = m_preeditStart + m_preeditLen;
       auto cursorOffset =
@@ -815,7 +829,8 @@ void Input::textInputApplyEdit(const TextInputEdit& edit) {
     markPaintDirty();
   }
 
-  const std::optional<std::string> submitValue = edit.submit ? std::optional<std::string>{m_value} : std::nullopt;
+  const bool submit = edit.submit && !hasPreedit() && (!compositionWasActive || edit.hasCommitText);
+  const std::optional<std::string> submitValue = submit ? std::optional<std::string>{value()} : std::nullopt;
   const auto onChange = m_onChange;
   const auto onSubmit = m_onSubmit;
   if (permanentValue.has_value() && onChange) {
@@ -1131,10 +1146,15 @@ void Input::handleKey(std::uint32_t sym, std::uint32_t utf32, std::uint32_t modi
   const bool shift = (modifiers & KeyMod::Shift) != 0;
   const bool ctrl = (modifiers & KeyMod::Ctrl) != 0;
   const bool plainPrintableText = isPlainPrintableKey(utf32, modifiers, preedit);
+  const bool composing = hasPreedit();
+  if ((composing || preedit) && (KeySymbol::isEnter(sym) || (validateMatch && !plainPrintableText)))
+    return;
+  const std::optional<std::string> committedBefore = composing ? std::optional<std::string>{value()} : std::nullopt;
+  const auto committedChanged = [&] { return !committedBefore || m_value != *committedBefore; };
 
   // A printable key that doubles as a keybind chord (Space is bound to Validate)
   // is text while the field is focused, not an activation to hand to the panel.
-  if (m_onKeyEvent && !(plainPrintableText && validateMatch)) {
+  if (m_onKeyEvent && !preedit && !composing && !(plainPrintableText && validateMatch)) {
     if (m_onKeyEvent(sym, modifiers)) {
       return;
     }
@@ -1195,6 +1215,8 @@ void Input::handleKey(std::uint32_t sym, std::uint32_t utf32, std::uint32_t modi
 
   // Remove previous preedit text before processing
   changed = removePreeditText();
+  if (changed)
+    updateTextPresentation();
 
   const bool copyShortcut = ctrl && (KeySymbol::isInsert(sym) || sym == 'c' || sym == 'C');
   const bool cutShortcut =
@@ -1210,7 +1232,7 @@ void Input::handleKey(std::uint32_t sym, std::uint32_t utf32, std::uint32_t modi
       markTextContentChanged();
       revealCursor();
       notifyTextInputStateChanged(TextInputChangeCause::Other);
-      if (!preedit && m_onChange) {
+      if (!preedit && m_onChange && committedChanged()) {
         m_onChange(m_value);
       }
     }
@@ -1225,7 +1247,7 @@ void Input::handleKey(std::uint32_t sym, std::uint32_t utf32, std::uint32_t modi
       markTextContentChanged();
       revealCursor();
       notifyTextInputStateChanged(TextInputChangeCause::Other);
-      if (!preedit && m_onChange) {
+      if (!preedit && m_onChange && committedChanged()) {
         m_onChange(m_value);
       }
     }
@@ -1451,7 +1473,8 @@ void Input::handleKey(std::uint32_t sym, std::uint32_t utf32, std::uint32_t modi
     // Printable character (skip DEL = 0x7F)
     if (!preedit) {
       pushUndoSnapshot(hasSelection() ? EditCoalesceKind::Discrete : EditCoalesceKind::Typing);
-    }
+    } else
+      m_preeditSnapshot = currentEditSnapshot();
     if (hasSelection()) {
       deleteSelection();
     }
@@ -1474,7 +1497,7 @@ void Input::handleKey(std::uint32_t sym, std::uint32_t utf32, std::uint32_t modi
     markTextContentChanged();
     revealCursor();
     notifyTextInputStateChanged(TextInputChangeCause::Other);
-    if (!preedit && m_onChange) {
+    if (!preedit && m_onChange && committedChanged()) {
       m_onChange(m_value);
     }
   } else {
@@ -1492,6 +1515,17 @@ void Input::notifyTextInputStateChanged(TextInputChangeCause cause) {
 }
 
 bool Input::removePreeditText() {
+  if (m_preeditSnapshot) {
+    auto snapshot = std::move(*m_preeditSnapshot);
+    m_preeditSnapshot.reset();
+    m_value = std::move(snapshot.value);
+    m_cursorPos = snapshot.cursorPos;
+    m_selectionAnchor = snapshot.selectionAnchor;
+    m_preeditStart = 0;
+    m_preeditLen = 0;
+    m_preeditCursorHidden = false;
+    return true;
+  }
   if (m_preeditLen == 0) {
     m_preeditStart = 0;
     m_preeditLen = 0;
@@ -1519,6 +1553,7 @@ bool Input::removePreeditText() {
   m_selectionAnchor = m_cursorPos;
   m_preeditStart = 0;
   m_preeditLen = 0;
+  m_preeditCursorHidden = false;
   return true;
 }
 
@@ -1749,6 +1784,8 @@ void Input::clearFromButton() {
   m_selectionAnchor = 0;
   m_preeditStart = 0;
   m_preeditLen = 0;
+  m_preeditSnapshot.reset();
+  m_preeditCursorHidden = false;
   m_scrollOffset = 0.0F;
   m_scrollOffsetY = 0.0F;
   m_goalCaretX = -1.0F;
@@ -1975,7 +2012,7 @@ LayoutSize Input::doMeasure(Renderer& renderer, const LayoutConstraints& constra
 
 void Input::updateCursorVisibility() {
   const bool focused = m_inputArea != nullptr && m_inputArea->focused();
-  m_cursor->setVisible(focused && m_cursorBlinkVisible);
+  m_cursor->setVisible(focused && m_cursorBlinkVisible && !m_preeditCursorHidden);
 }
 
 void Input::revealCursor() {
@@ -2294,6 +2331,8 @@ std::size_t Input::selectionEnd() const noexcept {
 }
 
 Input::EditSnapshot Input::currentEditSnapshot() const {
+  if (m_preeditSnapshot)
+    return *m_preeditSnapshot;
   return EditSnapshot{
       .value = m_value,
       .cursorPos = clampToUtf8End(m_value, m_cursorPos),
@@ -2393,6 +2432,8 @@ void Input::restoreEditSnapshot(const EditSnapshot& snapshot) {
   m_selectionAnchor = std::min(snapshot.selectionAnchor, m_value.size());
   m_preeditStart = 0;
   m_preeditLen = 0;
+  m_preeditSnapshot.reset();
+  m_preeditCursorHidden = false;
   updateDisplayText();
   updateInteractiveGeometry();
   revealCursor();

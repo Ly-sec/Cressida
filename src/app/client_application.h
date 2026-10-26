@@ -84,6 +84,7 @@ namespace app {
     static constexpr int imageMenuReplayFrames = 13;
     static constexpr int trayReplayFrames = 4;
     static constexpr int voiceReplayFrames = 15;
+    static constexpr int imeReplayFrames = 14;
     enum class Action {
       Settings,
       VoiceAction,
@@ -792,6 +793,8 @@ namespace app {
     void drawVoiceMembers(Node& root, const api::Channel& channel, float y, float top, float bottom);
     void prepareVoiceDemo(const std::string& view);
     void demoVoiceStep();
+    void prepareImeDemo(const std::string& view);
+    void replayImeStep();
     void clearAccountSettings();
     void resetProfile();
     void settingsKey(const Key& key);

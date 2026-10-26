@@ -691,6 +691,10 @@ void InputDispatcher::syncTextInputFocus() {
   if (m_textInputService == nullptr || m_textInputSurface == nullptr || m_focusedArea == nullptr) {
     return;
   }
+  if (!m_focusedArea->enabled()) {
+    clearTextInputFocus(m_focusedArea);
+    return;
+  }
   if (auto* client = m_focusedArea->textInputClient(); client != nullptr) {
     m_textInputService->setFocusedClient(
         m_textInputSurface, client, m_textInputKeyboardFocusActivation, m_textInputKeyboardFocusParentSurface

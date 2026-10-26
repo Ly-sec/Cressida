@@ -13,6 +13,20 @@ remember your sign-in.
 Choose an installation route below. For a plain source build, install the
 [build dependencies](building.md) first. Package names vary by distribution.
 
+### Input methods
+
+For composed text, install and configure your preferred input-method service and
+an engine for your language. Cressida connects through Wayland text-input-v3;
+the compositor must support that connection. Fcitx 5 is supported through this
+path without installing GTK or Qt input modules for Cressida.
+
+Follow the official
+[Fcitx 5 setup guide](https://fcitx-im.org/wiki/Setup_Fcitx_5) and
+[Wayland guidance](https://fcitx-im.org/wiki/Using_Fcitx_5_on_Wayland) for your
+desktop. On KDE Plasma, select **Fcitx 5** under **Virtual Keyboard** in System
+Settings. Other compositors may start the service through their session or
+autostart configuration.
+
 ## Nix
 
 From the extracted Cressida source directory, run:

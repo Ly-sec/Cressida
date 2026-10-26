@@ -105,6 +105,7 @@ namespace app {
 
   ClientApplication::ClientApplication(bool demoMode, std::string token, SingleInstance* instance)
       : m_instance(instance), m_token(std::move(token)) {
+    m_window.setTextInputDispatcher(&m_controlInput);
     const auto* trace = std::getenv("CRESSIDA_TRACE_SCROLL");
     m_traceScroll = trace && std::string_view(trace) == "1";
     const auto* animation = std::getenv("CRESSIDA_SCROLL_ANIMATION");
@@ -447,6 +448,8 @@ namespace app {
         demoComposerReplyStep();
       if (m_demo && m_demoOverlay.starts_with("voice-cycle") && m_demoInteractionStep < voiceReplayFrames)
         demoVoiceStep();
+      if (m_demo && m_demoOverlay.starts_with("ime-cycle") && m_demoInteractionStep < imeReplayFrames)
+        replayImeStep();
       if (m_demo && m_demoOverlay == "user-preferences-cycle" && m_demoInteractionStep < 12)
         demoUserPreferencesStep();
       if (m_demo
@@ -1477,6 +1480,7 @@ namespace app {
                    : m_demo && view && std::string_view(view).starts_with("reduced-motion-cycle")
                    ? reducedMotionReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("voice-cycle")             ? voiceReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("ime-cycle")               ? imeReplayFrames
                    : m_demo && view && std::string_view(view) == "user-preferences-cycle"            ? 12
                    : m_demo && view && std::string_view(view) == "user-account-cycle"                ? 16
                    : m_demo && view && std::string_view(view) == "user-settings-lists-cycle"         ? 30
@@ -1573,6 +1577,8 @@ namespace app {
       throw std::runtime_error("Reduced motion media replay did not finish");
     if (m_demoOverlay.starts_with("voice-cycle") && m_demoInteractionStep != voiceReplayFrames)
       throw std::runtime_error("The voice replay did not complete");
+    if (m_demoOverlay.starts_with("ime-cycle") && m_demoInteractionStep != imeReplayFrames)
+      throw std::runtime_error("The input-method replay did not complete");
     if (m_demoOverlay == "user-preferences-cycle" && m_demoInteractionStep != 12)
       throw std::runtime_error("Client preferences replay did not finish");
     if (m_demoOverlay == "dm-compose-cycle" && m_demoInteractionStep != 16)
@@ -3073,6 +3079,8 @@ namespace app {
           m_demoInteractionStep = 0;
         } else if (view.starts_with("voice-cycle")) {
           prepareVoiceDemo(view);
+        } else if (view.starts_with("ime-cycle")) {
+          prepareImeDemo(view);
         } else if (view == "user-preferences-cycle") {
           openSettings();
           selectSettingsPage("keybinds");
@@ -7548,6 +7556,20 @@ namespace app {
   }
 
   void ClientApplication::onKey(const Key& key) {
+    if (auto* area = m_controlInput.focusedArea())
+      if (const auto* input = dynamic_cast<Input*>(area->textInputClient()); input && input->hasPreedit()) {
+        const auto unicode = key.text.empty() ? 0U : static_cast<std::uint32_t>(g_utf8_get_char(key.text.c_str()));
+        area->dispatchKey(
+            key.symbol, unicode,
+            (key.control ? KeyMod::Ctrl : 0)
+                | (key.shift ? KeyMod::Shift : 0)
+                | (key.alt ? KeyMod::Alt : 0)
+                | (key.super ? KeyMod::Super : 0),
+            true
+        );
+        m_window.invalidate();
+        return;
+      }
     if (m_railDrag && key.symbol == XKB_KEY_Escape) {
       finishRailDrag(true);
       return;

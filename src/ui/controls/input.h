@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -84,7 +85,10 @@ public:
   static void setPasswordMaskStyle(PasswordMaskStyle style) noexcept;
   void clearSelection();
 
-  [[nodiscard]] const std::string& value() const noexcept { return m_value; }
+  [[nodiscard]] const std::string& value() const noexcept {
+    return m_preeditSnapshot ? m_preeditSnapshot->value : m_value;
+  }
+  [[nodiscard]] bool hasPreedit() const noexcept { return m_preeditLen != 0; }
   [[nodiscard]] InputArea* inputArea() const noexcept { return m_inputArea; }
   [[nodiscard]] bool invalid() const noexcept { return m_invalid; }
 
@@ -210,6 +214,8 @@ private:
   std::size_t m_selectionAnchor = 0;
   std::size_t m_preeditStart = 0;
   std::size_t m_preeditLen = 0;
+  std::optional<EditSnapshot> m_preeditSnapshot;
+  bool m_preeditCursorHidden = false;
   std::vector<EditSnapshot> m_undoStack;
   std::vector<EditSnapshot> m_redoStack;
   EditCoalesceKind m_lastEditCoalesceKind = EditCoalesceKind::None;

@@ -28,6 +28,7 @@ struct TextInputState {
   bool sensitiveData = false;
   bool hiddenText = false;
   bool preeditVisible = true;
+  bool multiline = false;
 };
 
 struct TextInputEdit {

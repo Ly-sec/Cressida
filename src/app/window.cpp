@@ -1,6 +1,7 @@
 #include "app/window.h"
 
 #include "app/desktop_activation.h"
+#include "app/input_method_keys.h"
 #include "app/layout_metrics.h"
 #include "app/surface_scale.h"
 #include "app/window_activation.h"
@@ -13,8 +14,11 @@
 #include "fractional-scale-v1-client-protocol.h"
 #include "render/gl_shared_context.h"
 #include "render/scene/input_area.h"
+#include "render/scene/input_dispatcher.h"
+#include "text-input-unstable-v3-client-protocol.h"
 #include "ui/style.h"
 #include "viewporter-client-protocol.h"
+#include "wayland/text_input_service.h"
 #include "xdg-activation-v1-client-protocol.h"
 #include "xdg-decoration-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
@@ -86,6 +90,11 @@ namespace app {
     Clock::time_point titleClick{};
     std::uint32_t cursorShape = WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT;
     wl_seat* seat = nullptr;
+    std::uint32_t seatName = 0, textInputManagerName = 0;
+    zwp_text_input_manager_v3* textInputManager = nullptr;
+    TextInputService textInput;
+    InputDispatcher* textInputDispatcher = nullptr;
+    InputMethodKeys<Key> pendingKeys;
     wl_keyboard* keyboard = nullptr;
     wl_pointer* pointer = nullptr;
     wp_cursor_shape_manager_v1* cursorManager = nullptr;
@@ -103,6 +112,7 @@ namespace app {
     xkb_state* state = nullptr;
     xkb_compose_table* composeTable = nullptr;
     xkb_compose_state* compose = nullptr;
+    std::uint64_t composeFocusGeneration = 0;
     int repeatRate = 25;
     int repeatDelay = 500;
     std::uint32_t repeatKey = 0;
@@ -146,8 +156,24 @@ namespace app {
     explicit Impl(Window& window) : owner(window) {
       const auto* trace = std::getenv("CRESSIDA_TRACE_SCROLL");
       traceScroll = trace && std::strcmp(trace, "1") == 0;
+      textInput.setStateChanged([this] {
+        const auto generation = textInput.focusGeneration();
+        const bool focusChanged = generation != composeFocusGeneration;
+        composeFocusGeneration = generation;
+        if (textInput.hasPendingEdit() || textInput.hasComposition()) {
+          repeatKey = 0;
+        }
+        if (compose && (focusChanged || textInput.hasPendingEdit() || textInput.hasComposition()))
+          xkb_compose_state_reset(compose);
+        owner.invalidate();
+        flushPendingKeys();
+      });
     }
     ~Impl() {
+      textInput.setStateChanged({});
+      textInput.cleanup();
+      if (textInputManager)
+        zwp_text_input_manager_v3_destroy(textInputManager);
       activationState.unmap();
       // EGL resources must be destroyed before their wl_surface and display.
       target.destroy();
@@ -284,6 +310,7 @@ namespace app {
     }
 
     void resize() {
+      textInput.setCoordinateScale(uiScale);
       if (!target.surfaceTarget())
         return;
       const auto geometry = wl_surface_get_version(surface) >= 3 || surfaceScale.usesViewport()
@@ -297,6 +324,62 @@ namespace app {
       target.setLogicalSize(geometry.logicalWidth, geometry.logicalHeight);
       target.resize(geometry.bufferWidth, geometry.bufferHeight);
       dirty = true;
+    }
+
+    void syncTextInput() {
+      if (textInputDispatcher)
+        textInputDispatcher->setTextInputContext(visible && keyboardFocused ? surface : nullptr, &textInput);
+    }
+    void bindTextInput() {
+      if (textInputManager && seat) {
+        textInput.bind(textInputManager, seat);
+        textInput.setCoordinateScale(uiScale);
+        syncTextInput();
+      }
+    }
+    void keyboardBlur(wl_surface* lost) {
+      const bool changed = keyboardFocused;
+      keyboardFocused = false;
+      repeatKey = 0;
+      cancelPendingKeys();
+      if (compose)
+        xkb_compose_state_reset(compose);
+      textInput.onKeyboardFocusSurface(lost, false);
+      textInput.handleLeave(lost);
+      syncTextInput();
+      if (changed && owner.focusChanged)
+        owner.focusChanged(false);
+      owner.invalidate();
+    }
+    void deliverKey(const Key& event, bool pressed) {
+      if (pressed) {
+        if (owner.key)
+          owner.key(event);
+      } else if (owner.keyReleased)
+        owner.keyReleased(event.symbol);
+    }
+    void flushPendingKeys() {
+      pendingKeys.flush(
+          [this] {
+            return InputMethodKeyContext{
+                textInput.hasPendingEdit(), visible && keyboardFocused && textInput.isEnabled(),
+                textInput.focusGeneration()
+            };
+          },
+          [this](const Key& event, bool pressed) { deliverKey(event, pressed); }
+      );
+    }
+    void cancelPendingKeys() {
+      pendingKeys.cancel([this](const Key& event, bool pressed) { deliverKey(event, pressed); });
+    }
+    void routeKey(Key event, bool pressed) {
+      if (textInput.hasPendingEdit()) {
+        pendingKeys.defer(
+            std::move(event), pressed, textInput.focusGeneration(),
+            [this](const Key& event, bool pressed) { deliverKey(event, pressed); }
+        );
+      } else
+        deliverKey(event, pressed);
     }
 
     static void releaseOutput(wl_output* output) {
@@ -376,7 +459,7 @@ namespace app {
       } else
         xkb_state_key_get_utf8(state, code, text, sizeof(text));
       event.text = text;
-      owner.key(event);
+      routeKey(std::move(event), true);
     }
 
     void bindCursor() {
@@ -417,26 +500,20 @@ namespace app {
               self.state = nextState;
             },
         .enter =
-            [](void* data, wl_keyboard*, std::uint32_t, wl_surface*, wl_array*) {
+            [](void* data, wl_keyboard*, std::uint32_t, wl_surface* surface, wl_array*) {
               auto& self = *static_cast<Impl*>(data);
               if (!self.visible)
                 return;
               const bool changed = !self.keyboardFocused;
               self.keyboardFocused = true;
+              self.textInput.onKeyboardFocusSurface(surface, true);
+              self.syncTextInput();
               if (changed && self.owner.focusChanged)
                 self.owner.focusChanged(true);
               self.owner.invalidate();
             },
-        .leave =
-            [](void* data, wl_keyboard*, std::uint32_t, wl_surface*) {
-              auto& self = *static_cast<Impl*>(data);
-              const bool changed = self.keyboardFocused;
-              self.keyboardFocused = false;
-              self.repeatKey = 0;
-              if (changed && self.owner.focusChanged)
-                self.owner.focusChanged(false);
-              self.owner.invalidate();
-            },
+        .leave = [](void* data, wl_keyboard*, std::uint32_t,
+                    wl_surface* surface) { static_cast<Impl*>(data)->keyboardBlur(surface); },
         .key =
             [](void* data, wl_keyboard*, std::uint32_t serial, std::uint32_t, std::uint32_t key, std::uint32_t state) {
               auto& self = *static_cast<Impl*>(data);
@@ -452,8 +529,8 @@ namespace app {
               } else {
                 if (self.repeatKey == key + 8)
                   self.repeatKey = 0;
-                if (self.state && self.owner.keyReleased)
-                  self.owner.keyReleased(xkb_state_key_get_one_sym(self.state, key + 8));
+                if (self.state)
+                  self.routeKey({.symbol = xkb_state_key_get_one_sym(self.state, key + 8)}, false);
               }
             },
         .modifiers =
@@ -726,6 +803,7 @@ namespace app {
                 wl_output_add_listener(output->handle, &listener, output.get());
                 self.outputs.emplace(name, std::move(output));
               } else if (std::strcmp(interface, wl_seat_interface.name) == 0 && !self.seat) {
+                self.seatName = name;
                 self.seat =
                     static_cast<wl_seat*>(wl_registry_bind(registry, name, &wl_seat_interface, std::min(version, 8U)));
                 static const wl_seat_listener listener{
@@ -736,6 +814,7 @@ namespace app {
                             self.keyboard = wl_seat_get_keyboard(seat);
                             wl_keyboard_add_listener(self.keyboard, &Impl::keyboardListener, &self);
                           } else if (!(capabilities & WL_SEAT_CAPABILITY_KEYBOARD) && self.keyboard) {
+                            self.keyboardBlur(self.surface);
                             wl_keyboard_release(self.keyboard);
                             self.keyboard = nullptr;
                             self.repeatKey = 0;
@@ -757,6 +836,16 @@ namespace app {
                 };
                 wl_seat_add_listener(self.seat, &listener, &self);
                 self.bindDataDevice();
+                self.bindTextInput();
+              } else if (
+                  std::strcmp(interface, zwp_text_input_manager_v3_interface.name) == 0 && !self.textInputManager
+              ) {
+                self.textInputManagerName = name;
+                self.textInputManager = static_cast<zwp_text_input_manager_v3*>(wl_registry_bind(
+                    registry, name, &zwp_text_input_manager_v3_interface,
+                    std::min(version, static_cast<std::uint32_t>(zwp_text_input_manager_v3_interface.version))
+                ));
+                self.bindTextInput();
               } else if (std::strcmp(interface, wp_cursor_shape_manager_v1_interface.name) == 0) {
                 self.cursorManager = static_cast<wp_cursor_shape_manager_v1*>(
                     wl_registry_bind(registry, name, &wp_cursor_shape_manager_v1_interface, 1)
@@ -776,6 +865,41 @@ namespace app {
         .global_remove =
             [](void* data, wl_registry*, std::uint32_t name) {
               auto& self = *static_cast<Impl*>(data);
+              if (name == self.textInputManagerName && self.textInputManager) {
+                self.cancelPendingKeys();
+                self.textInput.cleanup();
+                zwp_text_input_manager_v3_destroy(self.textInputManager);
+                self.textInputManager = nullptr;
+                self.textInputManagerName = 0;
+              }
+              if (name == self.seatName && self.seat) {
+                self.keyboardBlur(self.surface);
+                self.textInput.cleanup();
+                if (self.dataDevice) {
+                  wl_data_device_release(self.dataDevice);
+                  self.dataDevice = nullptr;
+                }
+                self.selection = nullptr;
+                for (auto& offer : self.offers)
+                  wl_data_offer_destroy(offer->handle);
+                self.offers.clear();
+                self.pointerSerial = self.inputSerial = 0;
+                if (self.cursorDevice) {
+                  wp_cursor_shape_device_v1_destroy(self.cursorDevice);
+                  self.cursorDevice = nullptr;
+                }
+                if (self.pointer) {
+                  wl_pointer_release(self.pointer);
+                  self.pointer = nullptr;
+                }
+                if (self.keyboard) {
+                  wl_keyboard_release(self.keyboard);
+                  self.keyboard = nullptr;
+                }
+                wl_seat_release(self.seat);
+                self.seat = nullptr;
+                self.seatName = 0;
+              }
               if (const auto output = self.outputs.find(name); output != self.outputs.end()) {
                 self.surfaceScale.remove(name);
                 Impl::releaseOutput(output->second->handle);
@@ -841,7 +965,7 @@ namespace app {
         if (pasted)
           pasted({}, "error");
       }
-      if (m->repeatKey && Clock::now() >= m->repeatAt && m->repeatRate > 0) {
+      if (m->repeatKey && !m->textInput.hasPendingEdit() && Clock::now() >= m->repeatAt && m->repeatRate > 0) {
         m->emitKey(m->repeatKey);
         m->repeatAt = Clock::now() + std::chrono::milliseconds(1000 / m->repeatRate);
       }
@@ -884,7 +1008,7 @@ namespace app {
       };
       for (const auto& write : m->writes)
         descriptors.push_back({write.fd, POLLOUT, 0});
-      const auto repeatTimeout = m->repeatKey
+      const auto repeatTimeout = m->repeatKey && m->repeatRate > 0 && !m->textInput.hasPendingEdit()
           ? std::clamp<int>(
                 std::chrono::duration_cast<std::chrono::milliseconds>(m->repeatAt - Clock::now()).count(), 0, 500
             )
@@ -1065,6 +1189,7 @@ namespace app {
     if (!m->visible)
       return;
     m->visible = false;
+    m->keyboardBlur(m->surface);
     m->configured = false;
     m->activationState.unmap();
     m->restoreMaximized = m->maximized;
@@ -1111,6 +1236,13 @@ namespace app {
     m->activationState.request(activationToken);
     invalidate();
   }
+  void Window::setTextInputDispatcher(InputDispatcher* dispatcher) {
+    if (m->textInputDispatcher && m->textInputDispatcher != dispatcher)
+      m->textInputDispatcher->setTextInputContext(nullptr, nullptr);
+    m->textInputDispatcher = dispatcher;
+    m->syncTextInput();
+  }
+  void Window::updateTextInput() { m->syncTextInput(); }
   void Window::invalidate() { m->dirty = true; }
   void Window::setUiScale(float scale) {
     m->uiScale = std::isfinite(scale) ? std::clamp(scale, 0.67F, 1.5F) : 1.0F;

@@ -9,6 +9,8 @@
 #include <memory>
 #include <string>
 
+class InputDispatcher;
+
 namespace app {
   struct Key {
     std::uint32_t symbol = 0;
@@ -26,6 +28,9 @@ namespace app {
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
     void initialize();
+    // Detach before destroying the owning dispatcher.
+    void setTextInputDispatcher(InputDispatcher* dispatcher);
+    void updateTextInput();
     void
     run(int wakeFd, std::function<void()> tick, int frameLimit = 0, int assetFd = -1, int videoFd = -1,
         int themeFd = -1, int pickerFd = -1, int audioFd = -1, int notificationFd = -1, int trayFd = -1,

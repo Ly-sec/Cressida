@@ -13,6 +13,7 @@ namespace api {
     AddReaction,
     RemoveReaction,
     EditMessage,
+    RemoveEmbeds,
     DeleteMessage,
     Block,
     Unblock,
@@ -58,6 +59,8 @@ namespace api {
     AutoModerationFeedback
   };
   inline constexpr int autoModerationSubmitFeedback = 4;
+  bool
+  canRemoveMessageEmbeds(const Message& message, std::string_view self, std::optional<std::uint64_t> permissions = {});
   inline constexpr std::size_t maxAutoModerationDecisionBytes = 128;
   inline constexpr std::size_t maxAutoModerationContentBytes = 16 * 1024;
   struct Interaction {
@@ -95,6 +98,7 @@ namespace api {
     std::optional<GuildRailMove> railMove;
     bool markAutoModerationFeedback = false;
   };
+  std::optional<MessagePatch> removedEmbedsPatch(const Interaction& action, const nlohmann::json& response);
   std::optional<nlohmann::json>
   autoModerationFeedbackBody(const Interaction& action, std::string_view analyticsToken, std::int64_t timestamp);
   struct InteractionRequest {

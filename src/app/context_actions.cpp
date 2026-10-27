@@ -133,6 +133,7 @@ namespace app {
         entry.icon = "pencil";
         break;
       case Action::DeleteMessage:
+      case Action::RemoveEmbeds:
         entry.icon = "trash";
         entry.danger = true;
         break;
@@ -218,6 +219,8 @@ namespace app {
           && (message->type == 0 || message->type == 19)
           && !(message->flags & 64))
         add(Action::EditMessage, "Edit Message");
+      if (api::canRemoveMessageEmbeds(*message, m_account.id, channelPermissionsFor(m_contextChannel)))
+        add(Action::RemoveEmbeds, "Remove Embeds");
       if (!message->deleted && message->type != 7 && message->type != autoModerationActionType)
         add(Action::Reply, "Reply");
       const auto selected = std::ranges::find(m_channels, m_channelId, &api::Channel::id);
@@ -747,6 +750,17 @@ namespace app {
   }
   bool ClientApplication::startInteraction(api::Interaction action) {
     using Kind = api::InteractionKind;
+    if (action.kind == Kind::RemoveEmbeds) {
+      const auto message = std::ranges::find(m_messages, action.message, &api::Message::id);
+      if (action.channel != m_channelId
+          || message == m_messages.end()
+          || message->channelId != action.channel
+          || !api::canRemoveMessageEmbeds(*message, m_account.id, channelPermissionsFor(action.channel))) {
+        m_status = "This message is no longer available or you cannot remove its embeds.";
+        return false;
+      }
+      action.messageFlags = message->flags;
+    }
     if (action.kind == Kind::AutoModerationFeedback) {
       const auto message = std::ranges::find(m_messages, action.message, &api::Message::id);
       if (action.channel != m_channelId
@@ -767,6 +781,7 @@ namespace app {
             || action.kind == Kind::RemoveReaction
             || action.kind == Kind::ListReactions
             || action.kind == Kind::EditMessage
+            || action.kind == Kind::RemoveEmbeds
             || action.kind == Kind::DeleteMessage
             || action.kind == Kind::CreateThread
             || action.kind == Kind::MessageButton))
@@ -790,6 +805,30 @@ namespace app {
     }
     m_pendingInteractions.insert(key);
     return true;
+  }
+  void ClientApplication::removeMessageEmbeds(const std::string& id, bool immediate) {
+    const auto message = std::ranges::find(m_messages, id, &api::Message::id);
+    if (message == m_messages.end()
+        || message->channelId != m_channelId
+        || !api::canRemoveMessageEmbeds(*message, m_account.id, channelPermissionsFor(m_channelId)))
+      return;
+    api::Interaction request{
+        .kind = api::InteractionKind::RemoveEmbeds,
+        .channel = m_channelId,
+        .message = id,
+        .revision = ++m_dialogGeneration,
+        .messageFlags = message->flags
+    };
+    if (immediate) {
+      startInteraction(request);
+      return;
+    }
+    m_dialogKind = "confirm";
+    m_dialogTitle = "Are you sure?";
+    m_dialogText.clear();
+    m_dialogError.clear();
+    m_dialogPending = false;
+    m_dialogAction = request;
   }
   void ClientApplication::contextAction(Action action) {
     if (action == Action::CopyImage
@@ -836,6 +875,7 @@ namespace app {
         && found->deleted
         && (action == Action::Reply
             || action == Action::EditMessage
+            || action == Action::RemoveEmbeds
             || action == Action::DeleteMessage
             || action == Action::AddReaction
             || action == Action::CreateThread))
@@ -847,6 +887,10 @@ namespace app {
     request.channel = m_contextChannel;
     request.message = m_contextMessage;
     switch (action) {
+    case Action::RemoveEmbeds:
+      if (m_contextChannel == m_channelId)
+        removeMessageEmbeds(m_contextMessage, m_window.shiftPressed());
+      break;
     case Action::CreateThread:
       if (found != m_messages.end()) {
         if (found->hasThread || found->thread || m_threads.find(m_guildId, found->id))
@@ -1103,6 +1147,80 @@ namespace app {
     m_reactionChannel.clear();
     m_revealedBlocked.clear();
   }
+  void ClientApplication::drawRemoveEmbedsDialog(Node& root, float w, float h) {
+    const std::string description = "This will remove all embeds on this message for everyone.";
+    const std::string hint = "Hold Shift when removing embeds to skip this confirmation.";
+    const std::string caption = m_dialogPending ? "Removing…" : "Remove All Embeds";
+    const float width = std::min(layout::EmbedRemoval::maximumWidth, w - Style::space2Xl);
+    const float textWidth = width - layout::EmbedRemoval::padding * 2;
+    auto& renderer = m_window.target().renderer();
+    const auto textHeight = [&](const std::string& text, float size) {
+      if (text.empty())
+        return 0.0F;
+      const auto metrics = renderer.measureText(text, size, FontWeight::Normal, textWidth, 0);
+      return std::ceil(metrics.bottom - metrics.top);
+    };
+    const auto frames = layout::embedRemovalLayout(
+        w, h, textHeight(m_dialogTitle, Style::fontSizeHeading), textHeight(description, Style::fontSizeBody),
+        textHeight(hint, Style::fontSizeBody), textHeight(m_dialogError, Style::fontSizeDescription),
+        renderer.measureText("Cancel", Style::fontSizeBody).width + Style::spaceXl * 2,
+        renderer.measureText("Remove All Embeds", Style::fontSizeBody).width + Style::spaceXl * 2
+    );
+    const auto& frame = frames.dialog;
+    rectangle(
+        root, 0, layout::Window::titlebarHeight, w, h - layout::Window::titlebarHeight,
+        withAlpha(background, Style::modalBackdropOpacity)
+    );
+    m_hits.push_back({0, layout::Window::titlebarHeight, w, h - layout::Window::titlebarHeight, Action::None, {}});
+    rectangle(root, frame.x, frame.y, frame.width, frame.height, sidebar, Style::radiusXl);
+    m_dialogBounds = {frame.x, frame.y, frame.width, frame.height, Action::None, {}};
+    m_hits.push_back(m_dialogBounds);
+    const float textX = frame.x + layout::EmbedRemoval::padding;
+    label(
+        root, textX, frame.y + frames.title, textWidth, m_dialogTitle, Style::fontSizeHeading, foreground,
+        FontWeight::SemiBold
+    );
+    label(
+        root, textX, frame.y + frames.description, textWidth, description, Style::fontSizeBody, foreground,
+        FontWeight::Normal, 0
+    );
+    label(root, textX, frame.y + frames.hint, textWidth, hint, Style::fontSizeBody, muted, FontWeight::Normal, 0);
+    if (!m_dialogError.empty())
+      label(
+          root, textX, frame.y + frames.error, textWidth, m_dialogError, Style::fontSizeDescription, danger,
+          FontWeight::Normal, 0
+      );
+    const auto control = [&](const layout::Frame& bounds, const std::string& text, Action action, bool destructive) {
+      Hit hit{frame.x + bounds.x,
+              frame.y + bounds.y,
+              bounds.width,
+              bounds.height,
+              m_dialogPending ? Action::None : action,
+              {}};
+      const bool over = !m_dialogPending && hit.contains(m_pointerX, m_pointerY);
+      rectangle(
+          root, hit.x, hit.y, hit.width, hit.height,
+          destructive
+              ? (over ? lerpColor(theme::destructive, foreground, Style::destructiveHoverBlend) : theme::destructive)
+              : over ? raised
+                     : panel,
+          Style::controlRadius
+      );
+      const auto metrics = renderer.measureText(text, Style::fontSizeBody, FontWeight::Medium);
+      label(
+          root, hit.x + (hit.width - metrics.width) / 2, hit.y + (hit.height - (metrics.bottom - metrics.top)) / 2,
+          metrics.width + Style::spaceXxs, text, Style::fontSizeBody,
+          m_dialogPending   ? muted
+              : destructive ? ink
+                            : foreground,
+          FontWeight::Medium
+      );
+      m_hits.push_back(hit);
+    };
+    control(frames.cancel, "Cancel", Action::CloseDialog, false);
+    control(frames.remove, caption, Action::SubmitDialog, true);
+    m_tooltip.clear();
+  }
   void ClientApplication::drawDialog(Node& root, float w, float h) {
     if (m_dialogKind.starts_with("server-")) {
       drawServerMenuDialog(root, w, h);
@@ -1144,6 +1262,10 @@ namespace app {
     }
     if (m_dialogKind == "confirm" && m_dialogAction && m_dialogAction->kind == api::InteractionKind::DeleteMessage) {
       drawMessageDialog(root, w, h);
+      return;
+    }
+    if (m_dialogKind == "confirm" && m_dialogAction && m_dialogAction->kind == api::InteractionKind::RemoveEmbeds) {
+      drawRemoveEmbedsDialog(root, w, h);
       return;
     }
     const float width = std::min(500.0F, w - Style::space2Xl), height = 230;
@@ -1285,7 +1407,9 @@ namespace app {
       return;
     }
     m_threadPending.erase(action.channel);
-    const bool dialog = m_dialogAction && interactionKey(*m_dialogAction) == key;
+    const bool dialog = m_dialogAction
+        && interactionKey(*m_dialogAction) == key
+        && (action.kind != api::InteractionKind::RemoveEmbeds || m_dialogAction->revision == action.revision);
     if (!event.error.empty()) {
       if (dialog) {
         if (m_dialogKind.empty())
@@ -1332,6 +1456,28 @@ namespace app {
       m_messageLayouts.clear();
     if (action.kind == Kind::DeleteMessage) {
       deleteMessages(action.channel, {action.message});
+    } else if (action.kind == Kind::RemoveEmbeds) {
+      if (event.patch.flags && (*event.patch.flags & api::messageSuppressEmbeds)) {
+        auto patch = event.patch;
+        const auto retainFlags = [&](const std::vector<api::Message>& messages) {
+          const auto message = std::ranges::find(messages, action.message, &api::Message::id);
+          if (message == messages.end())
+            return false;
+          patch.flags = message->flags | api::messageSuppressEmbeds;
+          return true;
+        };
+        if (action.channel != m_channelId || !retainFlags(m_messages))
+          if (const auto cached = m_channelMessages.find(action.channel); cached != m_channelMessages.end())
+            retainFlags(cached->second);
+        updateMessage(action.channel, action.message, patch);
+        const api::Event update{
+            .operation = api::Operation::MessageUpdate,
+            .resource = action.channel,
+            .messageId = action.message,
+            .patch = patch
+        };
+        inboxEvent(update);
+      }
     } else if (action.kind == Kind::EditMessage && !m_messageLog.known(action.channel, action.message)) {
       const api::Message* prior = nullptr;
       if (action.channel == m_channelId) {
@@ -1615,6 +1761,7 @@ namespace app {
       break;
     case Action::Reply:
     case Action::AddReaction:
+    case Action::RemoveEmbeds:
       m_contextMessage = hit.id;
       m_contextChannel = m_channelId;
       contextAction(hit.action);

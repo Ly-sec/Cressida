@@ -1131,6 +1131,11 @@ namespace app {
       xdg_toplevel_set_maximized(m->toplevel);
   }
   bool Window::active() const { return m->visible && m->keyboardFocused; }
+  bool Window::shiftPressed() const {
+    return active()
+        && m->state
+        && xkb_state_mod_name_is_active(m->state, XKB_MOD_NAME_SHIFT, XKB_STATE_MODS_EFFECTIVE) > 0;
+  }
   bool Window::preciseScroll() const {
     return m->axisSource == WL_POINTER_AXIS_SOURCE_FINGER || m->axisSource == WL_POINTER_AXIS_SOURCE_CONTINUOUS;
   }

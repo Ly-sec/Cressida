@@ -9,6 +9,35 @@
 #include <stdexcept>
 
 namespace api {
+  bool canRemoveMessageEmbeds(const Message& message, std::string_view self, std::optional<std::uint64_t> permissions) {
+    constexpr std::uint64_t ephemeral = 1ULL << 6;
+    constexpr int applicationCommandMessage = 20, contextMenuCommandMessage = 23;
+    return !message.deleted
+        && validSnowflake(message.channelId)
+        && validSnowflake(message.id)
+        && !message.embeds.empty()
+        && !(message.flags & (messageSuppressEmbeds | ephemeral))
+        && (message.type == defaultMessageType
+            || message.type == replyMessageType
+            || message.type == applicationCommandMessage
+            || message.type == contextMenuCommandMessage)
+        && ((!self.empty() && message.authorId == self && message.webhookId.empty())
+            || (permissions.value_or(0) & manageMessages));
+  }
+  std::optional<MessagePatch> removedEmbedsPatch(const Interaction& action, const nlohmann::json& response) {
+    if (action.kind != InteractionKind::RemoveEmbeds
+        || !response.is_object()
+        || !response.contains("id")
+        || response["id"] != action.message
+        || !response.contains("channel_id")
+        || response["channel_id"] != action.channel)
+      return {};
+    const auto patch = parseMessagePatch(response);
+    if (!patch.flags || !(*patch.flags & messageSuppressEmbeds))
+      return {};
+    // Keep newer content if a message edit arrives before this response.
+    return MessagePatch{.flags = patch.flags};
+  }
   nlohmann::json decodeRestBody(long status, std::string_view bytes) {
     if (status == 204 || status == 205)
       return nlohmann::json::object();
@@ -709,6 +738,7 @@ namespace api {
     case Kind::RemoveReaction:
     case Kind::ListReactions:
     case Kind::EditMessage:
+    case Kind::RemoveEmbeds:
     case Kind::DeleteMessage:
       if (!validSnowflake(action.channel) || !validSnowflake(action.message))
         return {};
@@ -726,6 +756,9 @@ namespace api {
           request.path += "/@me";
           request.method = action.kind == Kind::AddReaction ? "PUT" : "DELETE";
         }
+      } else if (action.kind == Kind::RemoveEmbeds) {
+        request.method = "PATCH";
+        request.body = {{"flags", action.messageFlags | messageSuppressEmbeds}};
       } else if (action.kind == Kind::EditMessage) {
         if (action.text.size() > 8000 || utf8Length(action.text) > 2000)
           return {};

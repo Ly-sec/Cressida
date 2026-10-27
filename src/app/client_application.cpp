@@ -5160,6 +5160,18 @@ namespace app {
                     }
                   }
                 }
+                if (messageHovered
+                    && api::canRemoveMessageEmbeds(message, m_account.id, channelPermissionsFor(m_channelId))) {
+                  for (const auto& embed : layout.embeds) {
+                    const auto control = layout::embedRemoveFrame(embed);
+                    iconButton(
+                        *messageContent,
+                        {layout::Chat::authorGutter + control.x, bodyY + control.y, control.width, control.height,
+                         Action::RemoveEmbeds, message.id},
+                        "x", "Remove embeds"
+                    );
+                  }
+                }
               }
             }
             if (messageHovered) {

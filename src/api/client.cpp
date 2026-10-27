@@ -3124,7 +3124,12 @@ namespace api {
                 event.guilds = parseGuilds(Json::array({*response}));
             } else if (command.interaction->kind == InteractionKind::ListReactions)
               event.reactors = parseReactors(*response);
-            else if (command.interaction->kind == InteractionKind::EditMessage)
+            else if (command.interaction->kind == InteractionKind::RemoveEmbeds) {
+              const auto patch = removedEmbedsPatch(*command.interaction, *response);
+              if (!patch)
+                throw std::runtime_error("Embed removal was not confirmed for this message");
+              event.patch = *patch;
+            } else if (command.interaction->kind == InteractionKind::EditMessage)
               event.messages = parseMessages(Json::array({*response}));
             else if (command.interaction->kind == InteractionKind::OpenDm)
               event.channels = parsePrivateChannels(Json::array({*response}));

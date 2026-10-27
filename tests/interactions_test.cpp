@@ -14,6 +14,73 @@ int main() {
   using Kind = InteractionKind;
   using nlohmann::json;
   try {
+    constexpr std::uint64_t retainedFlag = 1ULL << 12;
+    const Interaction removal{
+        .kind = Kind::RemoveEmbeds, .channel = "10", .message = "20", .messageFlags = retainedFlag
+    };
+    const auto removalRequest = interactionRequest(removal);
+    require(
+        removalRequest
+            && removalRequest->method == "PATCH"
+            && removalRequest->path == "/channels/10/messages/20"
+            && removalRequest->body == json{{"flags", retainedFlag | messageSuppressEmbeds}},
+        "Embed removal changes only the suppression flag and retains all existing bits"
+    );
+    for (const auto& action :
+         {Interaction{.kind = Kind::RemoveEmbeds, .channel = "../users", .message = "20"},
+          Interaction{.kind = Kind::RemoveEmbeds, .channel = "10", .message = "20/other"}})
+      require(!interactionRequest(action), "Embed removal rejects malformed route identities");
+    Message removable{.id = "20", .channelId = "10", .content = "Keep this text", .authorId = "1"};
+    removable.flags = retainedFlag;
+    removable.embeds.push_back({.title = "Preview"});
+    require(canRemoveMessageEmbeds(removable, "1"), "Authors can remove their own embeds without guild permissions");
+    require(!canRemoveMessageEmbeds(removable, "2"), "Other users require known Manage Messages permission");
+    require(canRemoveMessageEmbeds(removable, "2", manageMessages), "Moderators can remove another author's embeds");
+    for (const int type : {0, 19, 20, 23}) {
+      removable.type = type;
+      require(
+          canRemoveMessageEmbeds(removable, "2", manageMessages),
+          "Moderation covers ordinary messages, replies and application responses"
+      );
+    }
+    removable.type = 24;
+    require(!canRemoveMessageEmbeds(removable, "2", manageMessages), "System alerts retain their own actions");
+    removable.type = 0;
+    require(!canRemoveMessageEmbeds(removable, "2", manageChannel), "Manage Channels alone does not grant removal");
+    removable.webhookId = "9";
+    require(!canRemoveMessageEmbeds(removable, "1"), "Webhook identity alone does not grant author access");
+    require(canRemoveMessageEmbeds(removable, "2", manageMessages), "Moderators can remove webhook embeds");
+    removable.webhookId.clear();
+    removable.deleted = true;
+    require(!canRemoveMessageEmbeds(removable, "1", manageMessages), "Deleted messages cannot be changed");
+    removable.deleted = false;
+    removable.flags |= messageSuppressEmbeds;
+    require(
+        !canRemoveMessageEmbeds(removable, "1", manageMessages), "Already suppressed embeds have no removal action"
+    );
+    removable.flags = 1ULL << 6;
+    require(!canRemoveMessageEmbeds(removable, "1", manageMessages), "Ephemeral messages have no removal action");
+    removable.flags = retainedFlag;
+    const json removalResponse{
+        {"id", "20"},
+        {"channel_id", "10"},
+        {"flags", retainedFlag | messageSuppressEmbeds},
+        {"content", "Older content"},
+        {"embeds", json::array()}
+    };
+    const auto removalPatch = removedEmbedsPatch(removal, removalResponse);
+    require(removalPatch.has_value(), "A scoped suppressed message confirms removal");
+    removalPatch->apply(removable);
+    require(
+        removable.content == "Keep this text" && removable.flags == (retainedFlag | messageSuppressEmbeds),
+        "Removal responses preserve newer message content"
+    );
+    for (const auto& invalid :
+         {json{{"id", "21"}, {"channel_id", "10"}, {"flags", messageSuppressEmbeds}},
+          json{{"id", "20"}, {"channel_id", "11"}, {"flags", messageSuppressEmbeds}},
+          json{{"id", "20"}, {"channel_id", "10"}}, json{{"id", "20"}, {"channel_id", "10"}, {"flags", 0}},
+          json{{"id", "20"}, {"channel_id", "10"}, {"flags", -1}}, json::array()})
+      require(!removedEmbedsPatch(removal, invalid), "Unconfirmed or unrelated responses cannot hide embeds");
     const auto feedback = interactionRequest(
         {.kind = Kind::AutoModerationFeedback,
          .channel = "101",

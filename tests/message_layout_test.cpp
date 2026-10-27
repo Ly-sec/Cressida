@@ -84,6 +84,54 @@ int main(int argc, char** argv) {
          .provider = "Example"}
     );
     const auto preview = app::layoutRichMessage(previewMessage, 230, editMeasure, Style::fontSizePage);
+    require(preview.embeds.size() == 1, "Rich previews expose their measured removal frame");
+    for (const float width : {160.0F, 230.0F, 600.0F}) {
+      const auto measured = app::layoutRichMessage(previewMessage, width, editMeasure);
+      const auto control = app::layout::embedRemoveFrame(measured.embeds.front());
+      require(
+          control.x >= 0 && control.x + control.width <= width && control.y >= 0,
+          "Embed close controls fit alongside the card without covering its title"
+      );
+    }
+    const auto removalFrames = app::layout::embedRemovalLayout(320, 520, 22, 40, 40, 30, 100, 200);
+    require(
+        removalFrames.remove.y > removalFrames.cancel.y
+            && removalFrames.remove.x + removalFrames.remove.width <= removalFrames.dialog.width
+            && removalFrames.remove.y + removalFrames.remove.height <= removalFrames.dialog.height,
+        "Narrow confirmations stack complete actions within the measured dialog"
+    );
+    auto suppressedPreview = previewMessage;
+    suppressedPreview.flags = api::messageSuppressEmbeds;
+    suppressedPreview.content = "Keep the original link";
+    const auto suppressed = app::layoutRichMessage(suppressedPreview, 230, editMeasure);
+    require(
+        suppressed.embeds.empty()
+            && suppressed.boxes.empty()
+            && suppressed.plainText.starts_with("Keep the original link"),
+        "Flags-only updates hide previews while keeping message text"
+    );
+    for (const std::string type : {"image", "gifv", "video"}) {
+      api::Message mediaMessage;
+      api::Embed embed;
+      embed.type = type;
+      embed.url = "https://example.com/media";
+      embed.image = {"https://example.com/image.png", 320, 200};
+      if (type == "video")
+        embed.video = {"https://example.com/video.mp4", 320, 200};
+      mediaMessage.content = embed.url;
+      mediaMessage.embeds = {embed};
+      const auto mediaPreview = app::layoutRichMessage(mediaMessage, 230, editMeasure);
+      require(
+          mediaPreview.embeds.size() == 1 && !mediaPreview.pictures.empty(),
+          "Image, animated and video embeds retain a distinct removal frame"
+      );
+      mediaMessage.flags = api::messageSuppressEmbeds;
+      const auto removed = app::layoutRichMessage(mediaMessage, 230, editMeasure);
+      require(
+          removed.embeds.empty() && removed.pictures.empty() && removed.plainText.contains("https://example.com/media"),
+          "Suppressing media embeds restores their original standalone URL"
+      );
+    }
     const auto linkAreas = app::messageLinkAreas(preview);
     require(
         !linkAreas.empty()

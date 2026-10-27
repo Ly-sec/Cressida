@@ -82,6 +82,7 @@ namespace app {
     std::vector<MessageRun> runs;
     std::vector<MessageBox> boxes;
     std::vector<MessagePicture> pictures;
+    std::vector<layout::Frame> embeds;
     std::string plainText;
     float height = 0, historyHeight = 0;
     std::optional<EditedMarker> edited;

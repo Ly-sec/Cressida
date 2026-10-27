@@ -1165,6 +1165,11 @@ namespace app {
       const api::Message& message, float width, const MessageMeasure& measure, float fontSize,
       const MessageOptions& options
   ) {
+    if ((message.flags & api::messageSuppressEmbeds) && !message.embeds.empty()) {
+      auto shown = message;
+      shown.embeds.clear();
+      return layoutRichMessage(shown, width, measure, fontSize, options);
+    }
     if (message.type == autoModerationActionType) {
       MessageLayout result;
       const auto* embed = autoModerationEmbed(message);
@@ -1649,12 +1654,20 @@ namespace app {
     };
     for (const auto& embed : message.embeds) {
       if (!embed.components.empty()) {
+        const float start = y;
         for (const auto& component : embed.components) {
-          const auto height =
-              componentLayout(componentLayout, component, 0, y + 8, std::min(width, 480.0F), false, embed.url);
+          const auto height = componentLayout(
+              componentLayout, component, 0, y + 8,
+              std::min(layout::embedContentWidth(width), layout::Embed::maximumWidth), false, embed.url
+          );
           if (height > 0)
             y += 8 + height;
         }
+        if (y > start)
+          result.embeds.push_back(
+              {0, start + Style::spaceSm, std::min(layout::embedContentWidth(width), layout::Embed::maximumWidth),
+               y - start - Style::spaceSm}
+          );
         continue;
       }
       if (embed.title.empty()
@@ -1670,8 +1683,10 @@ namespace app {
       y += 8;
       if (embed.type == "video" && !embed.video.url.empty() && embed.provider != "YouTube") {
         const auto& poster = !embed.thumbnail.url.empty() ? embed.thumbnail : embed.video;
-        y += picture(poster, 0, y, width, 300, embed.url);
+        y += picture(poster, 0, y, layout::embedContentWidth(width), 300, embed.url);
         result.pictures.back().videoSource = embed.video.url;
+        const auto& image = result.pictures.back();
+        result.embeds.push_back({image.x, image.y, image.width, image.height});
         continue;
       }
       if (embed.type == "gifv" || embed.type == "image") {
@@ -1679,12 +1694,14 @@ namespace app {
             : !embed.image.url.empty()               ? embed.image
                                                      : embed.thumbnail;
         if (!media.url.empty()) {
-          y += picture(media, 0, y, width, 300, embed.url);
+          y += picture(media, 0, y, layout::embedContentWidth(width), 300, embed.url);
           result.pictures.back().animated = embed.type == "gifv";
+          const auto& image = result.pictures.back();
+          result.embeds.push_back({image.x, image.y, image.width, image.height});
           continue;
         }
       }
-      const float start = y, cardWidth = std::min(width, layout::Embed::maximumWidth);
+      const float start = y, cardWidth = std::min(layout::embedContentWidth(width), layout::Embed::maximumWidth);
       const auto box = result.boxes.size();
       result.boxes.push_back({0, start, cardWidth, 0, false, {}, true, embed.color});
       y += layout::Embed::verticalPadding;
@@ -1735,6 +1752,7 @@ namespace app {
       }
       y += layout::Embed::verticalPadding;
       result.boxes[box].height = y - start;
+      result.embeds.push_back({0, start, cardWidth, y - start});
     }
     if (!message.stickers.empty()) {
       if (y > 0)

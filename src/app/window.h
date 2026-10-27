@@ -48,6 +48,7 @@ namespace app {
     bool fullscreen() const;
     void setFullscreen(bool enabled);
     bool active() const;
+    bool shiftPressed() const;
     bool preciseScroll() const;
     float titlebarHeight() const;
     void setDesktopDecorations(bool enabled);

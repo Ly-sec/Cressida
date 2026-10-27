@@ -1,5 +1,5 @@
 ---
-title: Chat and Markdown
+title: Chat, Markdown and embeds
 description:
   Send messages, reply to a conversation, use completion and format your text.
 ---
@@ -140,6 +140,19 @@ formatted text. Link underlines appear when you hover the link.
 Pasted images can be uploaded from the composer. Multiple images in a message
 appear together in a gallery. Links may show compact previews with a title,
 description or image. See [Images and video](media.md).
+
+To remove a message's embeds, hover the message and click the **×** beside a
+preview, or right-click the message and choose **Remove Embeds**. You can remove
+embeds from your own messages, or from other people's messages when you have
+**Manage Messages** permission in that channel.
+
+The confirmation explains that removal affects everyone. Choose **Remove All
+Embeds** to remove every embed on that message, or **Cancel** to keep them. The
+message text and attachments stay in place. Hold **Shift** while clicking the
+close control or choosing **Remove Embeds** to skip confirmation.
+
+If removal fails, the embeds remain visible and Cressida shows an error.
+Requests are never retried automatically.
 
 ## Catch up and save for later
 

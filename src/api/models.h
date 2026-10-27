@@ -12,6 +12,8 @@
 
 namespace api {
 
+  inline constexpr std::uint64_t messageSuppressEmbeds = 1ULL << 2;
+
   struct GuildTag {
     std::string guild, tag, badge;
     bool operator==(const GuildTag&) const = default;

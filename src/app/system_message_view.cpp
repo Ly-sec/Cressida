@@ -415,19 +415,191 @@ namespace app {
     const auto step = m_demoInteractionStep++;
     std::clog << "Offline embed replay step " << step << '\n';
     if (step == embedReplayFrames - 1) {
-      require(m_channelId == "102", "Jump to Surrounding navigates to the cached source channel");
-      std::clog << "Offline AutoMod footer, compact embeds and continuous link hover replay passed\n";
+      require(m_drafts[m_channelId] == "Retained embed removal draft", "Embed removal preserves the composer draft");
+      std::clog << "Offline AutoMod, embed removal and continuous link hover replay passed\n";
       return;
     }
     const auto click = [&](Action action) {
       const auto found = std::ranges::find(m_hits, action, &Hit::action);
-      require(found != m_hits.end() && found->height > 0, "The actual AutoMod action control is visible");
+      require(found != m_hits.end() && found->height > 0, "The actual message action control is visible");
       const float x = found->x + found->width / 2;
       const float y = found->y + found->height / 2 + m_window.titlebarHeight() - layout::Window::titlebarHeight;
       m_window.motion(x, y);
       m_window.click(x, y, 1);
       m_window.released();
     };
+    if (step >= 11) {
+      constexpr std::uint64_t retainedFlag = 1ULL << 12;
+      constexpr std::uint64_t concurrentFlag = 1ULL << 14;
+      if (step == 11) {
+        require(m_channelId == "102", "Jump to Surrounding navigates to the cached source channel");
+        m_window.setUiScale(m_demoOverlay.ends_with("narrow") ? 1.5F : 1.0F);
+        selectChannel("101");
+        api::Message message{
+            .id = "9301",
+            .channelId = m_channelId,
+            .author = m_account.name,
+            .content = "https://example.com/preview",
+            .timestamp = "2026-10-20T10:45:00Z",
+            .authorId = m_account.id
+        };
+        message.flags = retainedFlag;
+        message.embeds = {
+            {.title = "A removable link preview", .url = "https://example.com/preview"}, {.title = "A second preview"}
+        };
+        message.attachments.push_back({.id = "9302", .filename = "keep.txt", .url = "https://example.com/keep.txt"});
+        m_messages = {message};
+        m_channelMessages[m_channelId] = m_messages;
+        m_messageLayouts.clear();
+        m_messageScroll = 0;
+        m_preferences.compact = false;
+        m_preferences.logDeletedMessages = false;
+        m_drafts[m_channelId] = "Retained embed removal draft";
+      } else if (step == 12) {
+        const auto target = std::ranges::find_if(m_contextTargets, [](const auto& hit) {
+          return hit.action == Action::MessageMenu && hit.id == "9301";
+        });
+        require(target != m_contextTargets.end(), "The removable message has a native context target");
+        m_window.motion(
+            target->x + Style::spaceXl,
+            target->y + Style::spaceSm + m_window.titlebarHeight() - layout::Window::titlebarHeight
+        );
+      } else if (step == 13) {
+        require(
+            std::ranges::count(m_hits, Action::RemoveEmbeds, &Hit::action) == 2,
+            "Each embed exposes its own close control on message hover"
+        );
+        click(Action::RemoveEmbeds);
+        require(
+            m_dialogKind == "confirm" && m_dialogAction && m_dialogAction->kind == api::InteractionKind::RemoveEmbeds,
+            "The close control opens embed removal confirmation"
+        );
+        require(
+            !(m_messages.front().flags & api::messageSuppressEmbeds), "Opening confirmation does not remove embeds"
+        );
+      } else if (step == 14) {
+        bool title = false, explanation = false, hint = false, remove = false;
+        const auto inspect = [&](auto&& self, const Node& node) -> void {
+          if (node.type() == NodeType::Text) {
+            const auto& text = static_cast<const TextNode&>(node);
+            title |= text.text() == "Are you sure?";
+            explanation |= text.text() == "This will remove all embeds on this message for everyone.";
+            hint |= text.text().contains("Hold Shift");
+            remove |= text.text() == "Remove All Embeds";
+          }
+          for (const auto& child : node.children())
+            self(self, *child);
+        };
+        inspect(inspect, *m_scene);
+        require(
+            title && explanation && hint && remove,
+            "The confirmation paints the warning, Shift hint and explicit action"
+        );
+        require(
+            m_dialogBounds.x >= 0 && m_dialogBounds.x + m_dialogBounds.width <= m_window.width(),
+            "Embed confirmation stays inside the window"
+        );
+        click(Action::CloseDialog);
+        require(
+            m_dialogKind.empty() && !(m_messages.front().flags & api::messageSuppressEmbeds),
+            "Cancel keeps all message embeds"
+        );
+        const auto target = std::ranges::find_if(m_contextTargets, [](const auto& hit) {
+          return hit.action == Action::MessageMenu && hit.id == "9301";
+        });
+        require(target != m_contextTargets.end(), "The message remains available after cancel");
+        openContext(target->x + target->width / 2, target->y + target->height / 2);
+        require(
+            std::ranges::any_of(
+                m_contextEntries, [](const auto& entry) { return entry.id == static_cast<int>(Action::RemoveEmbeds); }
+            ),
+            "The message menu also offers embed removal"
+        );
+      } else if (step == 15) {
+        contextAction(Action::RemoveEmbeds);
+        require(m_dialogKind == "confirm", "The context menu uses the same confirmation");
+      } else if (step == 16) {
+        click(Action::SubmitDialog);
+        require(m_status == "Demo mode is read-only.", "The offline confirmation never submits account requests");
+        m_dialogPending = true;
+        interactionResult(
+            {.operation = api::Operation::Interaction,
+             .error = "Offline embed removal failure",
+             .interaction = *m_dialogAction}
+        );
+        require(
+            !m_dialogPending && !m_dialogError.empty() && !(m_messages.front().flags & api::messageSuppressEmbeds),
+            "A failed removal keeps the confirmation, error and original embeds"
+        );
+      } else if (step == 17) {
+        updateMessage(
+            m_channelId, "9301",
+            api::MessagePatch{.content = "Newer message text", .flags = retainedFlag | concurrentFlag}
+        );
+        auto request = *m_dialogAction;
+        const auto patch = api::removedEmbedsPatch(
+            request,
+            {{"id", "9301"},
+             {"channel_id", m_channelId},
+             {"flags", retainedFlag | api::messageSuppressEmbeds},
+             {"content", "Old response text"},
+             {"embeds", nlohmann::json::array()}}
+        );
+        require(patch.has_value(), "The synthetic response confirms the selected message");
+        interactionResult({.operation = api::Operation::Interaction, .patch = *patch, .interaction = request});
+        require(
+            m_dialogKind.empty()
+                && m_messages.front().content == "Newer message text"
+                && m_messages.front().attachments.size() == 1
+                && m_messages.front().flags == (retainedFlag | concurrentFlag | api::messageSuppressEmbeds),
+            "Confirmed removal preserves concurrent edits, attachments and unrelated flags"
+        );
+      } else if (step == 18) {
+        require(m_messageLayouts.at("9301").layout.embeds.empty(), "Confirmed removal hides every embed");
+        require(
+            std::ranges::none_of(m_hits, [](const auto& hit) { return hit.action == Action::RemoveEmbeds; }),
+            "Suppressed previews no longer expose removal controls"
+        );
+        updateMessage(m_channelId, "9301", api::MessagePatch{.flags = retainedFlag});
+        m_messages.front().authorId = "11";
+        m_roleDirectory.apply({false, {{.guild = m_guildId, .owner = "12"}}});
+      } else if (step == 19) {
+        require(
+            std::ranges::none_of(m_hits, [](const auto& hit) { return hit.action == Action::RemoveEmbeds; }),
+            "Another author's embeds have no close control without permission"
+        );
+        removeMessageEmbeds("9301", false);
+        require(m_dialogKind.empty(), "Unknown permissions cannot open a removal confirmation");
+        m_messages.front().authorId = m_account.id;
+        removeMessageEmbeds("9301", true);
+        require(
+            m_dialogKind.empty()
+                && m_status == "Demo mode is read-only."
+                && !(m_messages.front().flags & api::messageSuppressEmbeds),
+            "The Shift path skips confirmation and still uses the normal request gate"
+        );
+        removeMessageEmbeds("9301", false);
+      } else if (step == 20) {
+        m_messages.front().authorId = "11";
+        click(Action::SubmitDialog);
+        require(
+            !m_dialogPending && m_dialogError.contains("cannot remove"),
+            "Submission rechecks author and permissions after the popup opens"
+        );
+      } else if (step == 21) {
+        const auto request = *m_dialogAction;
+        deleteMessages(m_channelId, {"9301"});
+        require(m_dialogKind.empty(), "Live deletion closes the removal confirmation");
+        interactionResult(
+            {.operation = api::Operation::Interaction,
+             .patch = api::MessagePatch{.flags = retainedFlag | api::messageSuppressEmbeds},
+             .interaction = request}
+        );
+        require(m_messages.empty(), "A late removal response cannot recreate a deleted message");
+      }
+      m_window.invalidate();
+      return;
+    }
     const auto& alert = m_messageLayouts.at("9201").layout;
     require(
         alert.autoModeration

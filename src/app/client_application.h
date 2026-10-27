@@ -77,7 +77,7 @@ namespace app {
     static constexpr int dmProfileReplayFrames = 13;
     static constexpr int cosmeticsReplayFrames = 13;
     static constexpr int composerReplyReplayFrames = 10;
-    static constexpr int embedReplayFrames = 12;
+    static constexpr int embedReplayFrames = 23;
     static constexpr int markdownReplayFrames = 5;
     static constexpr int replyGroupingReplayFrames = 3;
     static constexpr int mediaGalleryReplayFrames = 13;
@@ -211,6 +211,7 @@ namespace app {
       AddReaction,
       ToggleReaction,
       EditMessage,
+      RemoveEmbeds,
       SaveMessageEdit,
       CancelMessageEdit,
       CompleteText,
@@ -436,6 +437,8 @@ namespace app {
     );
     void demoJoinStep();
     void demoEmbedStep();
+    void removeMessageEmbeds(const std::string& message, bool immediate);
+    void drawRemoveEmbedsDialog(Node& root, float width, float height);
     void demoMarkdownStep();
     void autoModerationAction(const Hit& hit);
     void deleteMessages(const std::string& channel, const std::vector<std::string>& ids);

@@ -21,7 +21,7 @@
     "items": [
       {
         "slug": "docs/chat",
-        "label": "Chat and Markdown"
+        "label": "Chat, Markdown and embeds"
       },
       {
         "slug": "docs/inbox"

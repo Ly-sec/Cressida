@@ -397,6 +397,8 @@ namespace app::layout {
     static constexpr float strikeThickness(float size) { return Style::borderWidth * size / Style::fontSizeBody; }
   };
   struct Embed {
+    static constexpr float removeSize = Style::spaceXl;
+    static constexpr float removeGap = Style::spaceXs;
     static constexpr float maximumWidth = Style::embedMaximumWidth;
     static constexpr float padding = Style::spaceLg;
     static constexpr float verticalPadding = Style::spaceMd;
@@ -408,6 +410,51 @@ namespace app::layout {
     static constexpr float thumbnailReserve = thumbnailSize + padding;
     static constexpr float thumbnailMinimumWidth = thumbnailReserve * 2 + Style::spaceXl;
   };
+  inline Frame embedRemoveFrame(const Frame& embed) {
+    return {embed.x + embed.width + Embed::removeGap, embed.y, Embed::removeSize, Embed::removeSize};
+  }
+  inline float embedContentWidth(float width) { return std::max(0.0F, width - Embed::removeSize - Embed::removeGap); }
+  struct EmbedRemoval {
+    static constexpr float maximumWidth = Embed::maximumWidth + Style::spaceXl * 2;
+    static constexpr float padding = Style::spaceXl;
+    static constexpr float gap = Style::spaceMd;
+    static constexpr float footerGap = Style::spaceGroup;
+    static constexpr float buttonHeight = Style::spaceSection;
+    float title, description, hint, error;
+    Frame dialog, cancel, remove;
+  };
+  inline EmbedRemoval embedRemovalLayout(
+      float width, float height, float titleHeight, float descriptionHeight, float hintHeight, float errorHeight,
+      float cancelWidth, float removeWidth
+  ) {
+    EmbedRemoval result{};
+    const float dialogWidth = std::min(EmbedRemoval::maximumWidth, width - Style::space2Xl);
+    const float contentWidth = dialogWidth - EmbedRemoval::padding * 2;
+    result.title = EmbedRemoval::padding;
+    result.description = result.title + titleHeight + EmbedRemoval::gap;
+    result.hint = result.description + descriptionHeight + EmbedRemoval::gap;
+    result.error = result.hint + hintHeight + EmbedRemoval::gap;
+    const float footer = result.error + errorHeight + EmbedRemoval::footerGap;
+    const bool stacked = cancelWidth + removeWidth + EmbedRemoval::gap > contentWidth;
+    const float dialogHeight = footer
+        + EmbedRemoval::buttonHeight * (stacked ? 2 : 1)
+        + (stacked ? EmbedRemoval::gap : 0)
+        + EmbedRemoval::padding;
+    result.dialog = {
+        (width - dialogWidth) / 2, std::max(Window::titlebarHeight + Style::spaceSm, (height - dialogHeight) / 2),
+        dialogWidth, dialogHeight
+    };
+    result.remove = {
+        dialogWidth - EmbedRemoval::padding - (stacked ? contentWidth : removeWidth),
+        footer + (stacked ? EmbedRemoval::buttonHeight + EmbedRemoval::gap : 0), stacked ? contentWidth : removeWidth,
+        EmbedRemoval::buttonHeight
+    };
+    result.cancel = {
+        stacked ? EmbedRemoval::padding : result.remove.x - EmbedRemoval::gap - cancelWidth, footer,
+        stacked ? contentWidth : cancelWidth, EmbedRemoval::buttonHeight
+    };
+    return result;
+  }
   struct AutoModeration {
     static constexpr float avatarSize = Style::space2Xl;
     static constexpr float indent = avatarSize + Style::spaceSm;

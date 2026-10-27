@@ -20,6 +20,8 @@ namespace Style {
   inline constexpr float disabledOutlineAlpha = 0.5F;
   inline constexpr float textHighlightAlpha = 0.3F;
   inline constexpr float mutedChannelOpacity = 0.55F;
+  inline constexpr float modalBackdropOpacity = 0.65F;
+  inline constexpr float destructiveHoverBlend = 0.12F;
   inline constexpr float avatarDecorationScale = 1.2F;
   inline constexpr float nameplateAccountStartOpacity = 0.10F;
   inline constexpr float nameplateAccountDarkEndOpacity = 0.40F;

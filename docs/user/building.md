@@ -44,6 +44,9 @@ libraries.
 | Animated stickers | `rlottie`                                              |
 | Image headers     | `stb_image_resize2.h`, `stb_image_write.h`             |
 
+On Alpine, install `libqrencode-dev` for QR sign-in development headers and
+pkg-config metadata.
+
 The libmpv requirement refers to its pkg-config API version, not the player
 application's release number. Old stb packages with only `stb_image_resize.h`
 are insufficient. The Nix package pins stb revision

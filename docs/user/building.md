@@ -11,7 +11,7 @@ Install a C compiler, a C++23 compiler and a compatible standard library.
 `std::expected`, `std::format` and `std::ranges::contains` must be available;
 accepting the `-std=c++23` flag alone is not enough.
 
-You also need Meson 1.1 or newer, Ninja, pkg-config/pkgconf, `wayland-scanner`
+You also need Meson 1.2 or newer, Ninja, pkg-config/pkgconf, `wayland-scanner`
 and recent `wayland-protocols`. Nix users can enter the supplied environment
 with `nix develop path:.` from the client source directory.
 
@@ -35,6 +35,7 @@ libraries.
 | Data              | `nlohmann_json`, `tomlplusplus`                        |
 | Desktop services  | `gio-2.0`, `libsecret-1`                               |
 | Network           | `libcurl >= 8.16`, with HTTPS, `ws` and `wss`          |
+| QR sign-in        | `openssl >= 3.0`, `libqrencode`                        |
 | Markdown          | `md4c`                                                 |
 | Video             | `libavformat`, `libavcodec`, `libavutil`, `libswscale` |
 | Native playback   | `mpv >= 2.3` pkg-config API version                    |

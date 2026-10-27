@@ -118,6 +118,14 @@ namespace app {
       const auto drawStarted = std::chrono::steady_clock::now();
       prepareDemo();
       draw();
+      if (m_demo && m_demoOverlay.starts_with("login-cycle") && m_demoInteractionStep < loginReplayFrames)
+        demoLoginStep();
+      if (m_demo
+          && m_demoOverlay.starts_with("startup-transition")
+          && m_demoInteractionStep < startupTransitionReplayFrames)
+        demoStartupTransitionStep();
+      if (m_demo && m_demoOverlay.starts_with("startup-cycle") && m_demoInteractionStep < startupReplayFrames)
+        demoStartupStep();
       if (m_demo)
         verifySettingsScrollbarGutters();
       if (m_demo && m_demoOverlay == "chat-preload-cycle")
@@ -197,6 +205,8 @@ namespace app {
         ++m_demoInteractionStep;
         std::clog << "Offline terminal fence check passed\n";
       }
+      if (m_demo && m_demoOverlay.starts_with("startup-loading") && !m_startupLoading)
+        throw std::runtime_error("The standalone startup preview must render its loading gate");
       if (m_demo && m_demoOverlay.starts_with("login-themed")) {
         const bool light = m_demoOverlay == "login-themed-light" || m_demoOverlay == "login-themed-system-light";
         const auto& palette =
@@ -940,6 +950,10 @@ namespace app {
       m_pointerX = x;
       y += layout::Window::titlebarHeight - m_window.titlebarHeight();
       m_pointerY = y;
+      if (startupCovered() && y >= layout::Window::titlebarHeight) {
+        m_controlInput.pointerLeave();
+        return;
+      }
       if (railDragMotion()) {
         updateCursor();
         m_window.invalidate();
@@ -1008,6 +1022,8 @@ namespace app {
       y += layout::Window::titlebarHeight - m_window.titlebarHeight();
       m_pointerX = x;
       m_pointerY = y;
+      if (startupCovered() && y >= layout::Window::titlebarHeight)
+        return;
       if (!(m_inboxOpen && m_inboxBounds.contains(x, y)) && sidebarResizeAt(x, y)) {
         m_controlInput.cancelPointerCapture();
         m_dragDraft = m_dragMessage = m_dragImage = false;
@@ -1081,6 +1097,8 @@ namespace app {
       m_window.invalidate();
     };
     m_window.contextClick = [this](float x, float y) {
+      if (startupCovered())
+        return;
       finishRailDrag(true);
       if (m_videoExpanded)
         return;
@@ -1124,6 +1142,16 @@ namespace app {
       return active
           || railDrag
           || folders
+          || ((!m_connected || startupCovered())
+              && !m_preferences.reducedMotion
+              && m_window.visible()
+              && (m_restoringLogin
+                  || m_connecting
+                  || m_browserLoginWaiting
+                  || startupCovered()
+                  || (m_qrLoginState
+                      && (m_qrLoginState->stage == auth::QrStage::Starting
+                          || m_qrLoginState->stage == auth::QrStage::Completing))))
           || (m_window.active() && (m_roleMotion.active() || (m_typingVisible && !m_preferences.reducedMotion)));
     };
     m_window.zoom = [this](float delta) {
@@ -1204,6 +1232,8 @@ namespace app {
       m_window.invalidate();
     };
     m_window.scroll = [this](float delta) {
+      if (startupCovered())
+        return;
       if (m_videoExpanded)
         return;
       auto scroll = [&](float& offset, float amount) {
@@ -1353,8 +1383,11 @@ namespace app {
         m_window.invalidate();
         return;
       }
-      if (!m_connected)
+      if (!m_connected) {
+        scroll(m_loginScroll, delta);
+        m_window.invalidate();
         return;
+      }
       if (!m_attachments[m_channelId].empty()
           && m_pointerX >= m_attachmentX
           && m_pointerX < m_attachmentX + m_attachmentWidth
@@ -1460,12 +1493,16 @@ namespace app {
                    : m_demo && view && std::string_view(view) == "attachment-cycle"           ? attachmentReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("window-controls-cycle")
                    ? windowControlsReplayFrames
-                   : m_demo && view && std::string_view(view) == "tray-cycle"               ? trayReplayFrames
-                   : m_demo && view && std::string_view(view) == "sticker-cycle"            ? 8
-                   : m_demo && view && std::string_view(view) == "dm-compose-cycle"         ? 16
-                   : m_demo && view && std::string_view(view).starts_with("dm-home-cycle")  ? dmHomeReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("reply-cycle")    ? composerReplyReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("embed-cycle")    ? embedReplayFrames
+                   : m_demo && view && std::string_view(view) == "tray-cycle"              ? trayReplayFrames
+                   : m_demo && view && std::string_view(view) == "sticker-cycle"           ? 8
+                   : m_demo && view && std::string_view(view) == "dm-compose-cycle"        ? 16
+                   : m_demo && view && std::string_view(view).starts_with("dm-home-cycle") ? dmHomeReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("reply-cycle")   ? composerReplyReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("embed-cycle")   ? embedReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("login-cycle")   ? loginReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("startup-transition")
+                   ? startupTransitionReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("startup-cycle")  ? startupReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("markdown-cycle") ? markdownReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("reply-grouping") ? replyGroupingReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("media-gallery-cycle")
@@ -1523,8 +1560,14 @@ namespace app {
             : 0,
         m_assets.eventFd(), m_video.eventFd(), m_themes.eventFd(), m_filePicker.eventFd(), m_soundPreview.eventFd(),
         m_desktopNotifications.eventFd(), m_tray.eventFd(), m_windowIcons.eventFd(),
-        m_instance ? m_instance->eventFd() : -1, m_client.voiceAudio()->eventFd()
+        m_instance ? m_instance->eventFd() : -1, m_client.voiceAudio()->eventFd(), m_qrLogin.fd()
     );
+    if (m_demoOverlay.starts_with("login-cycle") && m_demoInteractionStep != loginReplayFrames)
+      throw std::runtime_error("Sign-in replay did not finish");
+    if (m_demoOverlay.starts_with("startup-transition") && m_demoInteractionStep != startupTransitionReplayFrames)
+      throw std::runtime_error("Startup transition replay did not finish");
+    if (m_demoOverlay.starts_with("startup-cycle") && m_demoInteractionStep != startupReplayFrames)
+      throw std::runtime_error("Startup preparation replay did not finish");
     if (m_demoOverlay == "server-settings-commands-cycle" && m_demoInteractionStep != 12)
       throw std::runtime_error("Server command permissions replay did not finish");
     if (m_demoOverlay == "server-settings-expressions-cycle" && m_demoInteractionStep != 26)
@@ -2195,6 +2238,7 @@ namespace app {
           m_demoTypingLayout.reset();
           const std::vector<api::Account> typists{{"7", "Maya"}, {"8", "Noah"}, {"10", "Alex"}, {"11", "Dani"}};
           m_members.clear();
+          m_membersLoaded = false;
           for (std::size_t i = 0; i < typists.size(); ++i)
             m_members.push_back({static_cast<int>(i), typists[i], i ? "idle" : "online"});
           m_memberCount = static_cast<int>(m_members.size());
@@ -2300,6 +2344,7 @@ namespace app {
           };
           m_messages.clear();
           m_members.clear();
+          m_membersLoaded = false;
           m_activeMemberIdentity.clear();
           for (std::size_t i = 0; i < names.size(); ++i) {
             const auto user = std::to_string(11 + i);
@@ -2327,6 +2372,7 @@ namespace app {
             m_roleDirectory.apply({false, {headings}});
             const auto people = m_members;
             m_members.clear();
+            m_membersLoaded = false;
             m_activeMemberIdentity.clear();
             for (std::size_t i = 0; i < people.size(); ++i) {
               api::MemberRow header;
@@ -2351,6 +2397,7 @@ namespace app {
           m_messages.clear();
           const std::vector<std::string> names = {"Alex", "⪻𝚂ҟ₳𝘕ↁ✧亗⪼", "⪻𝚂ҟ₳𝘕ↁ✧亗⪼ [KURU]", "𝓢𝓮𝓻𝓮𝓲𝓷", "𓆩Serein𓆪"};
           m_members.clear();
+          m_membersLoaded = false;
           m_activeMemberIdentity.clear();
           for (std::size_t i = 0; i < names.size(); ++i) {
             const auto id = std::to_string(8100 + i);
@@ -2426,8 +2473,31 @@ namespace app {
           prepareAttachmentsDemo();
           if (view == "attachment-cycle")
             m_demoOverlay = view;
-        } else if (view == "login-restoring" || view == "login-retry" || view.starts_with("login-themed")) {
+        } else if (
+            view.starts_with("startup-cycle")
+            || view.starts_with("startup-loading")
+            || view.starts_with("startup-transition")
+        ) {
+          m_demoOverlay = view;
+          m_preferences.theme = view.ends_with("light") ? "light" : "dark";
+          if (view.ends_with("narrow"))
+            m_window.setUiScale(1.5F);
+          if (view.starts_with("startup-loading")) {
+            ++m_session;
+            m_readyBootstrapPending = true;
+            m_loginAnimationStart = std::chrono::steady_clock::now();
+            m_startupReferenceScale = m_window.uiScale();
+            beginStartupLoading();
+          }
+        } else if (
+            view == "login-restoring"
+            || view == "login-retry"
+            || view.starts_with("login-themed")
+            || view.starts_with("login-cycle")
+            || view.starts_with("login-qr")
+        ) {
           m_connected = false;
+          m_qrAutoStartPending = false;
           m_connecting = m_restoringLogin = view == "login-restoring" || view == "login-themed-restoring";
           m_retrySavedLogin = view == "login-retry";
           if (view.starts_with("login-themed")) {
@@ -2442,7 +2512,22 @@ namespace app {
             m_connecting = m_restoringLogin || view == "login-themed-connecting";
           }
           m_status = m_restoringLogin ? "Your desktop keyring may ask you to unlock it."
-                                      : "Could not reach Discord. Your saved sign-in is still available.";
+                                      : "Could not reach your account. Your saved sign-in is still available.";
+          if (!m_restoringLogin && !m_connecting && !m_showTokenEntry && !m_retrySavedLogin) {
+            m_qrLoginState = auth::QrUpdate{};
+            m_status.clear();
+          }
+          if (view.starts_with("login-cycle") || view.starts_with("login-qr")) {
+            m_demoOverlay = view;
+            m_preferences.theme = view.ends_with("light") ? "light" : "dark";
+            m_preferences.reducedMotion = false;
+            if (view.ends_with("narrow"))
+              m_window.setUiScale(1.5F);
+            if (view.starts_with("login-qr"))
+              applyQrLoginUpdate(
+                  {.stage = auth::QrStage::Ready, .qrUrl = "https://example.com/cressida/offline-login"}
+              );
+          }
         } else if (
             view == "gif-picker"
             || view == "gif-favorites"
@@ -2684,6 +2769,7 @@ namespace app {
           m_channels.clear();
           m_messages.clear();
           m_members.clear();
+          m_membersLoaded = false;
           m_activeMemberIdentity.clear();
           m_memberCount = 0;
           m_loadingChannels = true;
@@ -3595,83 +3681,10 @@ namespace app {
       m_pointerY = -h;
     }
 
-    if (!m_connected && m_restoringLogin) {
-      const float center = h / 2;
-      const std::string title = "Opening Cressida…";
-      const std::string subtitle = "Restoring your saved sign-in";
-      auto& renderer = m_window.target().renderer();
-      const auto titleWidth = renderer.measureText(title, Style::fontSizeHero, FontWeight::SemiBold).width;
-      const auto subtitleWidth = renderer.measureText(subtitle, Style::fontSizeCaption, FontWeight::Normal).width;
-      glyph(root, (w - Style::spaceWide) / 2, center - 80, Style::glyphSizeHero, "loader", accent);
-      label(
-          root, (w - titleWidth) / 2, center - Style::spaceXl, titleWidth + Style::spaceXxs, title, Style::fontSizeHero,
-          foreground, FontWeight::SemiBold
-      );
-      label(
-          root, (w - subtitleWidth) / 2, center + 18, subtitleWidth + Style::spaceXxs, subtitle, Style::fontSizeCaption,
-          muted
-      );
-      button(root, {(w - 96) / 2, center + 62, 96, 32, Action::CancelLogin, {}}, "Cancel");
+    if (m_startupLoading) {
+      drawStartupLoading(root, w, h);
     } else if (!m_connected) {
-      const float extra = m_retrySavedLogin && !m_connecting ? 42 : 0;
-      const float x = (w - 460) / 2, y = std::max(62.0F, (h - 360 - extra) / 2);
-      rectangle(root, x, y, 460, 360 + extra, sidebar, 22);
-      label(
-          root, x + Style::space2Xl, y + Style::spaceWide, 390, "A LITTLE CLOSER TO YOUR PEOPLE", Style::fontSizeDetail,
-          accent, FontWeight::SemiBold
-      );
-      label(root, x + Style::space2Xl, y + 58, 390, "Welcome back.", 32, foreground, FontWeight::Bold);
-      label(
-          root, x + Style::space2Xl, y + 106, 390, "Connect your Discord account and settle in.", Style::fontSizeBody,
-          muted
-      );
-      if (m_connecting) {
-        label(root, x + Style::space2Xl, y + 163, 396, "Connecting to Discord…", Style::fontSizeTitle, foreground);
-        button(root, {x + Style::space2Xl, y + 222, 190, 38, Action::CancelLogin, {}}, "Cancel");
-        button(root, {x + 238, y + 222, 190, 38, Action::Demo, {}}, "Explore demo");
-        label(
-            root, x + Style::space2Xl, y + 291, 396, m_status, Style::fontSizeDescription, muted, FontWeight::Normal, 3
-        );
-      } else if (!m_showTokenEntry) {
-        label(
-            root, x + Style::space2Xl, y + 151, 390, "Sign in using Discord in your default browser.",
-            Style::fontSizeCaption, muted, FontWeight::Normal, 2
-        );
-        button(
-            root, {x + Style::space2Xl, y + 200, 396, 46, Action::DiscordLogin, {}},
-            m_login.active() ? "Waiting for your browser…" : "Sign in with Discord", true
-        );
-        if (m_retrySavedLogin)
-          button(root, {x + Style::space2Xl, y + 252, 396, 32, Action::RetryLogin, {}}, "Retry saved sign-in");
-        button(root, {x + Style::space2Xl, y + 260 + extra, 190, 38, Action::Demo, {}}, "Explore demo");
-        button(
-            root, {x + 238, y + 260 + extra, 190, 38, m_login.active() ? Action::CancelLogin : Action::ToggleToken, {}},
-            m_login.active() ? "Cancel sign-in" : "Use a token instead"
-        );
-        label(
-            root, x + Style::space2Xl, y + 316 + extra, 396,
-            m_status.empty() ? "Sign in on Discord's own page. Your password stays there." : m_status,
-            Style::fontSizeMini, muted, FontWeight::Normal, 2
-        );
-      } else {
-        label(
-            root, x + Style::space2Xl, y + 151, 390, "Account token", Style::fontSizeDescription, foreground,
-            FontWeight::Medium
-        );
-        inputControl(
-            root, x + Style::space2Xl, y + 177, 396, 48, "token", m_token, "Paste your account token", false, true
-        );
-        button(
-            root, {x + Style::space2Xl, y + 241, 234, 44, Action::Connect, {}},
-            m_connecting ? "Connecting…" : "Connect account", true
-        );
-        button(root, {x + 278, y + 241, 150, 44, Action::ToggleToken, {}}, "Back to sign-in");
-        label(
-            root, x + Style::space2Xl, y + 306, 396,
-            m_status.empty() ? "Sign-in is remembered in your desktop keyring." : m_status, Style::fontSizeDescription,
-            m_status.empty() ? muted : danger, FontWeight::Normal, 2
-        );
-      }
+      drawLogin(root, w, h);
     } else if (!settingsVisible()) {
       rectangle(root, 0, layout::Window::titlebarHeight, w, h - layout::Window::titlebarHeight, panel);
       const auto account = layout::accountFrame(h, chatLeft());
@@ -5622,8 +5635,12 @@ namespace app {
           }
           if (m_members.empty())
             label(
-                *members, 18, 8, memberWidth - layout::Window::titlebarHeight,
-                m_live ? "Loading members…" : "Connecting…", Style::fontSizeCaption, muted
+                *members, Style::spaceLg + Style::spaceXxs, Style::spaceSm,
+                memberWidth - layout::Window::titlebarHeight,
+                m_membersLoaded && m_memberEpoch == m_chatCacheEpoch ? "No members to display"
+                    : m_live                                         ? "Loading members…"
+                                                                     : "Connecting…",
+                Style::fontSizeCaption, muted
             );
           root.addChild(std::move(members));
         }
@@ -5770,15 +5787,24 @@ namespace app {
       m_hoverReactionKey.clear();
       m_reactorHoverTimer.stop();
     }
-    drawCompletion(root, w, h);
-    drawSearchMenu(root, w, h);
-    drawInboxButton(root, w);
-    drawInbox(root, w, h);
-    drawDialog(root, w, h);
-    drawContext(root, w, h);
-    drawGuildTooltip(root, w, h);
-    drawTooltip(root, w, h);
-    drawSelectDropdown(root, w, h);
+    if (!startupCovered()) {
+      drawCompletion(root, w, h);
+      drawSearchMenu(root, w, h);
+      drawInboxButton(root, w);
+      drawInbox(root, w, h);
+      drawDialog(root, w, h);
+      drawContext(root, w, h);
+      drawGuildTooltip(root, w, h);
+      drawTooltip(root, w, h);
+      drawSelectDropdown(root, w, h);
+    }
+    if (m_startupRevealStart) {
+      auto overlay = std::make_unique<Node>();
+      rectangle(*overlay, 0, layout::Window::titlebarHeight, w, h - layout::Window::titlebarHeight, background);
+      drawStartupLoading(*overlay, w, h);
+      overlay->setOpacity(startupRevealOpacity());
+      root.addChild(std::move(overlay));
+    }
     finishControls();
     m_roleMotion.end();
     if (m_roleMotion.active() || (m_typingVisible && m_window.active() && !m_preferences.reducedMotion))
@@ -5795,6 +5821,15 @@ namespace app {
       eglMakeCurrent(m_window.graphics().display(), EGL_NO_SURFACE, EGL_NO_SURFACE, m_videoContext);
       m_video.presented();
       m_window.context().makeCurrent(m_window.target());
+    }
+    if (m_startupRevealStart && *m_startupRevealStart == std::chrono::steady_clock::time_point{}) {
+      m_startupRevealStart = std::chrono::steady_clock::now();
+      const auto session = m_session;
+      m_startupRevealTimer.start(std::chrono::milliseconds(Style::animSlow), [this, session] {
+        if (session == m_session && session == m_startupLoadingSession)
+          finishStartupReveal();
+      });
+      m_window.invalidate();
     }
     if (m_animationDelay != std::chrono::milliseconds::max())
       m_animationTimer.start(m_animationDelay, [this] { m_window.invalidate(); });
@@ -5828,6 +5863,7 @@ namespace app {
     if (!m_dmMode)
       return;
     m_members.clear();
+    m_membersLoaded = false;
     m_activeMemberIdentity.clear();
     const auto channel = std::ranges::find(m_channels, m_channelId, &api::Channel::id);
     if (channel != m_channels.end()) {
@@ -5838,6 +5874,8 @@ namespace app {
       if (!m_account.id.empty())
         m_members.push_back({index, m_account, userStatus(m_account.id)});
     }
+    m_membersLoaded = true;
+    m_memberEpoch = m_chatCacheEpoch;
     m_memberCount = m_members.size();
     refreshDmProfile();
   }
@@ -5880,14 +5918,24 @@ namespace app {
   void ClientApplication::connect() {
     if (m_connecting)
       return;
+    if (m_demo) {
+      m_status = "The offline preview does not submit account credentials.";
+      m_window.invalidate();
+      return;
+    }
     if (m_token.empty()) {
       m_status = "Paste your account token to connect.";
       m_window.invalidate();
       return;
     }
     m_status.clear();
+    clearQrLogin();
+    m_login.cancel();
+    m_browserLoginWaiting = false;
     m_restoringLogin = m_retrySavedLogin = false;
+    m_startupReferenceScale = m_window.uiScale();
     m_connecting = true;
+    m_loginAnimationStart = std::chrono::steady_clock::now();
     m_guildUpdates.clear();
     resetGuildBootstrap();
     resetReadAcknowledgements();
@@ -5903,9 +5951,13 @@ namespace app {
     if (m_demo || m_connecting)
       return;
     m_login.cancel();
+    clearQrLogin();
+    m_browserLoginWaiting = false;
     m_showTokenEntry = false;
     m_fieldFocused = false;
+    m_startupReferenceScale = m_window.uiScale();
     m_connecting = m_restoringLogin = true;
+    m_loginAnimationStart = std::chrono::steady_clock::now();
     m_retrySavedLogin = false;
     m_status = "Your desktop keyring may ask you to unlock it.";
     m_guildUpdates.clear();
@@ -5918,14 +5970,29 @@ namespace app {
   void ClientApplication::beginLogin() {
     if (m_connecting || m_login.active())
       return;
+    if (m_demo) {
+      m_status = "The offline preview does not open sign-in pages.";
+      m_window.invalidate();
+      return;
+    }
+    clearQrLogin();
+    m_qrAutoStartPending = false;
     m_showTokenEntry = false;
     m_fieldFocused = false;
-    m_status = m_login.start() ? "Complete sign-in in your browser. Allow local access if prompted."
-                               : "Could not open your browser. Check your default browser settings.";
+    m_browserLoginWaiting = m_login.start();
+    m_loginAnimationStart = std::chrono::steady_clock::now();
+    m_status = m_browserLoginWaiting ? "Complete sign-in in your browser. Allow local access if prompted."
+                                     : "Could not open your browser. Check your default browser settings.";
     m_window.invalidate();
   }
 
   void ClientApplication::demo() {
+    m_startupLoading = false;
+    m_startupLoadingTimer.stop();
+    m_startupRevealTimer.stop();
+    m_startupRevealStart.reset();
+    clearQrLogin();
+    m_browserLoginWaiting = false;
     m_voiceJoinTimer.stop();
     m_voiceState = {};
     m_voiceRoster.clear();
@@ -5968,6 +6035,7 @@ namespace app {
 
   bool ClientApplication::readingChannel(const std::string& channel) const {
     return m_connected
+        && !startupCovered()
         && channel == m_channelId
         && !m_inboxOpen
         && !forumView()
@@ -6131,12 +6199,44 @@ namespace app {
         return api::memberListIdentity(m_guildId, *role.permissions, *channel);
     return {};
   }
+  bool ClientApplication::applyMemberSnapshot(api::Event& event) {
+    if (event.session != m_session || event.resource != m_channelId || !event.error.empty())
+      return false;
+    const auto identity = channelMemberIdentity(m_channelId);
+    if (event.memberIdentity && event.memberIdentity != identity)
+      return false;
+    m_members = std::move(event.members);
+    m_membersLoaded = !m_members.empty() || event.memberCount == 0;
+    m_memberCount = event.memberCount;
+    m_memberEpoch = m_chatCacheEpoch;
+    m_activeMemberIdentity.clear();
+    if (identity && event.memberIdentity) {
+      m_activeMemberIdentity = identity->signature;
+      const MemberSnapshot snapshot{m_members, m_memberCount, identity->signature, m_chatCacheEpoch};
+      for (auto& [channel, cached] : m_channelMembers)
+        if (cached.epoch == m_chatCacheEpoch && cached.identity == identity->signature)
+          cached = snapshot;
+    }
+    m_messageLayouts.clear();
+    m_scrolling.limit(
+        m_memberScroll,
+        layout::MemberListLayout(m_members, m_memberCount)
+            .maximumScroll(
+                layout::Members::viewportHeight(
+                    m_window.height() + layout::Window::titlebarHeight - m_window.titlebarHeight()
+                )
+            )
+    );
+    return true;
+  }
+
   void ClientApplication::refreshMemberSubscription() {
     if (m_demo || m_dmMode || m_channelId.empty())
       return;
     const auto identity = channelMemberIdentity(m_channelId);
     if (!m_activeMemberIdentity.empty() && (!identity || identity->signature != m_activeMemberIdentity)) {
       m_members.clear();
+      m_membersLoaded = false;
       m_memberCount = 0;
       m_activeMemberIdentity.clear();
       m_channelMembers.erase(m_channelId);
@@ -6179,6 +6279,7 @@ namespace app {
     m_messages.clear();
     m_messageLayouts.clear();
     m_members.clear();
+    m_membersLoaded = false;
     m_activeMemberIdentity.clear();
     m_memberCount = 0;
     m_memberScroll = 0;
@@ -6257,6 +6358,7 @@ namespace app {
     m_messages.clear();
     m_messageLayouts.clear();
     m_members.clear();
+    m_membersLoaded = false;
     m_activeMemberIdentity.clear();
     m_memberCount = 0;
     m_channelScroll = 0;
@@ -6339,6 +6441,7 @@ namespace app {
     m_messages.clear();
     m_messageLayouts.clear();
     m_members.clear();
+    m_membersLoaded = false;
     m_activeMemberIdentity.clear();
     m_memberCount = 0;
     m_memberScroll = 0;
@@ -6448,12 +6551,14 @@ namespace app {
           {2, {"12", "Noah"}, "idle"},
           {3, {"1", "Alex"}, "online"}
       };
+      m_membersLoaded = true;
       m_memberCount = 4;
     } else if (!m_demo) {
       if (!m_dmMode && m_live && memberIdentity)
         for (const auto& [channel, cached] : m_channelMembers)
           if (cached.epoch == m_chatCacheEpoch && cached.identity == memberIdentity->signature) {
             m_members = cached.rows;
+            m_membersLoaded = !m_members.empty() || cached.count == 0;
             m_memberCount = cached.count;
             m_activeMemberIdentity = cached.identity;
             m_memberEpoch = cached.epoch;
@@ -6832,7 +6937,9 @@ namespace app {
     if (imagesChanged)
       m_window.invalidate();
     if (auto login = m_login.poll()) {
+      m_browserLoginWaiting = false;
       if (!login->handoffToken.empty() && !m_connected && !m_demo) {
+        m_startupReferenceScale = m_window.uiScale();
         m_connecting = true;
         m_restoringLogin = m_retrySavedLogin = false;
         m_token.clear();
@@ -6845,6 +6952,28 @@ namespace app {
       } else if (!login->error.empty()) {
         m_status = std::move(login->error);
         m_window.invalidate();
+      }
+    }
+    if (auto qr = m_qrLogin.poll(); qr && !m_connected && !m_demo && m_qrLoginState) {
+      const bool authenticated = qr->stage == auth::QrStage::Authenticated;
+      applyQrLoginUpdate(std::move(*qr));
+      if (authenticated) {
+        if (auto credential = m_qrLogin.takeToken()) {
+          clearQrLogin();
+          m_startupReferenceScale = m_window.uiScale();
+          m_connecting = true;
+          m_restoringLogin = m_retrySavedLogin = false;
+          m_showTokenEntry = false;
+          m_status = "Connecting to your account…";
+          m_guildUpdates.clear();
+          resetGuildBootstrap();
+          resetReadAcknowledgements();
+          m_session = m_client.connect(std::move(*credential));
+        } else
+          applyQrLoginUpdate(
+              {.stage = auth::QrStage::Failed,
+               .error = "Sign-in could not be completed. Generate a new code or use your browser."}
+          );
       }
     }
     for (auto& event : m_client.drain()) {
@@ -7001,6 +7130,7 @@ namespace app {
             if (const auto at = m_guildUpdates.find(guild.id); at != m_guildUpdates.end())
               at->second.apply(guild);
           m_folders = api::arrangeGuilds(m_guilds, m_guildLayout);
+          beginStartupLoading();
           m_connected = true;
           if (!m_inboxBootstrap) {
             m_inboxBootstrap = true;
@@ -7324,30 +7454,8 @@ namespace app {
       } else if (event.operation == api::Operation::Layout) {
         guildLayoutEvent(event);
       } else if (event.operation == api::Operation::Members && event.resource == m_channelId) {
-        const auto identity = channelMemberIdentity(m_channelId);
-        if (event.memberIdentity && event.memberIdentity != identity)
+        if (!applyMemberSnapshot(event))
           continue;
-        m_members = std::move(event.members);
-        m_memberCount = event.memberCount;
-        m_memberEpoch = m_chatCacheEpoch;
-        m_activeMemberIdentity.clear();
-        if (identity && event.memberIdentity) {
-          m_activeMemberIdentity = identity->signature;
-          const MemberSnapshot snapshot{m_members, m_memberCount, identity->signature, m_chatCacheEpoch};
-          for (auto& [channel, cached] : m_channelMembers)
-            if (cached.epoch == m_chatCacheEpoch && cached.identity == identity->signature)
-              cached = snapshot;
-        }
-        m_messageLayouts.clear();
-        m_scrolling.limit(
-            m_memberScroll,
-            layout::MemberListLayout(m_members, m_memberCount)
-                .maximumScroll(
-                    layout::Members::viewportHeight(
-                        m_window.height() + layout::Window::titlebarHeight - m_window.titlebarHeight()
-                    )
-                )
-        );
       } else if (event.operation == api::Operation::Gateway) {
         if (!event.live) {
           clearTyping();
@@ -7453,6 +7561,15 @@ namespace app {
         m_liveChanges.erase(m_liveChanges.begin());
       m_window.invalidate();
     }
+    updateStartupLoading();
+    if (!m_demo
+        && !m_connected
+        && !m_connecting
+        && !m_showTokenEntry
+        && !m_browserLoginWaiting
+        && m_qrAutoStartPending
+        && m_window.visible())
+      beginQrLogin();
   }
 
   void ClientApplication::upsertMessage(api::Message message) {
@@ -7591,6 +7708,23 @@ namespace app {
       return;
     if (selectDropdownKey(key))
       return;
+    if (!m_connected && key.symbol == XKB_KEY_Escape) {
+      if (m_showTokenEntry)
+        activate({.action = Action::ToggleToken});
+      else if (m_connecting || m_browserLoginWaiting || m_qrLoginState)
+        activate({.action = Action::CancelLogin});
+      return;
+    }
+    if (!m_connected && (key.symbol == XKB_KEY_Page_Down || key.symbol == XKB_KEY_Page_Up)) {
+      m_loginScroll = std::clamp(
+          m_loginScroll
+              + (key.symbol == XKB_KEY_Page_Down ? 1 : -1) * (m_window.height() - layout::Window::titlebarHeight),
+          0.0F, m_loginMaxScroll
+      );
+      m_scrolling.stop(m_loginScroll);
+      m_window.invalidate();
+      return;
+    }
     if (userAccountDialogKey(key))
       return;
     if (inboxKey(key))
@@ -7599,6 +7733,15 @@ namespace app {
       return;
     if (shortcutKey(key))
       return;
+    if (startupCovered()) {
+      if (key.symbol == XKB_KEY_Escape) {
+        if (m_startupLoading)
+          finishStartupLoading();
+        else
+          finishStartupReveal();
+      }
+      return;
+    }
     if (m_serverSettings.open && key.symbol == XKB_KEY_Escape) {
       closeServerSettings();
       return;
@@ -7657,6 +7800,7 @@ namespace app {
       return;
     if (KeySymbol::isTab(key.symbol) && m_viewImage.empty()) {
       (void)m_controlInput.cycleTabFocus(key.shift);
+      revealLoginFocus();
       m_window.invalidate();
       return;
     }
@@ -7742,8 +7886,8 @@ namespace app {
           send();
       } else if (m_showTokenEntry)
         connect();
-      else
-        beginLogin();
+      else if (!m_connecting && !m_browserLoginWaiting && !m_qrLoginState)
+        beginQrLogin();
       return;
     }
     if (!m_fieldFocused || m_connecting || (m_connected && (m_demo)))
@@ -8057,14 +8201,28 @@ namespace app {
     case Action::DiscordLogin:
       beginLogin();
       break;
+    case Action::QrLogin:
+      beginQrLogin();
+      break;
     case Action::ToggleToken:
       m_login.cancel();
+      clearQrLogin();
+      m_browserLoginWaiting = false;
+      m_qrAutoStartPending = false;
+      m_token.clear();
+      if (m_inputs.contains("token"))
+        m_inputs["token"]->setValue("");
       m_showTokenEntry = !m_showTokenEntry;
+      m_controlInput.setFocus(nullptr);
+      m_focusedInput = m_showTokenEntry ? "token" : "";
       m_fieldFocused = m_showTokenEntry;
       m_status.clear();
       break;
     case Action::CancelLogin:
       m_login.cancel();
+      clearQrLogin();
+      m_browserLoginWaiting = false;
+      m_qrAutoStartPending = false;
       if (m_connecting)
         m_session = m_client.disconnect();
       m_connecting = m_restoringLogin = m_retrySavedLogin = false;
@@ -8347,7 +8505,14 @@ namespace app {
       m_settingsFields.clear();
       closeImageViewer();
       m_presence = {};
+      m_startupLoading = false;
+      m_startupLoadingTimer.stop();
+      m_startupRevealTimer.stop();
+      m_startupRevealStart.reset();
       m_login.cancel();
+      clearQrLogin();
+      m_browserLoginWaiting = false;
+      m_qrAutoStartPending = true;
       m_session = m_demo ? m_client.disconnect() : m_client.logout();
       m_restoringLogin = m_retrySavedLogin = false;
       m_loginStorageStatus.clear();
@@ -8396,6 +8561,7 @@ namespace app {
       m_messages.clear();
       m_messageLayouts.clear();
       m_members.clear();
+      m_membersLoaded = false;
       m_activeMemberIdentity.clear();
       m_folders.clear();
       m_folderMotion.clear();

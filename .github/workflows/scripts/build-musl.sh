@@ -12,7 +12,7 @@ apk add --no-cache \
     glib-dev harfbuzz-dev libjxl-dev librsvg-dev libsecret-dev libwebp-dev \
     libxkbcommon-dev md4c-dev mesa-dev mpv-dev nlohmann-json pango-dev \
     rlottie-dev tomlplusplus-dev wayland-dev wayland-protocols zstd-dev \
-    opus-dev libsodium-dev pulseaudio-dev openssl-dev \
+    opus-dev libsodium-dev pulseaudio-dev openssl-dev qrencode-dev \
     font-dejavu font-noto-emoji shared-mime-info xdg-utils \
     mesa-dri-gallium mesa-egl
 

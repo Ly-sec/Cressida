@@ -951,7 +951,7 @@ namespace app {
 
   void Window::run(
       int wakeFd, std::function<void()> tick, int frameLimit, int assetFd, int videoFd, int themeFd, int pickerFd,
-      int audioFd, int notificationFd, int trayFd, int iconFd, int instanceFd, int voiceFd
+      int audioFd, int notificationFd, int trayFd, int iconFd, int instanceFd, int voiceFd, int authFd
   ) {
     int frames = 0;
     while (m->running) {
@@ -1026,6 +1026,7 @@ namespace app {
       descriptors.push_back({iconFd, POLLIN, 0});
       descriptors.push_back({instanceFd, POLLIN, 0});
       descriptors.push_back({voiceFd, POLLIN, 0});
+      descriptors.push_back({authFd, POLLIN, 0});
       const int ready = ::poll(descriptors.data(), descriptors.size(), timeout);
       if (ready > 0 && (descriptors[0].revents & POLLIN)) {
         if (wl_display_read_events(m->display) < 0)

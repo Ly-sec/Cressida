@@ -34,7 +34,7 @@ namespace app {
     void
     run(int wakeFd, std::function<void()> tick, int frameLimit = 0, int assetFd = -1, int videoFd = -1,
         int themeFd = -1, int pickerFd = -1, int audioFd = -1, int notificationFd = -1, int trayFd = -1,
-        int iconFd = -1, int instanceFd = -1, int voiceFd = -1);
+        int iconFd = -1, int instanceFd = -1, int voiceFd = -1, int authFd = -1);
     void close();
     void requestClose();
     void hide();

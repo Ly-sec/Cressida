@@ -410,6 +410,74 @@ namespace app::layout {
     static constexpr float thumbnailReserve = thumbnailSize + padding;
     static constexpr float thumbnailMinimumWidth = thumbnailReserve * 2 + Style::spaceXl;
   };
+  struct SignIn {
+    static constexpr float maximumWidth = Style::signInMaximumWidth;
+    static constexpr float padding = Style::spaceXl;
+    static constexpr float gap = Style::spaceLg;
+    static constexpr float detailGap = Style::spaceSm;
+    static constexpr float brandHeight = Style::space2Xl;
+    static constexpr float qrSize = Style::signInQrSize;
+    static constexpr float rowHeight = Style::spaceGroup;
+    static constexpr float actionHeight = Style::controlHeightLg;
+    static constexpr float footerHeight = Style::controlHeightSm;
+    static constexpr float sectionHeight = Style::spaceXl;
+    static constexpr float tokenHeight = Style::controlHeightLg;
+    static constexpr float tokenBodyHeight = Style::spaceGroup * 2 + tokenHeight;
+  };
+  struct SignInFrame {
+    Frame viewport, card, brand, qr, details, separator, browser, status, footer, token;
+    float contentHeight = 0, maximumScroll = 0;
+    bool stacked = false;
+  };
+  struct StartupFrame {
+    Frame logo;
+  };
+  inline StartupFrame startupFrame(float width, float height) {
+    const float side = Style::spaceGroup * 3;
+    return {{(width - side) / 2, (height - side) / 2, side, side}};
+  }
+  inline SignInFrame signInFrame(
+      float width, float height, bool token, bool loading, float statusHeight, float detailHeight = SignIn::rowHeight
+  ) {
+    SignInFrame result{};
+    const float outer = Style::spaceLg;
+    const float viewportTop = Window::titlebarHeight + outer;
+    result.viewport = {
+        outer, viewportTop, std::max(0.0F, width - outer * 2), std::max(0.0F, height - viewportTop - outer)
+    };
+    const float cardWidth = std::min(SignIn::maximumWidth, result.viewport.width);
+    const float inner = std::max(0.0F, cardWidth - SignIn::padding * 2);
+    result.stacked = true;
+    float y = SignIn::padding;
+    result.brand = {SignIn::padding, y, inner, SignIn::brandHeight};
+    y += SignIn::brandHeight + SignIn::gap;
+    if (token) {
+      result.token = {SignIn::padding, y, inner, SignIn::tokenBodyHeight};
+      y += SignIn::tokenBodyHeight;
+    } else if (loading) {
+      result.details = {SignIn::padding, y, inner, SignIn::rowHeight};
+      y += SignIn::rowHeight;
+    } else {
+      const float qrSide = std::min(SignIn::qrSize, inner);
+      result.qr = {(cardWidth - qrSide) / 2, y, qrSide, qrSide};
+      result.details = {SignIn::padding, y + qrSide + SignIn::gap, inner, std::max(SignIn::rowHeight, detailHeight)};
+      y = result.details.y + result.details.height;
+      result.separator = {SignIn::padding, y + SignIn::detailGap, inner, SignIn::sectionHeight};
+      y = result.separator.y + result.separator.height;
+      result.browser = {SignIn::padding, y, inner, SignIn::actionHeight};
+      y += SignIn::actionHeight;
+    }
+    result.status = {SignIn::padding, y + SignIn::detailGap, inner, statusHeight};
+    y = result.status.y + statusHeight;
+    result.footer = {SignIn::padding, y + SignIn::detailGap, inner, SignIn::footerHeight};
+    y = result.footer.y + result.footer.height + SignIn::padding;
+    result.contentHeight = y;
+    result.maximumScroll = std::max(0.0F, y - result.viewport.height);
+    result.card = {
+        (result.viewport.width - cardWidth) / 2, std::max(0.0F, (result.viewport.height - y) / 2), cardWidth, y
+    };
+    return result;
+  }
   inline Frame embedRemoveFrame(const Frame& embed) {
     return {embed.x + embed.width + Embed::removeGap, embed.y, Embed::removeSize, Embed::removeSize};
   }

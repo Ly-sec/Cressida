@@ -188,6 +188,8 @@ namespace app {
       const auto at = m_preferences.keybinds.find(name);
       if (pressed != (at == m_preferences.keybinds.end() ? fallback : at->second))
         continue;
+      if (startupCovered() && name != "quit" && !name.starts_with("zoom_"))
+        return true;
       if (name == "quit")
         m_window.close();
       else if (name == "settings")

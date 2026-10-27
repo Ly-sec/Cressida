@@ -50,6 +50,11 @@ namespace Style {
   inline constexpr float spaceSection = 40.0F;
   inline constexpr float spaceGroup = 48.0F;
   inline constexpr float embedMaximumWidth = 480.0F;
+  inline constexpr float signInMaximumWidth = 440.0F;
+  inline constexpr float signInQrSize = spaceGroup * 5;
+  inline constexpr float signInLoadingPulse = 0.04F;
+  inline constexpr unsigned qrCodeDarkRgb = 0x000000;
+  inline constexpr unsigned qrCodeLightRgb = 0xFFFFFF;
   inline constexpr float embedThumbnailSize = 72.0F;
   inline constexpr float embedImageMaximumHeight = 280.0F;
   inline constexpr float mediaGalleryMaximumWidth = 550.0F;

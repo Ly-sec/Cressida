@@ -96,6 +96,9 @@ namespace app {
     closeSelectDropdown();
     m_typingTimer.stop();
     m_filePicker.cancel();
+    clearQrLogin();
+    m_startupLoadingTimer.stop();
+    m_startupRevealTimer.stop();
     closeVideo();
     stopServerSound();
     m_animationTimer.stop();
@@ -175,6 +178,7 @@ namespace app {
   void ClientApplication::focusChatComposer() {
     if (m_railDrag
         || !m_connected
+        || startupCovered()
         || m_channelId.empty()
         || settingsVisible()
         || !m_dialogKind.empty()
@@ -191,12 +195,14 @@ namespace app {
         || forumView()
         || (m_dmMode && !m_dmPage.empty()))
       return;
+    // The first conversation may be mounted only after the loading scene retires.
+    m_focusedInput = "composer";
     const auto input = m_inputs.find("composer");
-    if (input == m_inputs.end() || !input->second->enabled())
-      return;
-    focusControl("composer");
-    if (m_controlInput.focusedArea() == input->second->inputArea())
-      m_fieldFocused = true;
+    if (input != m_inputs.end() && input->second->enabled()) {
+      focusControl("composer");
+      if (m_controlInput.focusedArea() == input->second->inputArea())
+        m_fieldFocused = true;
+    }
     m_window.invalidate();
   }
   void ClientApplication::demoComposerReplyStep() {
@@ -708,6 +714,8 @@ namespace app {
                     || m_demoOverlay == "sidebar-cycle"
                     || m_demoOverlay == "inline-edit-cycle"
                     || m_demoOverlay.starts_with("outgoing-cycle")
+                    || m_demoOverlay.starts_with("startup-cycle")
+                    || m_demoOverlay.starts_with("startup-transition")
                     || m_demoOverlay.starts_with("ime-cycle")
                     || m_demoOverlay.starts_with("reply-cycle")
                     || m_demoOverlay.starts_with("chat-links-cycle")

@@ -23,6 +23,8 @@
   nlohmann_json,
   tomlplusplus,
   curl,
+  openssl,
+  qrencode,
   autoAddDriverRunpath,
   makeWrapper,
   xdg-utils,
@@ -93,6 +95,8 @@ stdenv.mkDerivation {
     tomlplusplus
     md4c
     libsecret
+    openssl
+    qrencode
     ffmpeg-headless
     mpv-unwrapped
     rlottie

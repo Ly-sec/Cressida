@@ -19,6 +19,7 @@
 #include "app/message_history.h"
 #include "app/message_layout.h"
 #include "app/message_log.h"
+#include "app/qr_code.h"
 #include "app/read_acknowledgements.h"
 #include "app/role_motion.h"
 #include "app/scroll_motion.h"
@@ -40,6 +41,7 @@
 #include "app/window.h"
 #include "app/window_icons.h"
 #include "auth/browser_login.h"
+#include "auth/qr_login.h"
 #include "core/text_clipboard.h"
 #include "core/timer_manager.h"
 #include "media/video_player.h"
@@ -78,6 +80,9 @@ namespace app {
     static constexpr int cosmeticsReplayFrames = 13;
     static constexpr int composerReplyReplayFrames = 10;
     static constexpr int embedReplayFrames = 23;
+    static constexpr int loginReplayFrames = 18;
+    static constexpr int startupReplayFrames = 14;
+    static constexpr int startupTransitionReplayFrames = 6;
     static constexpr int markdownReplayFrames = 5;
     static constexpr int replyGroupingReplayFrames = 3;
     static constexpr int mediaGalleryReplayFrames = 13;
@@ -136,6 +141,7 @@ namespace app {
       ImagePrevious,
       Connect,
       DiscordLogin,
+      QrLogin,
       ToggleToken,
       CancelLogin,
       RetryLogin,
@@ -345,6 +351,26 @@ namespace app {
     void activate(const Hit& hit);
     void connect();
     void beginLogin();
+    void beginQrLogin();
+    void clearQrLogin();
+    void applyQrLoginUpdate(auth::QrUpdate update);
+    void drawLogin(Node& root, float width, float height);
+    void loginButton(
+        Node& parent, Hit hit, const std::string& text, const std::string& id, const std::string& icon = {},
+        bool primary = false, bool quiet = false
+    );
+    void demoLoginStep();
+    void revealLoginFocus();
+    void drawLoginLogo(Node& parent, const layout::Frame& frame, bool rotating, bool pulsing = false);
+    void drawStartupLoading(Node& root, float width, float height);
+    void beginStartupLoading();
+    void finishStartupLoading();
+    void finishStartupReveal();
+    float startupRevealOpacity() const;
+    bool startupCovered() const { return m_startupLoading || m_startupRevealStart.has_value(); }
+    void updateStartupLoading();
+    void demoStartupStep();
+    void demoStartupTransitionStep();
     void restoreLogin();
     void demo();
     void prepareDemo();
@@ -925,6 +951,19 @@ namespace app {
     Hit m_videoSeek{}, m_videoVolume{}, m_videoBounds{};
     std::map<std::string, std::string> m_videoPosters;
     auth::BrowserLogin m_login;
+    auth::QrLogin m_qrLogin;
+    std::optional<auth::QrUpdate> m_qrLoginState;
+    std::optional<QrCode> m_loginQr;
+    float m_loginScroll = 0, m_loginMaxScroll = 0;
+    bool m_browserLoginWaiting = false;
+    bool m_qrAutoStartPending = true;
+    bool m_startupLoading = false;
+    std::uint64_t m_startupLoadingSession = 0;
+    Timer m_startupLoadingTimer;
+    Timer m_startupRevealTimer;
+    std::optional<std::chrono::steady_clock::time_point> m_startupRevealStart;
+    float m_startupReferenceScale = 1;
+    std::chrono::steady_clock::time_point m_loginAnimationStart = std::chrono::steady_clock::now();
     SessionStore m_sessionStore;
     ThemeRuntime m_themes;
     FilePicker m_filePicker;
@@ -1282,6 +1321,7 @@ namespace app {
     bool restoreCachedHistory(const std::string& id);
     std::optional<api::MemberListIdentity> channelMemberIdentity(const std::string& id) const;
     void refreshMemberSubscription();
+    bool applyMemberSnapshot(api::Event& event);
     bool adoptChatPreload(const std::string& id);
     bool canPreloadChat(const std::string& id) const;
     std::string hoveredPreloadChat() const;
@@ -1330,6 +1370,7 @@ namespace app {
     FolderMotion m_folderMotion;
     bool m_foldersRestored = false;
     std::vector<api::MemberRow> m_members;
+    bool m_membersLoaded = false;
     int m_memberCount = 0;
     int m_memberPage = 0;
     std::map<std::string, std::optional<api::Message>> m_liveChanges;

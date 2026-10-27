@@ -129,7 +129,7 @@ namespace app {
     );
     m_selectBounds = {x, y, width, height, Action::None, {}};
     if (m_selectDirty) {
-      m_selectControl->setHighlightedIndex(std::min(request.selectedIndex, request.options.size() - 1));
+      m_selectControl->setHighlightedIndex(request.selectedIndex < request.options.size() ? request.selectedIndex : 0);
       selectDropdownReveal();
       m_selectDirty = false;
     }

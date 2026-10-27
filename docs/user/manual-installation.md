@@ -29,7 +29,7 @@ renderer and assets.
 
 ## 3. Install build dependencies
 
-Install Meson 1.1 or newer, Ninja, pkg-config/pkgconf, a C compiler and a C++23
+Install Meson 1.2 or newer, Ninja, pkg-config/pkgconf, a C compiler and a C++23
 compiler with a compatible standard library. Install Wayland's scanner and
 protocol files, then the development libraries in
 [Building from source](building.md#libraries).
@@ -41,6 +41,8 @@ Package names differ by distribution. Pay particular attention to:
 - **libzstd**, libmpv, FFmpeg, rlottie, librsvg, WebP and JPEG XL development
   files.
 - **toml++**, MD4C, nlohmann JSON and the font/text libraries.
+- **OpenSSL 3.0 or newer** and **libqrencode** development headers and
+  pkg-config metadata for QR sign-in.
 
 Meson reports missing requirements during configuration. It does not download
 them for you.

@@ -76,6 +76,10 @@ daemon. Device enumeration alone does not start microphone capture.
 
 ## Desktop runtime
 
+Ship OpenSSL 3.0 or newer and libqrencode with the client. QR sign-in uses them
+for the encrypted approval exchange and the scannable code; it does not need an
+external QR-code command or image service.
+
 Image uploads and image copying or saving need the shared-mime-info database at
 runtime. If it is installed outside the usual system data directories, include
 its `share` directory in `XDG_DATA_DIRS`. The Nix package and development shell

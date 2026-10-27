@@ -10,6 +10,7 @@
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (guix utils) ;current-source-directory
   #:use-module (gnu packages)
+  #:use-module (gnu packages aidc) ;qrencode
   #:use-module (gnu packages pkg-config) ;pkg-config
   #:use-module (gnu packages freedesktop) ;wayland, wayland-protocols, xdg-utils
   #:use-module (gnu packages curl) ;curl
@@ -228,8 +229,10 @@ Cflags: -I${includedir}
                   mesa
                   mpv
                   nlohmann-json
+                  openssl
                   (list zstd "lib")
                   pango
+                  qrencode
                   rlottie
                   tomlplusplus
                   libsodium

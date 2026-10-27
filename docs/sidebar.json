@@ -12,7 +12,8 @@
         "slug": "docs/manual-installation"
       },
       {
-        "slug": "docs/sign-in"
+        "slug": "docs/sign-in",
+        "label": "Sign in with QR or browser"
       }
     ]
   },

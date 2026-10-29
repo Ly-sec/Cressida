@@ -272,6 +272,12 @@ int main() {
     require(
         !result.error.empty() && result.bytes.empty(), "An image extension cannot turn text into an accepted image"
     );
+    result = app::FilePicker::readSelection(uri(mislabeled), std::vector<std::string>{"*/*"}, 512);
+    require(
+        result.error.empty() && result.mime == "text/plain" && result.bytes.size() == text.size(),
+        "Explicit command file selection accepts content-detected text without treating its image extension as type "
+        "evidence"
+    );
     const auto jpeg = directory.file("a-jpeg.png");
     const std::array<std::uint8_t, 20> jpegHeader{0xFF, 0xD8, 0xFF, 0xE0, 0, 16, 'J', 'F', 'I', 'F',
                                                   0,    1,    1,    0,    0, 1,  0,   1,   0,   0};

@@ -408,6 +408,7 @@ namespace api {
       for (auto prefix :
            {"avatars/",
             "icons/",
+            "app-icons/",
             "emojis/",
             "embed/avatars/",
             "attachments/",
@@ -470,6 +471,9 @@ namespace api {
   } // namespace
   MessagePatch parseMessagePatch(const nlohmann::json& value) {
     MessagePatch patch;
+    if (const auto author = value.find("author"); author != value.end() && author->is_object())
+      if (const auto bot = author->find("bot"); bot != author->end() && bot->is_boolean())
+        patch.authorBot = bot->get<bool>();
     const auto stickerItems = value.find(value.contains("sticker_items") ? "sticker_items" : "stickers");
     if (stickerItems != value.end() && stickerItems->is_array()) {
       patch.stickers = parseStickers(*stickerItems);
@@ -686,6 +690,8 @@ namespace api {
     return patch;
   }
   void MessagePatch::apply(Message& message) const {
+    if (authorBot)
+      message.authorBot = *authorBot;
     if (editedTimestamp)
       message.editedTimestamp = *editedTimestamp;
     if (mentionRoles)

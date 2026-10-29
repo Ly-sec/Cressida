@@ -14,6 +14,11 @@ namespace app {
   inline std::optional<CompletionQuery> completionQuery(std::string_view text, std::size_t cursor, std::size_t anchor) {
     if (cursor != anchor || cursor > text.size())
       return {};
+    if (cursor
+        && text.front() == '/'
+        && text.substr(0, cursor).find_first_of("\n\r\t") == std::string_view::npos
+        && text.substr(0, cursor).find("://") == std::string_view::npos)
+      return CompletionQuery{'/', 0, cursor, std::string(text.substr(1, cursor - 1))};
     std::size_t fence = 0;
     for (std::size_t i = 0; i < cursor;) {
       if (text[i] == '\\') {

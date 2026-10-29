@@ -47,6 +47,8 @@ namespace app {
   }
   void ClientApplication::drainServerSettingsUploads() {
     while (auto result = m_filePicker.poll()) {
+      if (slashAttachmentResult(*result))
+        continue;
       if (imageSaved(*result))
         continue;
       if (userAccountPickedFile(*result))

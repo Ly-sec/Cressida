@@ -26,7 +26,7 @@ uploads, native media viewing and voice chat are available. Desktop tray
 integration, notifications and per-account appearance settings help it fit into
 your session.
 
-:::caution[Early development] Video calls, arbitrary file uploads and file
+:::caution[Early development] Video calls, arbitrary chat file uploads and file
 drag-and-drop are not available yet. Some settings and actions are incomplete.
 See the [capabilities and FAQ](faq.md) before making Cressida your main client.
 :::
@@ -37,6 +37,7 @@ See the [capabilities and FAQ](faq.md) before making Cressida your main client.
 | --------------------------------- | --------------------------------------------- |
 | Understand replies and formatting | [Chat and Markdown](chat.md)                  |
 | Catch up or save a message        | [Inbox](inbox.md)                             |
+| Find and run an app command       | [Slash commands](slash-commands.md)           |
 | See statuses and profiles in DMs  | [Direct messages](direct-messages.md)         |
 | Organize my server list           | [Servers and threads](servers-and-threads.md) |
 | View, save or send an image       | [Images and video](media.md)                  |

@@ -447,6 +447,10 @@ namespace app {
       if (m_demo && m_demoOverlay == "autocomplete-cycle" && m_demoInteractionStep < 9)
         demoCompletionStep();
       if (m_demo
+          && m_demoOverlay.starts_with("slash-commands-cycle")
+          && m_demoInteractionStep < slashCommandReplayFrames)
+        demoSlashCommandStep();
+      if (m_demo
           && m_demoOverlay.starts_with("window-controls-cycle")
           && m_demoInteractionStep < windowControlsReplayFrames)
         demoWindowControlsStep();
@@ -589,6 +593,8 @@ namespace app {
         demoJoinStep();
       if (m_demo && m_demoOverlay.starts_with("embed-cycle") && m_demoInteractionStep < embedReplayFrames)
         demoEmbedStep();
+      if (m_demo && m_demoOverlay.starts_with("bot-messages-cycle") && m_demoInteractionStep < botMessagesReplayFrames)
+        demoBotMessagesStep();
       if (m_demo && m_demoOverlay.starts_with("markdown-cycle") && m_demoInteractionStep < markdownReplayFrames)
         demoMarkdownStep();
       if (m_demo
@@ -1078,6 +1084,17 @@ namespace app {
           && m_controlInput.pointerButton(
               x, y + m_window.titlebarHeight() - layout::Window::titlebarHeight, 272, true, 0, 0, false
           )) {
+        if (slashComposerActive()
+            && !m_slashPending
+            && hovered(
+                m_slashComposerFrame.x, m_slashComposerFrame.y, m_slashComposerFrame.width, m_slashComposerFrame.height
+            )
+            && !m_slashOptionsOpen) {
+          m_slashOptionsOpen = true;
+          if (m_slashActiveOption)
+            slashValueChanged(*m_slashActiveOption);
+          m_completionDirty = true;
+        }
         m_window.invalidate();
         return;
       }
@@ -1185,6 +1202,9 @@ namespace app {
              || id.starts_with("user-account:"))
             && m_pasteDialogGeneration != m_dialogGeneration)
           return;
+        if ((id.starts_with("slash-field:") || id == "slash-options")
+            && (!m_slashCommand || m_pasteSlashGeneration != m_slashGeneration || m_slashPending))
+          return;
         if (id == m_focusedInput && mime.starts_with("text/plain")) {
           pasteControl(id, std::move(bytes));
           return;
@@ -1289,7 +1309,31 @@ namespace app {
         return;
       }
       if (m_completionQuery && m_completionBounds.contains(m_pointerX, m_pointerY)) {
-        scroll(m_completionScroll, delta);
+        scroll(
+            !m_slashCommand
+                    && m_completionQuery->trigger == '/'
+                    && m_pointerX < m_completionBounds.x + layout::SlashCommands::railWidth
+                ? m_slashAppScroll
+                : m_completionScroll,
+            delta
+        );
+        m_window.invalidate();
+        return;
+      }
+      if (slashComposerActive()
+          && !settingsVisible()
+          && m_dialogKind.empty()
+          && !m_contextOpen
+          && !m_inboxOpen
+          && !m_emojiMenu
+          && !m_gifMenu
+          && !m_presenceMenu
+          && m_viewImage.empty()
+          && m_pointerX >= m_slashComposerFrame.x
+          && m_pointerX < m_slashComposerFrame.x + m_slashComposerFrame.width
+          && m_pointerY >= m_slashComposerFrame.y
+          && m_pointerY < m_slashComposerFrame.y + m_slashComposerFrame.height) {
+        scroll(m_slashComposerScroll, delta);
         m_window.invalidate();
         return;
       }
@@ -1499,7 +1543,9 @@ namespace app {
                    : m_demo && view && std::string_view(view).starts_with("dm-home-cycle") ? dmHomeReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("reply-cycle")   ? composerReplyReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("embed-cycle")   ? embedReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("login-cycle")   ? loginReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("bot-messages-cycle")
+                   ? botMessagesReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("login-cycle") ? loginReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("startup-transition")
                    ? startupTransitionReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("startup-cycle")  ? startupReplayFrames
@@ -1507,12 +1553,14 @@ namespace app {
                    : m_demo && view && std::string_view(view).starts_with("reply-grouping") ? replyGroupingReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("media-gallery-cycle")
                    ? mediaGalleryReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("image-menu-cycle")  ? imageMenuReplayFrames
-                   : m_demo && view && std::string_view(view) == "chat-preload-cycle"          ? 10
-                   : m_demo && view && std::string_view(view) == "join-cycle"                  ? 4
-                   : m_demo && view && std::string_view(view) == "deleted-cycle"               ? 3
-                   : m_demo && view && std::string_view(view) == "inline-edit-cycle"           ? 8
-                   : m_demo && view && std::string_view(view) == "autocomplete-cycle"          ? 9
+                   : m_demo && view && std::string_view(view).starts_with("image-menu-cycle") ? imageMenuReplayFrames
+                   : m_demo && view && std::string_view(view) == "chat-preload-cycle"         ? 10
+                   : m_demo && view && std::string_view(view) == "join-cycle"                 ? 4
+                   : m_demo && view && std::string_view(view) == "deleted-cycle"              ? 3
+                   : m_demo && view && std::string_view(view) == "inline-edit-cycle"          ? 8
+                   : m_demo && view && std::string_view(view) == "autocomplete-cycle"         ? 9
+                   : m_demo && view && std::string_view(view).starts_with("slash-commands-cycle")
+                   ? slashCommandReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("decorations-cycle") ? 4
                    : m_demo && view && std::string_view(view).starts_with("reduced-motion-cycle")
                    ? reducedMotionReplayFrames
@@ -1582,6 +1630,8 @@ namespace app {
       throw std::runtime_error("Inline message editing replay did not finish");
     if (m_demoOverlay == "autocomplete-cycle" && m_demoInteractionStep != 9)
       throw std::runtime_error("Autocomplete replay did not finish");
+    if (m_demoOverlay.starts_with("slash-commands-cycle") && m_demoInteractionStep != slashCommandReplayFrames)
+      throw std::runtime_error("Slash command replay did not finish");
     if (m_demoOverlay == "settings-font-cycle" && m_demoInteractionStep != 12)
       throw std::runtime_error("Font settings replay did not finish");
     if (m_demoOverlay == "tray-cycle" && m_demoInteractionStep != trayReplayFrames)
@@ -1646,6 +1696,8 @@ namespace app {
       throw std::runtime_error("Floating layout and radius replay did not complete");
     if (m_demoOverlay.starts_with("embed-cycle") && m_demoInteractionStep != embedReplayFrames)
       throw std::runtime_error("AutoMod and embed link replay did not complete");
+    if (m_demoOverlay.starts_with("bot-messages-cycle") && m_demoInteractionStep != botMessagesReplayFrames)
+      throw std::runtime_error("Bot identity and message deletion replay did not complete");
     if (m_demoOverlay.starts_with("markdown-cycle") && m_demoInteractionStep != markdownReplayFrames)
       throw std::runtime_error("Markdown replay did not complete");
     if (m_demoOverlay.starts_with("reply-grouping") && m_demoInteractionStep != replyGroupingReplayFrames)
@@ -1721,6 +1773,22 @@ namespace app {
       if (const auto* option = cressida::environment("CRESSIDA_DEMO_VIEW", "DISCORD_CPP_DEMO_VIEW")) {
         const std::string view(option);
 
+        if (view.starts_with("slash-commands")) {
+          m_demoOverlay = view;
+          if (view.ends_with("light"))
+            m_preferences.theme = "light";
+          if (view.ends_with("narrow"))
+            m_window.setUiScale(1.5F);
+          prepareSlashCommandDemo();
+        }
+        if (view.starts_with("bot-messages-cycle")) {
+          m_demoOverlay = view;
+          if (view.ends_with("light"))
+            m_preferences.theme = "light";
+          if (view.ends_with("narrow"))
+            m_window.setUiScale(1.5F);
+          prepareBotMessagesDemo();
+        }
         if (view.starts_with("inbox-cycle")) {
           m_demoOverlay = view;
           if (view.ends_with("light"))
@@ -4150,7 +4218,9 @@ namespace app {
         const float stickerHeight = m_draftStickers[m_channelId].empty() ? 0 : 100;
         const float attachmentHeight = uploadHeight + stickerHeight;
         const float replyHeight = m_replies.contains(m_channelId) ? layout::ComposerReply::height : 0;
-        const float composerHeight = m_draftHeight + layout::Composer::verticalPadding + attachmentHeight + replyHeight;
+        const float composerHeight = slashComposerActive()
+            ? measureSlashComposer(bodyWidth - layout::Floating::gap, h)
+            : m_draftHeight + layout::Composer::verticalPadding + attachmentHeight + replyHeight;
         const auto composer = layout::composerFrame(h, composerHeight);
         const float composerY = composer.top;
         float top = m_unreadTimeline.unread() ? layout::Chat::unreadTimelineTop : layout::Chat::timelineTop;
@@ -4753,6 +4823,11 @@ namespace app {
                     m_window.target().renderer().measureText(timestamp, Style::fontSizeDetail).width;
                 const float headerWidth =
                     std::max(24.0F, textWidth - (timestamp.empty() ? 0 : timestampWidth + Style::spaceDense));
+                using AppBadge = layout::MessageAppBadge;
+                const auto appText =
+                    m_window.target().renderer().measureText("APP", AppBadge::fontSize, FontWeight::SemiBold);
+                const float appWidth = AppBadge::width(std::ceil(appText.width));
+                const float appSpace = message.authorBot ? appWidth + AppBadge::gap : 0;
                 const float roleSpace = m_preferences.showRoleIcons
                         && !m_dmMode
                         && m_roleDirectory.icon(m_guildId, message.authorId, message.memberRoles)
@@ -4768,8 +4843,9 @@ namespace app {
                               + 32
                       ) + 6
                     : 0;
-                const bool tagFits = headerWidth >= tagSpace + roleSpace + 38;
-                const float nameMax = std::max(24.0F, headerWidth - (tagFits ? tagSpace : 0) - roleSpace - 6);
+                const bool tagFits = headerWidth >= tagSpace + roleSpace + appSpace + 38;
+                const float nameMax =
+                    std::max(24.0F, headerWidth - (tagFits ? tagSpace : 0) - roleSpace - appSpace - 6);
                 const float authorWidth = std::min(
                     nameMax,
                     m_window.target().renderer().measureText(author, Style::fontSizeCaption, FontWeight::SemiBold).width
@@ -4802,11 +4878,11 @@ namespace app {
                 const float tagUsed = m_preferences.showGuildTags && tagFits
                     ? drawGuildTag(
                           *messageContent, 50 + authorWidth + Style::spaceXs, y - Style::spaceXxs,
-                          headerWidth - authorWidth - roleSpace - 4, authorTag
+                          headerWidth - authorWidth - roleSpace - appSpace - 4, authorTag
                       )
                     : 0;
                 const float roleUsed =
-                    m_preferences.showRoleIcons && !m_dmMode && headerWidth - authorWidth - tagUsed >= 22
+                    m_preferences.showRoleIcons && !m_dmMode && headerWidth - authorWidth - tagUsed - appSpace >= 22
                     ? drawRoleIcon(
                           *messageContent, 50 + authorWidth + tagUsed + 4, y, m_guildId, message.authorId,
                           message.memberRoles
@@ -4832,7 +4908,17 @@ namespace app {
                       {left + 74, avatarY, nameWidth, std::min(18.0F, avatarH), Action::UserProfile, message.authorId}
                   );
                 }
-                const float timestampX = 50 + authorWidth + tagUsed + roleUsed + 6;
+                float timestampX = layout::Chat::authorGutter + authorWidth + tagUsed + roleUsed + Style::spaceDense;
+                if (message.authorBot) {
+                  const float badgeY = y + (layout::Chat::headerHeight - AppBadge::height) / 2;
+                  rectangle(*messageContent, timestampX, badgeY, appWidth, AppBadge::height, accent, AppBadge::radius);
+                  label(
+                      *messageContent, timestampX + AppBadge::padding,
+                      badgeY + (AppBadge::height - (appText.bottom - appText.top)) / 2, appText.width, "APP",
+                      AppBadge::fontSize, ink, FontWeight::SemiBold
+                  );
+                  timestampX += appSpace;
+                }
                 const float timestampAvailable = 50 + textWidth - timestampX;
                 if (!timestamp.empty() && timestampAvailable > 0)
                   label(
@@ -5428,123 +5514,130 @@ namespace app {
         );
         if (!typing.empty())
           drawTyping(root, left + layout::Chat::inset, composer.typingTop, bodyWidth - layout::Chat::inset * 2, typing);
-        if (replyHeight) {
-          const auto& reply = m_replies.at(m_channelId);
-          auto& renderer = m_window.target().renderer();
-          const std::string caption = "Replying to " + userName(reply.authorId, reply.author);
-          const auto captionMetrics = renderer.measureText(caption, layout::ComposerReply::captionSize);
-          const auto offMetrics = renderer.measureText("@ OFF", layout::ComposerReply::captionSize);
-          const auto onMetrics = renderer.measureText("@ ON", layout::ComposerReply::captionSize);
-          const auto frame = layout::composerReplyFrame(
-              left + layout::Floating::inset, composerY, bodyWidth - layout::Floating::gap,
-              std::ceil(std::max(offMetrics.width, onMetrics.width)), captionMetrics.bottom - captionMetrics.top
+        if (slashComposerActive())
+          drawSlashComposer(
+              root, {left + layout::Floating::inset, composerY, bodyWidth - layout::Floating::gap, composerHeight}
           );
-          label(
-              root, frame.label.x, frame.label.y, frame.label.width, caption, layout::ComposerReply::captionSize,
-              foreground
-          );
-          const Hit mention{frame.mention.x,
-                            frame.mention.y,
-                            frame.mention.width,
-                            frame.mention.height,
-                            Action::ToggleReplyMention,
-                            {}};
-          const bool over = mention.contains(m_pointerX, m_pointerY);
-          rectangle(
-              root, mention.x, mention.y, mention.width, mention.height, over ? raised : panel, Style::controlRadius
-          );
-          const auto& metrics = reply.mention ? onMetrics : offMetrics;
-          label(
-              root, mention.x + (mention.width - metrics.width) / 2,
-              mention.y + (mention.height - (metrics.bottom - metrics.top)) / 2, metrics.width + Style::borderWidth,
-              reply.mention ? "@ ON" : "@ OFF", layout::ComposerReply::captionSize, reply.mention ? accent : foreground
-          );
-          m_hits.push_back(mention);
-          iconButton(
-              root, {frame.close.x, frame.close.y, frame.close.width, frame.close.height, Action::CancelReply, {}}, "x",
-              "Cancel reply"
-          );
-        }
-        m_attachmentX = left + (Style::space2Xl + Style::spaceXs);
-        m_attachmentY = composerY + replyHeight + Style::spaceDense;
-        m_attachmentWidth = bodyWidth - 72;
-        m_scrolling.limit(
-            m_attachmentScroll,
-            std::max(0.0F, m_attachments[m_channelId].size() * layout::DraftAttachment::step - m_attachmentWidth)
-        );
-        auto previews = std::make_unique<Node>();
-        previews->setPosition(m_attachmentX, m_attachmentY);
-        previews->setSize(m_attachmentWidth, layout::DraftAttachment::height);
-        previews->setClipChildren(true);
-        float previewX = -m_attachmentScroll;
-        for (const auto& attachment : m_attachments[m_channelId]) {
-          auto preview = std::make_unique<ImageNode>();
-          preview->setPosition(previewX, layout::DraftAttachment::topInset);
-          preview->setSize(layout::DraftAttachment::size, layout::DraftAttachment::size);
-          preview->setTextureId(attachment.texture.id);
-          preview->setTextureSize(attachment.texture.width, attachment.texture.height);
-          preview->setFitMode(ImageFitMode::Contain);
-          previews->addChild(std::move(preview));
-          const float hitLeft = std::max(m_attachmentX, m_attachmentX + previewX);
-          const float hitRight =
-              std::min(m_attachmentX + m_attachmentWidth, m_attachmentX + previewX + layout::DraftAttachment::size);
-          if (hitRight > hitLeft)
-            m_hits.push_back(
-                {hitLeft, m_attachmentY + layout::DraftAttachment::topInset, hitRight - hitLeft,
-                 layout::DraftAttachment::size, Action::ViewAttachment, attachment.key}
+        else {
+          if (replyHeight) {
+            const auto& reply = m_replies.at(m_channelId);
+            auto& renderer = m_window.target().renderer();
+            const std::string caption = "Replying to " + userName(reply.authorId, reply.author);
+            const auto captionMetrics = renderer.measureText(caption, layout::ComposerReply::captionSize);
+            const auto offMetrics = renderer.measureText("@ OFF", layout::ComposerReply::captionSize);
+            const auto onMetrics = renderer.measureText("@ ON", layout::ComposerReply::captionSize);
+            const auto frame = layout::composerReplyFrame(
+                left + layout::Floating::inset, composerY, bodyWidth - layout::Floating::gap,
+                std::ceil(std::max(offMetrics.width, onMetrics.width)), captionMetrics.bottom - captionMetrics.top
             );
+            label(
+                root, frame.label.x, frame.label.y, frame.label.width, caption, layout::ComposerReply::captionSize,
+                foreground
+            );
+            const Hit mention{frame.mention.x,
+                              frame.mention.y,
+                              frame.mention.width,
+                              frame.mention.height,
+                              Action::ToggleReplyMention,
+                              {}};
+            const bool over = mention.contains(m_pointerX, m_pointerY);
+            rectangle(
+                root, mention.x, mention.y, mention.width, mention.height, over ? raised : panel, Style::controlRadius
+            );
+            const auto& metrics = reply.mention ? onMetrics : offMetrics;
+            label(
+                root, mention.x + (mention.width - metrics.width) / 2,
+                mention.y + (mention.height - (metrics.bottom - metrics.top)) / 2, metrics.width + Style::borderWidth,
+                reply.mention ? "@ ON" : "@ OFF", layout::ComposerReply::captionSize,
+                reply.mention ? accent : foreground
+            );
+            m_hits.push_back(mention);
+            iconButton(
+                root, {frame.close.x, frame.close.y, frame.close.width, frame.close.height, Action::CancelReply, {}},
+                "x", "Cancel reply"
+            );
+          }
+          m_attachmentX = left + (Style::space2Xl + Style::spaceXs);
+          m_attachmentY = composerY + replyHeight + Style::spaceDense;
+          m_attachmentWidth = bodyWidth - 72;
+          m_scrolling.limit(
+              m_attachmentScroll,
+              std::max(0.0F, m_attachments[m_channelId].size() * layout::DraftAttachment::step - m_attachmentWidth)
+          );
+          auto previews = std::make_unique<Node>();
+          previews->setPosition(m_attachmentX, m_attachmentY);
+          previews->setSize(m_attachmentWidth, layout::DraftAttachment::height);
+          previews->setClipChildren(true);
+          float previewX = -m_attachmentScroll;
+          for (const auto& attachment : m_attachments[m_channelId]) {
+            auto preview = std::make_unique<ImageNode>();
+            preview->setPosition(previewX, layout::DraftAttachment::topInset);
+            preview->setSize(layout::DraftAttachment::size, layout::DraftAttachment::size);
+            preview->setTextureId(attachment.texture.id);
+            preview->setTextureSize(attachment.texture.width, attachment.texture.height);
+            preview->setFitMode(ImageFitMode::Contain);
+            previews->addChild(std::move(preview));
+            const float hitLeft = std::max(m_attachmentX, m_attachmentX + previewX);
+            const float hitRight =
+                std::min(m_attachmentX + m_attachmentWidth, m_attachmentX + previewX + layout::DraftAttachment::size);
+            if (hitRight > hitLeft)
+              m_hits.push_back(
+                  {hitLeft, m_attachmentY + layout::DraftAttachment::topInset, hitRight - hitLeft,
+                   layout::DraftAttachment::size, Action::ViewAttachment, attachment.key}
+              );
+            iconButton(
+                *previews,
+                {previewX + layout::DraftAttachment::removeLeft, 0, layout::DraftAttachment::removeSize,
+                 layout::DraftAttachment::removeSize, Action::RemoveAttachment, attachment.key},
+                "x", "Remove attachment"
+            );
+            auto& hit = m_hits.back();
+            const auto right = std::min(hit.x + hit.width, m_attachmentX + m_attachmentWidth);
+            hit.x = std::max(hit.x, m_attachmentX);
+            hit.width = std::max(0.0F, right - hit.x);
+            previewX += layout::DraftAttachment::step;
+          }
+          root.addChild(std::move(previews));
+          const float stickerSize = std::min(80.0F, std::max(32.0F, (bodyWidth - 96) / 3));
+          float stickerX = left + (Style::spaceSection - Style::spaceXxs);
+          const float stickerY = composerY + replyHeight + uploadHeight + Style::spaceSm;
+          for (const auto& sticker : m_draftStickers[m_channelId]) {
+            picture(
+                root, stickerX, stickerY, stickerSize, stickerSize, api::stickerAsset(sticker), 0, false, false,
+                ImageFitMode::Contain
+            );
+            iconButton(
+                root,
+                {stickerX + stickerSize - (Style::spaceXl - Style::spaceXxs), stickerY, 24, 24, Action::RemoveSticker,
+                 sticker.id},
+                "x", "Remove sticker"
+            );
+            stickerX += stickerSize + Style::spaceMd;
+          }
+          m_draftX = left + 74;
+          m_composerTop = composerY;
+          m_draftY = composerY + replyHeight + attachmentHeight + Style::spaceXs;
+          inputControl(
+              root, left + 68, m_draftY, m_draftWidth + Style::spaceMd,
+              composerHeight - attachmentHeight - replyHeight - Style::spaceSm, "composer", draft,
+              m_demo ? "Demo mode is read-only" : "Message this channel…", true
+          );
+          const auto actionY =
+              composerY + composerHeight - ((Style::spaceSection - Style::spaceXxs) + Style::borderWidth);
           iconButton(
-              *previews,
-              {previewX + layout::DraftAttachment::removeLeft, 0, layout::DraftAttachment::removeSize,
-               layout::DraftAttachment::removeSize, Action::RemoveAttachment, attachment.key},
-              "x", "Remove attachment"
-          );
-          auto& hit = m_hits.back();
-          const auto right = std::min(hit.x + hit.width, m_attachmentX + m_attachmentWidth);
-          hit.x = std::max(hit.x, m_attachmentX);
-          hit.width = std::max(0.0F, right - hit.x);
-          previewX += layout::DraftAttachment::step;
-        }
-        root.addChild(std::move(previews));
-        const float stickerSize = std::min(80.0F, std::max(32.0F, (bodyWidth - 96) / 3));
-        float stickerX = left + (Style::spaceSection - Style::spaceXxs);
-        const float stickerY = composerY + replyHeight + uploadHeight + Style::spaceSm;
-        for (const auto& sticker : m_draftStickers[m_channelId]) {
-          picture(
-              root, stickerX, stickerY, stickerSize, stickerSize, api::stickerAsset(sticker), 0, false, false,
-              ImageFitMode::Contain
+              root, {left + (Style::space2Xl - Style::spaceXxs), actionY, 32, 32, Action::PasteClipboard, {}},
+              "clipboard-plus", "Paste from clipboard"
           );
           iconButton(
-              root,
-              {stickerX + stickerSize - (Style::spaceXl - Style::spaceXxs), stickerY, 24, 24, Action::RemoveSticker,
-               sticker.id},
-              "x", "Remove sticker"
+              root, {left + bodyWidth - 62, actionY, 32, 32, Action::ToggleEmoji, {}}, "mood-smile", "Emoji",
+              m_emojiMenu && !m_stickerTab
           );
-          stickerX += stickerSize + Style::spaceMd;
+          iconButton(root, {left + bodyWidth - 98, actionY, 32, 32, Action::ToggleGif, {}}, "gif", "GIFs", m_gifMenu);
+          iconButton(
+              root, {left + bodyWidth - 134, actionY, 32, 32, Action::ToggleStickers, {}}, "sticker", "Stickers",
+              m_emojiMenu && m_stickerTab
+          );
         }
-        m_draftX = left + 74;
-        m_composerTop = composerY;
-        m_draftY = composerY + replyHeight + attachmentHeight + Style::spaceXs;
-        inputControl(
-            root, left + 68, m_draftY, m_draftWidth + Style::spaceMd,
-            composerHeight - attachmentHeight - replyHeight - Style::spaceSm, "composer", draft,
-            m_demo ? "Demo mode is read-only" : "Message this channel…", true
-        );
-        const auto actionY =
-            composerY + composerHeight - ((Style::spaceSection - Style::spaceXxs) + Style::borderWidth);
-        iconButton(
-            root, {left + (Style::space2Xl - Style::spaceXxs), actionY, 32, 32, Action::PasteClipboard, {}},
-            "clipboard-plus", "Paste from clipboard"
-        );
-        iconButton(
-            root, {left + bodyWidth - 62, actionY, 32, 32, Action::ToggleEmoji, {}}, "mood-smile", "Emoji",
-            m_emojiMenu && !m_stickerTab
-        );
-        iconButton(root, {left + bodyWidth - 98, actionY, 32, 32, Action::ToggleGif, {}}, "gif", "GIFs", m_gifMenu);
-        iconButton(
-            root, {left + bodyWidth - 134, actionY, 32, 32, Action::ToggleStickers, {}}, "sticker", "Stickers",
-            m_emojiMenu && m_stickerTab
-        );
         if (!m_status.empty())
           label(root, left + Style::spaceWide, 105, bodyWidth - 56, m_status, Style::fontSizeMini, muted);
         if (memberWidth > 0 && dmRecipient()) {
@@ -6776,8 +6869,20 @@ namespace app {
   }
 
   void ClientApplication::send() {
+    if (slashComposerActive()) {
+      submitSlashCommand();
+      return;
+    }
     if (!canSendToThread())
       return;
+    if (!m_channelId.empty() && m_drafts[m_channelId].starts_with('/')) {
+      focusControl("composer");
+      m_completionDismissed.clear();
+      updateCompletion();
+      m_status = "Choose a slash command from the list. Use a leading backslash to send a literal slash.";
+      m_window.invalidate();
+      return;
+    }
     if ((m_demo && !m_demoOverlay.starts_with("outgoing-cycle")) || !m_connected || m_channelId.empty())
       return;
     const auto& draft = m_drafts[m_channelId];
@@ -7193,6 +7298,7 @@ namespace app {
         channelFeatureEvent(event);
         continue;
       } else if (event.operation == api::Operation::ComponentResult) {
+        slashCommandEvent(event);
         componentResult(event);
         continue;
       } else if (event.operation == api::Operation::Credentials) {
@@ -7200,7 +7306,16 @@ namespace app {
             : event.credentialOperation == auth::CredentialOperation::Save ? "Sign-in is saved in your desktop keyring."
                                                                            : "Saved sign-in has been removed.";
       } else if (event.operation == api::Operation::Interaction) {
+        if (event.interaction
+            && (event.interaction->kind == api::InteractionKind::ApplicationCommand
+                || event.interaction->kind == api::InteractionKind::CommandAutocomplete)) {
+          slashCommandEvent(event);
+          continue;
+        }
         interactionResult(event);
+      } else if (event.operation == api::Operation::CommandIndex || event.operation == api::Operation::CommandChoices) {
+        slashCommandEvent(event);
+        continue;
       } else if (event.operation == api::Operation::Reaction && event.reaction) {
         const auto& change = *event.reaction;
         if (m_messageLog.known(change.channel, change.message))
@@ -7541,6 +7656,7 @@ namespace app {
               upsertMessage(std::move(message));
           }
       } else if (event.operation == api::Operation::MemberSearch) {
+        slashCommandEvent(event);
         completionEvent(event);
       } else if (event.operation == api::Operation::MessageUpdate) {
         updateMessage(event.resource, event.messageId, event.patch);
@@ -7730,6 +7846,8 @@ namespace app {
     if (inboxKey(key))
       return;
     if (searchMenuKey(key))
+      return;
+    if (slashCommandKey(key))
       return;
     if (shortcutKey(key))
       return;

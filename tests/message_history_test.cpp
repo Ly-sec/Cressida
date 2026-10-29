@@ -169,6 +169,7 @@ int main() {
     query = *history.begin(Latest, messages);
     api::MessagePatch unknownEdit;
     unknownEdit.content = "Edited before this row was loaded";
+    unknownEdit.authorBot = true;
     history.changed("123", unknownEdit);
     unknownEdit = {};
     unknownEdit.embeds = std::vector<api::Embed>{};
@@ -179,6 +180,10 @@ int main() {
     require(
         std::ranges::find(messages, "123", &api::Message::id)->content == "Edited before this row was loaded",
         "Partial in-flight edits merge even when the original message was not yet in the window"
+    );
+    require(
+        std::ranges::find(messages, "123", &api::Message::id)->authorBot,
+        "An app identity received during history loading survives later partial updates and the older page"
     );
     query = *history.begin(Older, messages);
     for (int i = 0; i <= 4096; ++i)

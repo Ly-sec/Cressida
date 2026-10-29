@@ -98,7 +98,9 @@ namespace api {
     InboxUpdate,
     AccountRestriction,
     Voice,
-    VoiceRoster
+    VoiceRoster,
+    CommandIndex,
+    CommandChoices
   };
 
   struct Event {
@@ -125,6 +127,9 @@ namespace api {
     std::optional<ChannelPageResult> channelPage;
     std::string nonce;
     std::optional<ApplicationModal> modal;
+    std::optional<CommandIndexQuery> commandIndex;
+    std::vector<ApplicationCommand> commands;
+    std::vector<CommandChoice> commandChoices;
     int memberCount = 0;
     std::vector<std::string> removed;
     std::string messageId;
@@ -198,6 +203,7 @@ namespace api {
     bool threads(ThreadQuery query);
     bool channelDetails(const std::string& channel);
     bool channelPage(ChannelPageQuery query);
+    bool applicationCommands(CommandIndexQuery query);
     bool inbox(InboxQuery query);
     bool guildSettings(GuildSettingsRequest request);
     bool userSettings(UserSettingsRequest request);
@@ -260,6 +266,7 @@ namespace api {
       std::vector<std::string> stickers;
       std::string nonce;
       std::optional<InboxQuery> inboxQuery;
+      std::optional<CommandIndexQuery> commandIndex;
     };
     struct PreloadRead {
       std::uint64_t session;

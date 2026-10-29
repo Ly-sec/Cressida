@@ -9,14 +9,21 @@
 #include <stdexcept>
 
 namespace api {
+  bool canDeleteMessage(const Message& message, std::string_view self, std::optional<std::uint64_t> permissions) {
+    return !message.deleted
+        && validSnowflake(message.channelId)
+        && validSnowflake(message.id)
+        && !(message.flags & messageEphemeral)
+        && ((!self.empty() && message.authorId == self && message.webhookId.empty())
+            || (permissions.value_or(0) & manageMessages));
+  }
   bool canRemoveMessageEmbeds(const Message& message, std::string_view self, std::optional<std::uint64_t> permissions) {
-    constexpr std::uint64_t ephemeral = 1ULL << 6;
     constexpr int applicationCommandMessage = 20, contextMenuCommandMessage = 23;
     return !message.deleted
         && validSnowflake(message.channelId)
         && validSnowflake(message.id)
         && !message.embeds.empty()
-        && !(message.flags & (messageSuppressEmbeds | ephemeral))
+        && !(message.flags & (messageSuppressEmbeds | messageEphemeral))
         && (message.type == defaultMessageType
             || message.type == replyMessageType
             || message.type == applicationCommandMessage
@@ -589,6 +596,32 @@ namespace api {
       request.path = "/users/@me/guilds/" + action.guild + "/settings";
       request.method = "PATCH";
       request.body = {{"channel_overrides", {{action.channel, {{"message_notifications", action.notificationLevel}}}}}};
+      break;
+    case Kind::ApplicationCommand:
+    case Kind::CommandAutocomplete:
+      if (!action.command
+          || action.application != action.command->application
+          || !validSnowflake(action.channel)
+          || !validSnowflake(action.nonce)
+          || (!action.guild.empty() && !validSnowflake(action.guild))
+          || (!action.command->guild.empty() && action.command->guild != action.guild)
+          || (action.kind == Kind::CommandAutocomplete) != action.focusedOption.has_value())
+        return {};
+      try {
+        request.body = {
+            {"type", action.focusedOption ? 4 : 2},
+            {"application_id", action.application},
+            {"channel_id", action.channel},
+            {"nonce", action.nonce},
+            {"data", applicationCommandData(*action.command, action.values, action.focusedOption)}
+        };
+      } catch (const std::exception&) {
+        return {};
+      }
+      if (!action.guild.empty())
+        request.body["guild_id"] = action.guild;
+      request.path = "/interactions";
+      request.method = "POST";
       break;
     case Kind::SubmitModal:
       if (!action.modal

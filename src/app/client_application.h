@@ -80,6 +80,7 @@ namespace app {
     static constexpr int cosmeticsReplayFrames = 13;
     static constexpr int composerReplyReplayFrames = 10;
     static constexpr int embedReplayFrames = 23;
+    static constexpr int botMessagesReplayFrames = 8;
     static constexpr int loginReplayFrames = 18;
     static constexpr int startupReplayFrames = 14;
     static constexpr int startupTransitionReplayFrames = 6;
@@ -90,6 +91,7 @@ namespace app {
     static constexpr int trayReplayFrames = 4;
     static constexpr int voiceReplayFrames = 15;
     static constexpr int imeReplayFrames = 14;
+    static constexpr int slashCommandReplayFrames = 26;
     enum class Action {
       Settings,
       VoiceAction,
@@ -293,6 +295,12 @@ namespace app {
       MessageButton,
       DismissEphemeral,
       SubmitApplicationModal,
+      SlashFilter,
+      SubmitSlashCommand,
+      SlashAttachment,
+      SlashChoice,
+      SlashOption,
+      CancelSlashCommand,
       RemoveFromLog,
       ClearEditHistory,
       CopyImage,
@@ -316,6 +324,30 @@ namespace app {
     void drawCompletion(Node& root, float width, float height);
     void completionEvent(const api::Event& event);
     void demoCompletionStep();
+    api::CommandContext slashContext() const;
+    void updateSlashCompletion();
+    void drawSlashPicker(Node& root, float width, float height);
+    void chooseSlashCommand(const std::string& key);
+    void filterSlashCommands(const std::string& application);
+    bool slashComposerActive() const;
+    float measureSlashComposer(float width, float height);
+    void drawSlashComposer(Node& root, const layout::Frame& frame);
+    void drawSlashOptions(Node& root, float width, float height);
+    void updateSlashArgumentCompletion();
+    void selectSlashOption(std::optional<std::size_t> index);
+    void advanceSlashOption(bool reverse);
+    void cancelSlashCommand(bool restoreFocus = true);
+    void submitSlashCommand();
+    void slashCommandEvent(const api::Event& event);
+    void clearSlashCommands();
+    void slashValueChanged(std::size_t index);
+    void chooseSlashChoice(std::size_t index);
+    bool slashCommandKey(const Key& key);
+    std::vector<std::string> slashValues() const;
+    void pickSlashAttachment(std::size_t index);
+    bool slashAttachmentResult(const PickedFile& result);
+    void demoSlashCommandStep();
+    void prepareSlashCommandDemo();
     bool beginMessageEdit(const std::string& message);
     void cancelMessageEdit(bool restoreComposer = true);
     void submitMessageEdit();
@@ -463,6 +495,8 @@ namespace app {
     );
     void demoJoinStep();
     void demoEmbedStep();
+    void prepareBotMessagesDemo();
+    void demoBotMessagesStep();
     void removeMessageEmbeds(const std::string& message, bool immediate);
     void drawRemoveEmbedsDialog(Node& root, float width, float height);
     void demoMarkdownStep();
@@ -1117,7 +1151,7 @@ namespace app {
     std::optional<MessageEditState> m_messageEdit;
     std::uint64_t m_messageEditGeneration = 0, m_pasteMessageEditGeneration = 0;
     struct CompletionItem {
-      enum Kind { Member, Role, Emoji, Broadcast, Channel } kind;
+      enum Kind { Member, Role, Emoji, Broadcast, Channel, Command, CommandRetry, SlashOption, SlashValue } kind;
       std::string id, name, detail, insert, image;
       int score = 0;
       std::uint32_t color = 0;
@@ -1134,6 +1168,40 @@ namespace app {
     float m_completionScroll = 0, m_completionViewport = 0;
     Hit m_completionBounds{};
     Timer m_completionSearchTimer, m_completionTimeout;
+    std::vector<api::ApplicationCommand> m_slashCommands;
+    std::string m_slashScope, m_slashFilter = "*", m_slashIndexError;
+    std::uint64_t m_slashRevision = 0;
+    std::set<bool> m_slashIndexPending;
+    bool m_slashIndexLoaded = false;
+    float m_slashAppScroll = 0;
+    std::vector<std::string> m_slashApps;
+    std::map<std::string, std::uint64_t> m_slashUsage;
+    std::optional<api::ApplicationCommand> m_slashCommand;
+    bool m_slashPending = false, m_slashOptionsOpen = false, m_slashOptionHighlighted = false;
+    bool m_slashRevealActive = true;
+    std::string m_slashError, m_slashOptionQuery;
+    std::uint64_t m_slashGeneration = 0, m_pasteSlashGeneration = 0;
+    std::optional<std::size_t> m_slashActiveOption;
+    std::set<std::size_t> m_slashSelectedOptions;
+    float m_slashComposerScroll = 0;
+    layout::Frame m_slashComposerFrame{};
+    layout::SlashCommands::ComposerLayout m_slashComposerLayout;
+    struct SlashInlineItem {
+      enum Kind { Command, Option, Tail } kind = Command;
+      std::size_t option = 0;
+      float labelWidth = 0;
+    };
+    std::vector<SlashInlineItem> m_slashInlineItems;
+    std::string m_slashChannel, m_slashDraft, m_slashNonce, m_slashAutocompleteNonce, m_slashAutocompleteSnapshot;
+    std::vector<std::string> m_slashValues;
+    std::map<std::size_t, api::Upload> m_slashUploads;
+    std::vector<api::CommandChoice> m_slashChoices;
+    std::vector<api::Account> m_slashMembers;
+    std::map<std::size_t, std::map<std::string, std::string>> m_slashValueLabels;
+    std::size_t m_slashChoiceOption = 0, m_slashChoiceSelected = 0;
+    std::uint64_t m_slashFileRequest = 0;
+    std::size_t m_slashFileOption = 0;
+    Timer m_slashAutocompleteTimer, m_slashAutocompleteTimeout, m_slashSubmissionTimer;
     api::Account m_dialogAccount;
     api::UserProfile m_profileCard;
     api::GuildProfile m_guildProfile;

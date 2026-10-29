@@ -12,6 +12,10 @@ Copy an image to the clipboard, focus the chat composer and paste it with
 arbitrary file selection, file drag-and-drop and video-file uploads are not
 currently available in the composer.
 
+Apps can request a local file through an attachment argument in a
+[slash command](slash-commands.md). These files use the inline command arguments
+and desktop file chooser.
+
 ## Randomize outgoing filenames
 
 Open settings, then **Cressida > General > Uploads** and enable **Randomize

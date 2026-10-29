@@ -92,6 +92,8 @@ namespace app {
   } // namespace
   void ClientApplication::closeCompletion(bool dismiss) {
     m_completionDirty = true;
+    if (dismiss && m_slashCommand)
+      m_slashOptionsOpen = false;
     if (dismiss && m_completionQuery)
       m_completionDismissed = m_channelId
           + ":"
@@ -116,6 +118,10 @@ namespace app {
   }
 
   void ClientApplication::updateCompletion() {
+    if (m_slashCommand) {
+      updateSlashArgumentCompletion();
+      return;
+    }
     const auto field = m_inputs.find(m_focusedInput);
     if (!m_connected
         || settingsVisible()
@@ -139,7 +145,9 @@ namespace app {
       closeCompletion();
       return;
     }
-    const auto query = completionQuery(value, cursor.cursor, cursor.anchor);
+    auto query = completionQuery(value, cursor.cursor, cursor.anchor);
+    if (query && query->trigger == '/' && m_focusedInput != "composer")
+      query.reset();
     const auto identity = m_channelId + ":" + m_focusedInput + ":" + std::to_string(cursor.cursor) + ":" + value;
     if (identity != m_completionDismissed)
       m_completionDismissed.clear();
@@ -178,6 +186,12 @@ namespace app {
           });
         });
       }
+    }
+    if (query->trigger == '/') {
+      if (changed || m_completionDirty)
+        updateSlashCompletion();
+      m_completionDirty = false;
+      return;
     }
     if (!changed && !m_completionDirty)
       return;
@@ -360,6 +374,20 @@ namespace app {
   }
 
   void ClientApplication::chooseCompletion(std::size_t index) {
+    if (m_slashCommand) {
+      if (!m_completionQuery || index >= m_completionItems.size() || m_slashPending)
+        return;
+      const auto field = m_slashActiveOption ? "slash-field:" + std::to_string(*m_slashActiveOption) : "slash-options";
+      const auto value = m_slashActiveOption ? m_slashValues[*m_slashActiveOption] : m_slashOptionQuery;
+      if (field != m_completionInput || value != m_completionSnapshot)
+        return;
+      const auto picked = m_completionItems[index];
+      if (picked.kind == CompletionItem::SlashOption)
+        selectSlashOption(std::stoul(picked.id));
+      else if (picked.kind == CompletionItem::SlashValue)
+        chooseSlashChoice(std::stoul(picked.id));
+      return;
+    }
     if (!m_completionQuery || index >= m_completionItems.size())
       return;
     const auto field = m_inputs.find(m_completionInput);
@@ -374,6 +402,10 @@ namespace app {
       return;
     const auto query = *m_completionQuery;
     const auto picked = m_completionItems[index];
+    if (picked.kind == CompletionItem::Command || picked.kind == CompletionItem::CommandRetry) {
+      chooseSlashCommand(picked.id);
+      return;
+    }
     if (picked.kind == CompletionItem::Member)
       m_draftMentionNames[m_channelId][picked.id] = picked.name;
     auto text = m_completionItems[index].insert;
@@ -395,6 +427,8 @@ namespace app {
   }
 
   bool ClientApplication::completionKey(const Key& key) {
+    if (m_slashCommand)
+      return false;
     updateCompletion();
     if (!m_completionQuery)
       return false;
@@ -403,7 +437,17 @@ namespace app {
       m_window.invalidate();
       return true;
     }
-    if (key.control || key.shift || m_completionItems.empty())
+    if (key.control || key.shift)
+      return false;
+    if (m_completionQuery->trigger == '/' && (key.symbol == XKB_KEY_Left || key.symbol == XKB_KEY_Right)) {
+      const auto current = std::ranges::find(m_slashApps, m_slashFilter);
+      const auto at = current == m_slashApps.end() ? 0 : current - m_slashApps.begin();
+      filterSlashCommands(
+          m_slashApps[(at + (key.symbol == XKB_KEY_Left ? m_slashApps.size() - 1 : 1)) % m_slashApps.size()]
+      );
+      return true;
+    }
+    if (m_completionItems.empty())
       return false;
     if (key.symbol == XKB_KEY_Return || key.symbol == XKB_KEY_KP_Enter || key.symbol == XKB_KEY_Tab) {
       chooseCompletion(m_completionSelected);
@@ -414,9 +458,10 @@ namespace app {
     const auto count = m_completionItems.size();
     m_completionSelected = (m_completionSelected + (key.symbol == XKB_KEY_Up ? count - 1 : 1)) % count;
     m_scrolling.stop(m_completionScroll);
-    const float top = m_completionSelected * layout::Completion::rowHeight;
-    m_completionScroll =
-        std::clamp(m_completionScroll, std::max(0.0F, top + layout::Completion::rowHeight - m_completionViewport), top);
+    const float rowHeight =
+        m_completionQuery->trigger == '/' ? layout::SlashCommands::rowHeight : layout::Completion::rowHeight;
+    const float top = m_completionSelected * rowHeight;
+    m_completionScroll = std::clamp(m_completionScroll, std::max(0.0F, top + rowHeight - m_completionViewport), top);
     m_window.invalidate();
     return true;
   }
@@ -426,6 +471,23 @@ namespace app {
       return false;
     if (!m_completionQuery || !m_completionBounds.contains(x, y))
       return false;
+    if (m_completionQuery->trigger == '/') {
+      for (auto hit = m_hits.rbegin(); hit != m_hits.rend(); ++hit)
+        if (hit->contains(x, y)) {
+          if (hit->action == Action::SlashFilter) {
+            filterSlashCommands(hit->id);
+            return true;
+          }
+          if (hit->action == Action::CompleteText) {
+            chooseCompletion(std::stoul(hit->id));
+            return true;
+          }
+        }
+      m_controlInput.pointerButton(
+          x, y + m_window.titlebarHeight() - layout::Window::titlebarHeight, 272, true, 0, 0, false
+      );
+      return true;
+    }
     if (x >= m_completionBounds.x + m_completionBounds.width - 12) {
       m_controlInput.pointerButton(
           x, y + m_window.titlebarHeight() - layout::Window::titlebarHeight, 272, true, 0, 0, false
@@ -587,9 +649,17 @@ namespace app {
 
   void ClientApplication::drawCompletion(Node& root, float w, float h) {
     using namespace theme;
+    if (m_slashCommand) {
+      drawSlashOptions(root, w, h);
+      return;
+    }
     updateCompletion();
     if (!m_completionQuery)
       return;
+    if (m_completionQuery->trigger == '/') {
+      drawSlashPicker(root, w, h);
+      return;
+    }
     const auto* input = m_inputs.at(m_completionInput);
     float x = 0, y = 0;
     for (const auto* node = static_cast<const Node*>(input); node && node != m_scene.get(); node = node->parent()) {

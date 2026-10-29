@@ -14,6 +14,31 @@ int main() {
   using Kind = InteractionKind;
   using nlohmann::json;
   try {
+    Message deletable{.id = "20", .channelId = "10", .authorId = "1"};
+    require(canDeleteMessage(deletable, "1"), "Authors can delete their messages without server permissions");
+    deletable.authorBot = true;
+    for (const int type : {defaultMessageType, replyMessageType, 20, 23}) {
+      deletable.type = type;
+      require(!canDeleteMessage(deletable, "2"), "Bot messages require known moderation permission");
+      require(canDeleteMessage(deletable, "2", manageMessages), "Manage Messages permits deletion of bot responses");
+      require(!canDeleteMessage(deletable, "2", manageChannel), "Manage Channels does not permit message deletion");
+    }
+    deletable.webhookId = "9";
+    require(!canDeleteMessage(deletable, "1"), "Webhook identities do not grant personal author access");
+    require(canDeleteMessage(deletable, "2", manageMessages), "Moderators can delete webhook messages");
+    deletable.flags = messageEphemeral;
+    require(!canDeleteMessage(deletable, "2", manageMessages), "Private responses retain their local dismissal action");
+    deletable.flags = 0;
+    deletable.deleted = true;
+    require(!canDeleteMessage(deletable, "2", manageMessages), "Retained deleted messages cannot be deleted again");
+    deletable.deleted = false;
+    deletable.id = "invalid";
+    require(!canDeleteMessage(deletable, "2", manageMessages), "Deletion requires valid message identities");
+    const auto deleteRequest = interactionRequest({.kind = Kind::DeleteMessage, .channel = "10", .message = "20"});
+    require(
+        deleteRequest && deleteRequest->method == "DELETE" && deleteRequest->path == "/channels/10/messages/20",
+        "Bot deletion uses the existing message deletion mutation route"
+    );
     constexpr std::uint64_t retainedFlag = 1ULL << 12;
     const Interaction removal{
         .kind = Kind::RemoveEmbeds, .channel = "10", .message = "20", .messageFlags = retainedFlag

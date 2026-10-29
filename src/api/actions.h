@@ -1,5 +1,6 @@
 #pragma once
 
+#include "api/application_commands.h"
 #include "api/channel_features.h"
 #include "api/models.h"
 #include "api/server_organization.h"
@@ -56,11 +57,14 @@ namespace api {
     EditGuildFolder,
     ReorderGuilds,
     GuildPrivacy,
-    AutoModerationFeedback
+    AutoModerationFeedback,
+    ApplicationCommand,
+    CommandAutocomplete
   };
   inline constexpr int autoModerationSubmitFeedback = 4;
   bool
   canRemoveMessageEmbeds(const Message& message, std::string_view self, std::optional<std::uint64_t> permissions = {});
+  bool canDeleteMessage(const Message& message, std::string_view self, std::optional<std::uint64_t> permissions = {});
   inline constexpr std::size_t maxAutoModerationDecisionBytes = 128;
   inline constexpr std::size_t maxAutoModerationContentBytes = 16 * 1024;
   struct Interaction {
@@ -97,6 +101,9 @@ namespace api {
     std::optional<GuildFolderChange> folderChange;
     std::optional<GuildRailMove> railMove;
     bool markAutoModerationFeedback = false;
+    std::optional<api::ApplicationCommand> command;
+    std::optional<std::size_t> focusedOption;
+    std::vector<Upload> commandUploads;
   };
   std::optional<MessagePatch> removedEmbedsPatch(const Interaction& action, const nlohmann::json& response);
   std::optional<nlohmann::json>

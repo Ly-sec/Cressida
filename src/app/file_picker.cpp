@@ -171,7 +171,7 @@ namespace app {
       g_variant_builder_init(&filters, G_VARIANT_TYPE("a(sa(us))"));
       g_variant_builder_init(&choices, G_VARIANT_TYPE("a(us)"));
       for (const auto& type : types)
-        g_variant_builder_add(&choices, "(us)", 1U, type.c_str());
+        g_variant_builder_add(&choices, "(us)", type == "*/*" ? 0U : 1U, type == "*/*" ? "*" : type.c_str());
       g_variant_builder_add(&filters, "(s@a(us))", "Supported files", g_variant_builder_end(&choices));
       g_variant_builder_add(&options, "{sv}", "filters", g_variant_builder_end(&filters));
       auto* reply = g_dbus_connection_call_sync(
@@ -454,7 +454,7 @@ namespace app {
       result.mime = "audio/ogg";
     g_free(mime);
     g_free(content);
-    if (std::ranges::find(types, result.mime) == types.end()) {
+    if (std::ranges::find(types, "*/*") == types.end() && std::ranges::find(types, result.mime) == types.end()) {
       result.bytes.clear();
       result.error = "This file type is not supported for this upload.";
     }

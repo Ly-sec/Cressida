@@ -11,8 +11,9 @@ description:
 | Platforms     | Linux with Wayland. No X11 window backend.                               |
 | Messaging     | Text chat, replies, DMs, threads and forum conversations.                |
 | Inbox         | Unread conversations, mentions, synced bookmarks and reminders.          |
+| App commands  | Slash-command picker, app filtering, arguments and responses.            |
 | Rich content  | Markdown, embeds, custom emoji, GIFs and stickers.                       |
-| Uploads       | Pasted images.                                                           |
+| Uploads       | Pasted chat images and files requested by slash commands.                |
 | Media viewing | Image galleries and native received-video playback.                      |
 | Voice         | Server voice channels and joining existing direct or group calls.        |
 | Profiles      | Rich profiles, equipped cosmetics and a profile panel in one-to-one DMs. |
@@ -21,10 +22,10 @@ description:
 
 ## What is not supported yet?
 
-Video calls, arbitrary file uploads, file drag-and-drop and multiple remembered
-accounts are not available yet. Some account, moderation and other settings or
-actions remain incomplete. A visible unavailable control should not be taken as
-a working feature.
+Video calls, arbitrary chat file uploads, file drag-and-drop and multiple
+remembered accounts are not available yet. Some account, moderation and other
+settings or actions remain incomplete. A visible unavailable control should not
+be taken as a working feature.
 
 ## Can I use voice chat?
 

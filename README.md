@@ -64,7 +64,7 @@ can remember your sign-in. Signing out removes the saved login.
 
 ## Current limitations
 
-Video calls, arbitrary file uploads and file drag-and-drop are not available yet.
+Video calls, arbitrary chat file uploads and file drag-and-drop are not available yet.
 Voice supports server channels and joining existing direct or group calls; see
 the [voice guide](docs/user/voice.md) for settings and current limits.
 Image uploads are supported. Some Discord controls and settings remain incomplete.

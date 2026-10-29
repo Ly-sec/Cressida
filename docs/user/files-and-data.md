@@ -35,6 +35,10 @@ microphone audio and voice-session encryption keys are not saved.
 Saved login credentials belong in the desktop keyring. Signing out removes the
 saved login. Closing or restarting the client does not sign out.
 
+Slash-command lists, inline arguments, selected command files and frequently
+used commands stay in memory for the current session. They are not saved in the
+account's UI state. See [Slash commands](slash-commands.md).
+
 ## Diagnostic logs
 
 `cressida.log` contains the current diagnostic output. When it reaches 1 MiB,

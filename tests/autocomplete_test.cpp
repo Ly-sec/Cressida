@@ -36,6 +36,10 @@ int main() {
   }
   require(!app::completionQuery("@Maya", 5, 0));
   require(!app::completionQuery("x", 10, 10));
+  require(app::completionQuery("/", 1, 1)->trigger == '/');
+  require(app::completionQuery("/logging moderation", 19, 19)->text == "logging moderation");
+  for (const std::string value : {"hello /echo", "\\/echo", "`/echo", "/https://example.com", "/echo\ntext"})
+    require(!app::completionQuery(value, value.size(), value.size()));
   const std::string closed = "`literal` :smile";
   require(app::completionQuery(closed, closed.size(), closed.size())->trigger == ':');
   const std::string unicode = "@名前";

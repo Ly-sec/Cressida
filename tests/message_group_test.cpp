@@ -35,6 +35,9 @@ int main() {
     next.content = "Second";
     next.timestamp = "2026-10-17T09:42:00Z";
     require(app::continuesMessageGroup(first, next), "Consecutive ordinary messages share the author header");
+    next.authorBot = true;
+    require(!app::continuesMessageGroup(first, next), "A changed bot identity retains its own APP header");
+    next.authorBot = false;
     auto pending = next;
     pending.id = "pending:123";
     pending.author = "Account display name";

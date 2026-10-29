@@ -31,6 +31,20 @@ local calendar day. Consecutive messages start a new group at local midnight.
 For AM/PM times, enable **Use 12-hour clock** in
 [Appearance settings](appearance.md).
 
+Bot authors show an **APP** chip beside their name and role icon. The chip
+remains visible when role icons are turned off.
+
+## Delete a message
+
+Right-click a message and choose **Delete Message**, then confirm **Delete**.
+You can delete your own messages. In a server channel, **Manage Messages** also
+lets you delete other authors' messages, including bot and webhook responses.
+Cressida checks your current permission again when you confirm. A failed request
+keeps the message and shows an error; it does not retry automatically.
+
+Private app responses use their local dismiss action instead. See
+[Slash commands](slash-commands.md) for app responses.
+
 ## Search messages
 
 Click the search field in the upper right or press **Ctrl+F**. The menu offers
@@ -112,6 +126,14 @@ emoji.
 
 Choosing a suggestion inserts it without sending the message. Mentions display
 readable names and emoji display their images while you compose.
+
+## Slash commands
+
+Type `/` at the start of the composer to browse app commands. Select an app from
+the left rail, choose a command and enter arguments directly in the composer.
+The **Options** popup offers additional arguments and values. Press **Enter** to
+send the completed command. See [Slash commands](slash-commands.md) for argument
+types, suggestions and responses.
 
 ## Format your text
 

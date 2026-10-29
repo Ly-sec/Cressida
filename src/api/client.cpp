@@ -1,5 +1,6 @@
 #include "api/client.h"
 
+#include "api/command_uploads.h"
 #include "api/network_profile.h"
 #include "api/request_diagnostics.h"
 #include "api/rest_schedule.h"
@@ -39,6 +40,8 @@ namespace api {
         return "reaction";
       case Operation::Interaction:
         return "interaction";
+      case Operation::CommandIndex:
+        return "application-commands";
       case Operation::Profile:
         return "profile";
       case Operation::SaveProfile:
@@ -96,6 +99,7 @@ namespace api {
     }
     bool independentRead(Operation operation) {
       switch (operation) {
+      case Operation::CommandIndex:
       case Operation::Messages:
       case Operation::Channels:
       case Operation::PrivateChannels:
@@ -780,6 +784,7 @@ namespace api {
         && command.operation != Operation::ChannelPage
         && command.operation != Operation::GuildSettings
         && command.operation != Operation::UserSettings
+        && command.operation != Operation::CommandIndex
         && command.operation != Operation::SaveGifFavorite
         && command.operation != Operation::SaveEmojiFavorite
         && std::ranges::any_of(m_commands, [&](const auto& pending) {
@@ -800,6 +805,13 @@ namespace api {
   bool Client::channels(const std::string& id) { return enqueue({Operation::Channels, m_session, id, {}}); }
   bool Client::channelDetails(const std::string& channel) {
     return validSnowflake(channel) && enqueue({Operation::ChannelDetails, m_session, channel, {}});
+  }
+  bool Client::applicationCommands(CommandIndexQuery query) {
+    if (commandIndexPath(query).empty())
+      return false;
+    Command command{Operation::CommandIndex, m_session, query.channel, {}};
+    command.commandIndex = std::move(query);
+    return enqueue(std::move(command));
   }
 
   bool Client::inbox(InboxQuery query) {
@@ -914,7 +926,16 @@ namespace api {
   bool Client::interact(api::Interaction action) {
     if (!interactionRequest(action))
       return false;
+    if (action.kind == InteractionKind::ApplicationCommand
+        && !validCommandAttachments(*action.command, action.values, action.commandUploads))
+      return false;
     Command command{Operation::Interaction, m_session, action.channel, {}};
+    if (!action.commandUploads.empty()) {
+      if (action.kind != InteractionKind::ApplicationCommand || !validCommandUploads(action.commandUploads))
+        return false;
+      command.uploads = std::move(action.commandUploads);
+      action.commandUploads.clear();
+    }
     command.interaction = std::move(action);
     return enqueue(std::move(command));
   }
@@ -1262,6 +1283,26 @@ namespace api {
           }
         }
         publish(std::move(result));
+      }
+      if (type == "APPLICATION_COMMAND_AUTOCOMPLETE_RESPONSE") {
+        Event result{.operation = Operation::CommandChoices, .session = session};
+        if (data.contains("nonce") && data["nonce"].is_string() && validSnowflake(data["nonce"].get<std::string>())) {
+          result.nonce = data["nonce"].get<std::string>();
+          try {
+            result.commandChoices = parseCommandChoices(data.at("choices"));
+          } catch (const std::exception&) {
+            result.error = "The application returned invalid suggestions.";
+          }
+          publish(std::move(result));
+        }
+      }
+      if (type == "GUILD_APPLICATION_COMMAND_INDEX_UPDATE"
+          || type == "APPLICATION_COMMAND_PERMISSIONS_UPDATE"
+          || type == "USER_APPLICATION_UPDATE"
+          || type == "USER_APPLICATION_REMOVE") {
+        const auto guild = data.value("guild_id", std::string{});
+        if (guild.empty() || validSnowflake(guild))
+          publish(Event{.operation = Operation::CommandIndex, .session = session, .resource = guild, .live = true});
       }
       if (type == "CHANNEL_DELETE" && data.contains("guild_id")) {
         const auto guild = data.value("guild_id", ""), channel = data.value("id", "");
@@ -1688,6 +1729,7 @@ namespace api {
       event.threadQuery = command.threadQuery;
       event.channelQuery = command.channelQuery;
       event.inboxQuery = command.inboxQuery;
+      event.commandIndex = command.commandIndex;
       RestRequestScope scope{
           stop, &m_session, command.session, optional ? &m_foregroundRevision : nullptr, foregroundRevision
       };
@@ -1704,6 +1746,9 @@ namespace api {
       try {
         std::string path;
         switch (command.operation) {
+        case Operation::CommandIndex:
+          path = commandIndexPath(*command.commandIndex);
+          break;
         case Operation::InboxRead:
           path = inboxHttpRequest(*command.inboxQuery)->path;
           break;
@@ -1758,6 +1803,9 @@ namespace api {
           }
         } else {
           switch (command.operation) {
+          case Operation::CommandIndex:
+            event.commands = parseCommandIndex(*response, *command.commandIndex);
+            break;
           case Operation::Messages:
             event.messages = parseMessages(*response);
             break;
@@ -2535,12 +2583,38 @@ namespace api {
             event.users.notifications = channelNotifications(Json{{"channel_overrides", Json::array({overrideData})}});
           }
           if (command.interaction->kind == InteractionKind::MessageButton
-              || command.interaction->kind == InteractionKind::SubmitModal) {
-            std::lock_guard lock(m_mutex);
-            if (m_gatewaySessionGeneration != command.session || m_gatewaySessionId.empty())
-              event.error = "Wait for the live connection before using application buttons.";
-            else
-              body["session_id"] = m_gatewaySessionId;
+              || command.interaction->kind == InteractionKind::SubmitModal
+              || command.interaction->kind == InteractionKind::ApplicationCommand
+              || command.interaction->kind == InteractionKind::CommandAutocomplete) {
+            {
+              std::lock_guard lock(m_mutex);
+              if (m_gatewaySessionGeneration != command.session || m_gatewaySessionId.empty())
+                event.error = "Wait for the live connection before using applications.";
+              else
+                body["session_id"] = m_gatewaySessionId;
+            }
+            if (command.interaction->kind == InteractionKind::ApplicationCommand && !command.uploads.empty()) {
+              if (!event.error.empty())
+                break;
+              const auto staging = commandUploadRequest(command.uploads);
+              auto reserved =
+                  request(token, "/channels/" + command.resource + "/attachments", &staging, transfer, cooldown);
+              if (!reserved) {
+                event.error = reserved.error().message;
+                event.unauthorized = reserved.error().unauthorized;
+                break;
+              }
+              const auto slots = commandUploadSlots(*reserved, command.uploads);
+              for (std::size_t i = 0; i < slots.size(); ++i)
+                if (!uploadCommandFile(slots[i], command.uploads[i], multi.get(), m_requestWake, transfer.scope)) {
+                  event.error = "The attachment upload could not be confirmed. The command was not submitted.";
+                  break;
+                }
+              if (!event.error.empty())
+                break;
+              body["data"]["attachments"] = commandUploadedAttachments(slots, command.uploads);
+              command.uploads.clear();
+            }
           } else if (command.interaction->kind == InteractionKind::CreateChannel) {
             std::optional<Json> parent;
             if (command.interaction->privateChannel

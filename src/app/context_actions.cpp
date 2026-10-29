@@ -251,7 +251,7 @@ namespace app {
         if (rememberedEdits)
           add(Action::ClearEditHistory, "Clear Edit History");
       }
-      if (!message->deleted && message->authorId == m_account.id) {
+      if (api::canDeleteMessage(*message, m_account.id, channelPermissionsFor(m_contextChannel))) {
         separator();
         add(Action::DeleteMessage, "Delete Message");
       }
@@ -739,6 +739,7 @@ namespace app {
         return true;
       if (!m_focusedInput.starts_with("channel-")
           && !m_focusedInput.starts_with("application-field:")
+          && !m_focusedInput.starts_with("slash-field:")
           && !m_focusedInput.starts_with("server-menu:")
           && m_focusedInput != "dm-create-search"
           && m_focusedInput != "dialog"
@@ -750,6 +751,16 @@ namespace app {
   }
   bool ClientApplication::startInteraction(api::Interaction action) {
     using Kind = api::InteractionKind;
+    if (action.kind == Kind::DeleteMessage) {
+      const auto message = std::ranges::find(m_messages, action.message, &api::Message::id);
+      if (action.channel != m_channelId
+          || message == m_messages.end()
+          || message->channelId != action.channel
+          || !api::canDeleteMessage(*message, m_account.id, channelPermissionsFor(action.channel))) {
+        m_status = "This message is no longer available or you cannot delete it.";
+        return false;
+      }
+    }
     if (action.kind == Kind::RemoveEmbeds) {
       const auto message = std::ranges::find(m_messages, action.message, &api::Message::id);
       if (action.channel != m_channelId
@@ -986,7 +997,11 @@ namespace app {
     case Action::DeleteMessage:
     case Action::BlockUser:
     case Action::RemoveFriend:
-      if (action == Action::DeleteMessage && (found == m_messages.end() || found->authorId != m_account.id))
+      if (action == Action::DeleteMessage
+          && (m_contextChannel != m_channelId
+              || found == m_messages.end()
+              || found->channelId != m_contextChannel
+              || !api::canDeleteMessage(*found, m_account.id, channelPermissionsFor(m_contextChannel))))
         break;
       request.kind = action == Action::SetNickname ? Kind::Nickname
           : action == Action::DeleteMessage        ? Kind::DeleteMessage
@@ -1054,6 +1069,8 @@ namespace app {
       m_dialogError = m_status;
   }
   void ClientApplication::closeDialog() {
+    closeSelectDropdown();
+    cancelSlashCommand(false);
     m_serverInvitePending.clear();
     m_serverDialogGuild.clear();
     m_serverDialogFolder.clear();

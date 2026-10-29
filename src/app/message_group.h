@@ -44,6 +44,7 @@ namespace app {
         || (!pending && (previous.author != current.author || previous.avatar != current.avatar))
         || previous.webhookId != current.webhookId
         || previous.applicationId != current.applicationId
+        || previous.authorBot != current.authorBot
         || (previous.type != api::defaultMessageType && previous.type != api::replyMessageType)
         || current.type != api::defaultMessageType
         || current.reply

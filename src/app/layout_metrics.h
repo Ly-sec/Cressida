@@ -837,6 +837,72 @@ namespace app::layout {
     static constexpr float composerExtraWidth = 142;
     static constexpr std::size_t maximumResults = 50;
   };
+  struct SlashCommands {
+    static constexpr float railWidth = Style::spaceGroup + Style::spaceSm;
+    static constexpr float appSize = Style::space2Xl;
+    static constexpr float appStep = appSize + Style::spaceMd;
+    static constexpr float rowHeight = Style::spaceGroup + Style::spaceMd;
+    static constexpr float headerHeight = Style::space2Xl + Style::spaceSm;
+    static constexpr float footerHeight = Style::spaceWide;
+    static constexpr float maximumHeight = Style::spaceGroup * 9;
+    static constexpr float rowInset = Style::spaceMd;
+    static constexpr float scrollbarGutter = Style::spaceLg;
+    static constexpr float composerHeader = Style::space2Xl + Style::borderWidth;
+    static constexpr float composerPadding = Style::spaceMd;
+    static constexpr float chipGap = Style::spaceSm;
+    static constexpr float chipMaximumWidth = Style::spaceGroup * 5;
+    static constexpr float inputMinimumWidth = Style::spaceGroup * 3;
+    static constexpr float inputMaximumWidth = Style::spaceGroup * 8;
+    static constexpr float inputMaximumHeight = Style::controlHeight * 3;
+    static constexpr float maximumComposerBody = Style::spaceGroup * 4;
+    static constexpr float feedbackHeight = Style::space2Xl;
+    struct ComposerLayout {
+      std::vector<Frame> items;
+      float height = 0, contentHeight = 0, viewportHeight = 0;
+    };
+    static ComposerLayout compose(float width, float windowHeight, std::span<const Frame> sizes, bool feedback) {
+      ComposerLayout result;
+      const float available = std::max(Style::controlHeight, width - composerPadding * 2);
+      float x = 0, y = 0, rowHeight = Style::controlHeight;
+      std::size_t rowBegin = 0;
+      const auto finishRow = [&] {
+        for (std::size_t i = rowBegin; i < result.items.size(); ++i)
+          result.items[i].y += (rowHeight - result.items[i].height) / 2;
+        rowBegin = result.items.size();
+      };
+      for (const auto& size : sizes) {
+        const float itemWidth = std::min(available, size.width);
+        if (x && x + itemWidth > available) {
+          finishRow();
+          x = 0;
+          y += rowHeight + chipGap;
+          rowHeight = Style::controlHeight;
+        }
+        result.items.push_back({x, y, itemWidth, size.height});
+        x += itemWidth + chipGap;
+        rowHeight = std::max(rowHeight, size.height);
+      }
+      finishRow();
+      result.contentHeight = y + rowHeight;
+      result.viewportHeight = std::min(result.contentHeight, std::min(maximumComposerBody, windowHeight / 3));
+      result.height = composerHeader + composerPadding * 2 + result.viewportHeight + (feedback ? feedbackHeight : 0);
+      return result;
+    }
+    static Frame picker(float x, float composerY, float width, float count) {
+      const float room = std::max(0.0F, composerY - Window::titlebarHeight - Style::spaceSm * 2);
+      const float height =
+          std::min({maximumHeight, room, headerHeight + footerHeight + std::max(1.0F, count) * rowHeight});
+      return {x, composerY - height - Style::spaceSm, width, height};
+    }
+  };
+  struct MessageAppBadge {
+    static constexpr float height = Style::spaceLg + Style::spaceXxs;
+    static constexpr float padding = Style::spaceXs;
+    static constexpr float gap = Style::spaceXs;
+    static constexpr float fontSize = Style::fontSizeMini;
+    static constexpr float radius = Style::radiusSm;
+    static constexpr float width(float textWidth) { return textWidth + padding * 2; }
+  };
   struct FontPicker {
     static constexpr float preferredWidth = 420;
     static constexpr float maximumViewportHeight = 600;

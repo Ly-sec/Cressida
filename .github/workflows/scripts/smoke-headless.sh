@@ -50,7 +50,8 @@ for view in startup-transition startup-transition-light startup-transition-narro
     deleted-cycle reduced-motion-cycle reduced-motion-cycle-light markdown-cycle markdown-cycle-light syntax-terminal syntax-terminal-light autocomplete-cycle settings-font-cycle themes-cycle sticker-cycle \
     server-menu-cycle folder-menu-cycle folder-animation folder-animation-light rail-drag rail-drag-light typing-cycle typing-cycle-light reply-cycle reply-cycle-light floating-cycle floating-cycle-light decorations-cycle decorations-cycle-light channel-menu-cycle reaction-spacing embed-components chat-links-cycle chat-links-cycle-light \
     chat-links-light chat-links-narrow embed-cycle embed-cycle-light embed-cycle-narrow categories animation-cycle gif-cycle attachment-cycle \
-    autocomplete-tokens autocomplete-tokens-light reply-grouping reply-grouping-light reply-grouping-compact \
+    autocomplete-tokens autocomplete-tokens-light slash-commands-cycle slash-commands-cycle-light slash-commands-cycle-narrow reply-grouping reply-grouping-light reply-grouping-compact \
+    bot-messages-cycle bot-messages-cycle-light bot-messages-cycle-narrow \
     media-gallery-cycle media-gallery-cycle-light image-menu-cycle image-menu-cycle-light tray-cycle \
     tray-startup-host tray-startup-missing tray-startup-open tray-startup-notification tray-startup-host-loss \
     window-controls-cycle window-controls-cycle-light server-settings-cycle server-settings-narrow server-settings-role-light; do

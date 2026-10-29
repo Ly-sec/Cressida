@@ -32,6 +32,23 @@ keep their usual actions, and open overlays or editors take priority.
 | Escape          | Dismiss completion.                       |
 | Tab / Shift+Tab | Move between focusable native controls.   |
 
+## Slash commands
+
+Type `/` at the start of the composer to open the command picker.
+
+| Shortcut     | Action                                         |
+| ------------ | ---------------------------------------------- |
+| Up / Down    | Highlight a command or argument suggestion.    |
+| Left / Right | Switch apps in the command picker.             |
+| Enter        | Choose a suggested value, or send the command. |
+| Tab          | Add an option, accept a value or move forward. |
+| Shift+Tab    | Move to the previous argument.                 |
+| Shift+Enter  | Add a line in a text argument.                 |
+| Ctrl+Enter   | Send the command from the composer.            |
+| Escape       | Dismiss suggestions, then cancel the command.  |
+
+See [Slash commands](slash-commands.md) for app browsing and argument controls.
+
 ## Message search
 
 | Shortcut    | Action                                         |

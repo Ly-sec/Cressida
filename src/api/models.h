@@ -13,6 +13,7 @@
 namespace api {
 
   inline constexpr std::uint64_t messageSuppressEmbeds = 1ULL << 2;
+  inline constexpr std::uint64_t messageEphemeral = 1ULL << 6;
 
   struct GuildTag {
     std::string guild, tag, badge;
@@ -286,6 +287,7 @@ namespace api {
     std::optional<ForwardedMessage> forwarded;
     std::vector<Sticker> stickers;
     std::string nonce;
+    bool authorBot = false;
   };
 
   struct MessagePatch {
@@ -309,6 +311,7 @@ namespace api {
     std::optional<std::string> editedTimestamp;
     std::optional<std::optional<ForwardedMessage>> forwarded;
     std::optional<std::vector<Sticker>> stickers;
+    std::optional<bool> authorBot;
     void apply(Message& message) const;
   };
   MessagePatch parseMessagePatch(const nlohmann::json& value);

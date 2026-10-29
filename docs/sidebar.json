@@ -28,6 +28,10 @@
         "slug": "docs/inbox"
       },
       {
+        "slug": "docs/slash-commands",
+        "label": "Slash commands in the composer"
+      },
+      {
         "slug": "docs/direct-messages"
       },
       {

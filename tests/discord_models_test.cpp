@@ -15,6 +15,22 @@ namespace {
 int main() {
   using nlohmann::json;
   try {
+    auto appMessage = api::parseMessages(
+                          json::array(
+                              {{{"id", "100"},
+                                {"channel_id", "10"},
+                                {"content", "A bot response"},
+                                {"author", {{"id", "30"}, {"username", "Orbit"}, {"bot", true}}}}}
+                          )
+    ).front();
+    require(appMessage.authorBot, "Bot authors retain their app identity in history and live messages");
+    api::parseMessagePatch({{"content", "Updated response"}}).apply(appMessage);
+    require(appMessage.authorBot, "Content-only updates preserve the app badge");
+    for (const auto& author : {json{{"bot", nullptr}}, json{{"bot", "true"}}, json{{"username", "Orbit"}}})
+      api::parseMessagePatch({{"author", author}}).apply(appMessage);
+    require(appMessage.authorBot, "Missing and malformed bot flags cannot erase a known app identity");
+    api::parseMessagePatch({{"author", {{"bot", false}}}}).apply(appMessage);
+    require(!appMessage.authorBot, "An explicit false bot flag clears the app identity");
     const auto specialChannels = api::parseChannels(
         json::array(
             {{{"id", "901"}, {"type", 5}, {"name", "news"}},

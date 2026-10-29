@@ -195,6 +195,12 @@ namespace app {
         || forumView()
         || (m_dmMode && !m_dmPage.empty()))
       return;
+    if (slashComposerActive()) {
+      m_focusedInput = m_slashActiveOption ? "slash-field:" + std::to_string(*m_slashActiveOption) : "slash-options";
+      focusControl(m_focusedInput);
+      m_window.invalidate();
+      return;
+    }
     // The first conversation may be mounted only after the loading scene retires.
     m_focusedInput = "composer";
     const auto input = m_inputs.find("composer");
@@ -524,6 +530,17 @@ namespace app {
         field->setTextPresenter([this](std::string_view text) { return searchReplacements(text); });
       if (id == "composer" || id == "message-edit")
         field->setTextPresenter([this](std::string_view text) { return composerReplacements(text); });
+      if (id.starts_with("slash-field:"))
+        field->setTextPresenter([this, id](std::string_view text) {
+          std::vector<TextReplacement> replacements;
+          if (!m_slashCommand || text.empty())
+            return replacements;
+          for (const auto& [index, names] : m_slashValueLabels)
+            if (id == "slash-field:" + std::to_string(index))
+              if (const auto at = names.find(std::string(text)); at != names.end() && at->second != text)
+                replacements.push_back({0, text.size(), at->second});
+          return replacements;
+        });
       field->setFontSize(Style::fontSizeBody);
       field->setMultiline(multiline);
       field->setMultilineCenterWhenFits(id == "composer");
@@ -533,11 +550,34 @@ namespace app {
       field->setSubmitOnEnter(id == "composer");
       field->setOnFocusGain([this, id] {
         m_focusedInput = id;
+        if (id.starts_with("slash-field:") && m_slashCommand)
+          for (std::size_t i = 0; i < m_slashValues.size(); ++i)
+            if (id == "slash-field:" + std::to_string(i)) {
+              if (m_slashActiveOption != i)
+                selectSlashOption(i);
+              else
+                slashValueChanged(i);
+            }
+        if (id == "slash-options" && m_slashCommand) {
+          if (m_slashActiveOption)
+            selectSlashOption({});
+          else {
+            m_slashOptionsOpen = true;
+            m_completionDirty = true;
+          }
+        }
         if (id == "channel-search" || id == "channel-search-panel")
           m_searchDismissed.clear();
         m_fieldFocused = id == "composer" || id == "token";
         m_settingsField = id.starts_with("settings:") ? id.substr(9) : "";
       });
+      if (id.starts_with("slash-field:"))
+        field->setOnFocusLoss([this] {
+          m_slashChoices.clear();
+          m_slashAutocompleteTimer.stop();
+          m_slashAutocompleteTimeout.stop();
+          m_slashAutocompleteNonce.clear();
+        });
       field->setOnKeyEvent([this, id](std::uint32_t key, std::uint32_t modifiers) {
         if (((modifiers & KeyMod::Ctrl) && (key == XKB_KEY_v || key == XKB_KEY_V))
             || ((modifiers & KeyMod::Shift) && key == XKB_KEY_Insert)) {
@@ -545,6 +585,7 @@ namespace app {
           m_pasteServerScope = serverSettingsScope();
           m_pasteDialogGeneration = m_dialogGeneration;
           m_pasteMessageEditGeneration = m_messageEdit ? m_messageEdit->generation : 0;
+          m_pasteSlashGeneration = m_slashGeneration;
           m_pasteConnected = m_connected;
           m_pasteSession = m_session;
           m_pasteChannel = m_channelId;
@@ -600,6 +641,24 @@ namespace app {
           m_channelAccessFilter = text;
           m_scrolling.stop(m_channelDialogScroll);
           m_channelDialogScroll = 0;
+        } else if (id == "slash-options") {
+          if (slashComposerActive() && !m_slashPending && text.size() <= api::commandStringLimit) {
+            m_slashNonce.clear();
+            m_slashOptionQuery = text;
+            m_slashActiveOption.reset();
+            m_slashOptionsOpen = true;
+            m_slashOptionHighlighted = false;
+            m_completionDirty = true;
+          }
+        } else if (id.starts_with("slash-field:")) {
+          if (slashComposerActive() && !m_slashPending)
+            for (std::size_t i = 0; i < m_slashValues.size(); ++i)
+              if (id == "slash-field:" + std::to_string(i) && text.size() <= api::commandStringLimit * 4) {
+                m_slashNonce.clear();
+                m_slashError.clear();
+                m_slashValues[i] = text;
+                slashValueChanged(i);
+              }
         } else if (id.starts_with("application-field:")) {
           if (m_applicationModal && m_dialogKind == "application-modal" && !m_dialogPending)
             for (std::size_t i = 0; i < m_applicationValues.size(); ++i)
@@ -646,6 +705,8 @@ namespace app {
       field->setOnSubmit([this, id](const std::string&) {
         if (id == "composer")
           send();
+        else if (id.starts_with("slash-field:") || id == "slash-options")
+          submitSlashCommand();
         else if (id == "message-edit")
           submitMessageEdit();
         else if (id == "dm-friend-name")
@@ -664,6 +725,7 @@ namespace app {
             || id == "channel-name"
             || id == "channel-topic"
             || id.starts_with("application-field:")
+            || id.starts_with("slash-field:")
             || id.starts_with("user-account:")
         ) {
           // Forms submit through their explicit Save/Submit action.
@@ -696,7 +758,13 @@ namespace app {
     else
       m_multilineInputs.erase(id);
     input.setMultiline(multiline);
-    input.setSubmitOnEnter(id == "composer" || id == "dialog" || id == "message-edit");
+    input.setSubmitOnEnter(
+        id == "composer"
+        || id == "dialog"
+        || id == "message-edit"
+        || id.starts_with("slash-field:")
+        || id == "slash-options"
+    );
     if (input.value() != value)
       input.setValue(value);
     if (id == "composer" || id == "message-edit" || id == "channel-search" || id == "channel-search-panel")
@@ -711,6 +779,7 @@ namespace app {
                 : id == "message-edit" ? m_messageEdit && !m_messageEdit->request
                 : id == "token"        ? !m_connecting
                 : id == "composer"     ? !m_demo
+                    || m_demoOverlay.starts_with("slash-commands")
                     || m_demoOverlay == "sidebar-cycle"
                     || m_demoOverlay == "inline-edit-cycle"
                     || m_demoOverlay.starts_with("outgoing-cycle")

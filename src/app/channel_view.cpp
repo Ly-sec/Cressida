@@ -62,6 +62,7 @@ namespace app {
     m_window.invalidate();
   }
   void ClientApplication::clearChannelFeatures() {
+    clearSlashCommands();
     closeSearchMenu();
     m_pendingDiscordLink.reset();
     clearChatPreload();
@@ -1411,6 +1412,16 @@ namespace app {
         channelPermissionsFor(m_dialogKind.starts_with("channel-") ? m_channelEditOriginal.id : m_channelId)
             .value_or(0);
     switch (hit.action) {
+    case Action::SlashFilter:
+      filterSlashCommands(hit.id);
+      break;
+    case Action::SlashOption:
+      selectSlashOption(std::stoul(hit.id));
+      break;
+    case Action::CancelSlashCommand:
+      if (!m_slashPending)
+        cancelSlashCommand();
+      break;
     case Action::SearchSuggestion:
       chooseSearchSuggestion(std::stoul(hit.id));
       break;
@@ -1425,6 +1436,15 @@ namespace app {
       break;
     case Action::SubmitApplicationModal:
       submitApplicationModal();
+      break;
+    case Action::SubmitSlashCommand:
+      submitSlashCommand();
+      break;
+    case Action::SlashAttachment:
+      pickSlashAttachment(std::stoul(hit.id));
+      break;
+    case Action::SlashChoice:
+      chooseSlashChoice(std::stoul(hit.id));
       break;
     case Action::ChannelEditPage:
       if (m_dialogPending)

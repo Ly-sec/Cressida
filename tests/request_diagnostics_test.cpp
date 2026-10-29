@@ -40,6 +40,13 @@ int main() {
       "Emoji names are opaque"
   );
   require(route("/users/@me/channels") == "/users/@me/channels", "Literal account endpoints stay specific");
+  require(
+      route("/channels/123/application-command-index") == "/channels/:id/application-command-index"
+          && route("/users/@me/application-command-index") == "/users/@me/application-command-index"
+          && route("/channels/123/attachments") == "/channels/:id/attachments"
+          && action("application-commands") == "application-commands",
+      "Command discovery and attachment staging retain fixed diagnostic labels without identities"
+  );
   require(route("/channels//messages") == "/unclassified", "Empty identities never masquerade as useful routes");
   for (const auto input : {"https://private.example/secret", "/private-endpoint/secret", "", "/channels/123/messages/"})
     require(route(input) == "/unclassified", "Unknown or malformed routes are entirely hidden");

@@ -59,16 +59,25 @@ def check_installation(build, source, meson, readelf):
                 assert target.is_file() and target.read_bytes() == path.read_bytes(), f"Missing/changed asset: {path}"
         headers = installed("includedir", "cressida")
         for path in (source / "src").rglob("*.h"):
-            assert (headers / path.relative_to(source / "src")).is_file(), f"Missing header: {path}"
+            relative = path.relative_to(source / "src")
+            if relative.parts[:2] == ("voice", "dave"):
+                assert not (headers / relative).exists(), "Private MLS/DAVE headers were installed"
+            else:
+                assert (headers / relative).is_file(), f"Missing header: {path}"
         assert not list(headers.rglob("*.cpp")), "Implementation sources leaked into installed headers"
         for filename in ("LICENSE", "LICENSE-APACHE", "LICENSE-MIT"):
             assert installed("datadir", "licenses", "cressida", filename).is_file(), f"Missing notice: {filename}"
+        for filename in ("LICENSE", "PROVENANCE.md", "upstream-files.json", "patched-files.json"):
+            notice = installed("datadir", "licenses", "cressida", "mlspp", filename)
+            assert notice.read_bytes() == (source / "third_party/mlspp" / filename).read_bytes(), f"Missing/changed MLS notice: {filename}"
         desktop = installed("datadir", "applications", "dev.lysec.Cressida.desktop")
         assert "Exec=cressida\n" in desktop.read_text()
         assert "Icon=dev.lysec.Cressida\n" in desktop.read_text()
         assert installed("datadir", "icons", "hicolor", "scalable", "apps", "dev.lysec.Cressida.svg").is_file()
 
         dynamic = run_checked(readelf, "-d", str(binary))
+        for dependency in ("libdave", "libmlspp", "libhpke", "libtls_syntax", "libbytes"):
+            assert dependency not in dynamic, f"Unexpected external voice dependency: {dependency}"
         assert "$ORIGIN/" in dynamic, "Installed executable has no relative renderer search path"
         assert str(build) not in dynamic, "Installed executable retains a build-tree search path"
         for library in (renderer, installed("libdir", "libcressida-log.so")):

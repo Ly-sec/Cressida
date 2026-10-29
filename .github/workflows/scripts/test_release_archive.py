@@ -33,12 +33,18 @@ class ReleaseTests(unittest.TestCase):
             (self.root / name / "private").write_text("excluded")
         (self.root / "assets").mkdir()
         (self.root / "assets/notice.txt").write_text("third-party notice")
+        bundled = self.root / "third_party/mlspp"
+        (bundled / "include").mkdir(parents=True)
+        for name in ("LICENSE", "PROVENANCE.md", "upstream-files.json", "patched-files.json", "meson.build", "include/namespace.h"):
+            (bundled / name).write_text("Synthetic bundled input")
         destination = self.root / "dist"
         path = archive_source(self.root, destination, "0.1.0")
         with tarfile.open(path) as archive:
             names = archive.getnames()
             for name in ("LICENSE", "flake.lock", "nix/package.nix", "assets/notice.txt"):
                 self.assertIn(f"cressida-0.1.0/{name}", names)
+            for item in ("LICENSE", "PROVENANCE.md", "upstream-files.json", "patched-files.json", "meson.build", "include/namespace.h"):
+                self.assertIn(f"cressida-0.1.0/third_party/mlspp/{item}", names)
             self.assertFalse(any("private" in name or "/dist" in name for name in names))
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         self.assertEqual((destination / "SHA256SUMS").read_text(), f"{digest}  {path.name}\n")

@@ -26,31 +26,54 @@ namespace {
     return payload;
   }
   struct Peer {
-    mlspp::CipherSuite suite{mlspp::CipherSuite::ID::P256_AES128GCM_SHA256_P256};
-    mlspp::SignaturePrivateKey signature = mlspp::SignaturePrivateKey::generate(suite);
-    mlspp::bytes_ns::bytes group = mlspp::bytes_ns::bytes(sizeof(room), 0);
+    cressida_mls::CipherSuite suite{cressida_mls::CipherSuite::ID::P256_AES128GCM_SHA256_P256};
+    cressida_mls::SignaturePrivateKey signature = cressida_mls::SignaturePrivateKey::generate(suite);
+    cressida_mls::bytes_ns::bytes group = cressida_mls::bytes_ns::bytes(sizeof(room), 0);
     Peer() {
       for (std::size_t index = 0; index < sizeof(room); ++index)
         group.at(index) = static_cast<std::uint8_t>(room >> ((sizeof(room) - index - 1) * 8));
     }
     Bytes sender() const {
-      mlspp::ExternalSender sender{signature.public_key, mlspp::Credential::basic({0x00, 0x01, 0x01, 0x00})};
-      return mlspp::tls::marshal(sender);
+      cressida_mls::ExternalSender sender{
+          signature.public_key, cressida_mls::Credential::basic({0x00, 0x01, 0x01, 0x00})
+      };
+      return cressida_mls::tls::marshal(sender);
     }
     Bytes add(const Bytes& keyPackage, std::uint64_t epoch) const {
-      const auto package = mlspp::tls::get<mlspp::KeyPackage>(mlspp::bytes_ns::bytes(keyPackage));
-      const auto proposal =
-          mlspp::external_proposal(suite, group, epoch, mlspp::Proposal{mlspp::Add{package}}, 0, signature);
-      mlspp::tls::ostream message;
-      message << false << std::vector<mlspp::MLSMessage>{proposal};
+      const auto package = cressida_mls::tls::get<cressida_mls::KeyPackage>(cressida_mls::bytes_ns::bytes(keyPackage));
+      const auto proposal = cressida_mls::external_proposal(
+          suite, group, epoch, cressida_mls::Proposal{cressida_mls::Add{package}}, 0, signature
+      );
+      cressida_mls::tls::ostream message;
+      message << false << std::vector<cressida_mls::MLSMessage>{proposal};
       return message.bytes();
     }
+    Bytes remove(std::uint32_t index, std::uint64_t epoch) const {
+      const auto proposal = cressida_mls::external_proposal(
+          suite, group, epoch, cressida_mls::Proposal{cressida_mls::Remove{cressida_mls::LeafIndex{index}}}, 0,
+          signature
+      );
+      cressida_mls::tls::ostream output;
+      output << false << std::vector<cressida_mls::MLSMessage>{proposal};
+      return output.bytes();
+    }
+    Bytes revoke(const Bytes& bytes) const {
+      cressida_mls::tls::istream input(bytes);
+      bool revoked = false;
+      std::vector<cressida_mls::MLSMessage> messages;
+      input >> revoked >> messages;
+      const auto& proposal = cressida_mls::tls::var::get<cressida_mls::PublicMessage>(messages.front().message);
+      const auto reference = suite.ref(proposal.authenticated_content());
+      cressida_mls::tls::ostream output;
+      output << true << std::vector<cressida_mls::bytes_ns::bytes>{reference};
+      return output.bytes();
+    }
     static std::pair<Bytes, Bytes> split(const Bytes& bytes) {
-      mlspp::tls::istream combined{mlspp::bytes_ns::bytes(bytes)};
-      mlspp::MLSMessage commit;
-      mlspp::Welcome welcome;
+      cressida_mls::tls::istream combined{cressida_mls::bytes_ns::bytes(bytes)};
+      cressida_mls::MLSMessage commit;
+      cressida_mls::Welcome welcome;
       combined >> commit >> welcome;
-      return {mlspp::tls::marshal(commit), mlspp::tls::marshal(welcome)};
+      return {cressida_mls::tls::marshal(commit), cressida_mls::tls::marshal(welcome)};
     }
   };
   void initialize(voice::Encryption& session, const Peer& peer) {
@@ -65,7 +88,7 @@ namespace {
 
 int main() {
   try {
-    require(voice::Encryption::maximumVersion() > 0, "The linked library supports encrypted voice");
+    require(voice::Encryption::maximumVersion() > 0, "The inbuilt backend supports encrypted voice");
     voice::Encryption unsupported("1001", room);
     require(!unsupported.initialize(0) && !unsupported.ready(), "Unencrypted ordinary calls fail closed");
     voice::Encryption unknown("1001", room);
@@ -115,6 +138,12 @@ int main() {
     require(second.decrypt("1001", tampered).empty(), "Modified encrypted media fails authentication");
     require(second.decrypt("9999", first.encrypt(stream, opus)).empty(), "Unknown senders cannot supply audio");
 
+    constexpr std::uint16_t oldPrepared = 4;
+    require(
+        first.handleJson(21, {{"transition_id", oldPrepared}, {"protocol_version", 1}}),
+        "The old epoch can have a pending transition"
+    );
+    (void)first.takeMessages();
     voice::Encryption third("1003", room);
     initialize(third, peer);
     third.addUser("1001");
@@ -125,6 +154,19 @@ int main() {
     require(
         first.handleBinary(27, join) && second.handleBinary(27, join),
         "Existing participants validate the new member proposal"
+    );
+    (void)binaryMessage(first, 28);
+    (void)binaryMessage(second, 28);
+    const auto revoked = peer.revoke(join);
+    require(
+        first.handleBinary(27, revoked) && second.handleBinary(27, revoked),
+        "Proposal revocation rebuilds candidate state"
+    );
+    (void)binaryMessage(first, 28);
+    (void)binaryMessage(second, 28);
+    require(
+        first.handleBinary(27, join) && second.handleBinary(27, join),
+        "A revoked invitation can be proposed again before use"
     );
     auto [nextCommit, nextWelcome] = Peer::split(binaryMessage(first, 28));
     (void)second.takeMessages();
@@ -149,10 +191,35 @@ int main() {
       );
       require(session->handleJson(22, {{"transition_id", change}}), "The server executes the acknowledged transition");
     }
+    require(first.handleJson(22, {{"transition_id", oldPrepared}}), "A delayed old transition is harmless");
     const auto nextFrame = first.encrypt(stream, opus);
     require(
         second.decrypt("1001", nextFrame) == opus && third.decrypt("1001", nextFrame) == opus,
         "New group ratchets interoperate after the transition"
+    );
+    const auto departedFrame = third.encrypt(stream + 2, opus);
+    first.removeUser("1003");
+    second.removeUser("1003");
+    require(first.decrypt("1003", departedFrame).empty(), "Departure revokes reception before the remove commit");
+    const auto removal = peer.remove(2, 2);
+    require(
+        first.handleBinary(27, removal) && second.handleBinary(27, removal),
+        "An authenticated remove proposal is accepted"
+    );
+    const auto removeCommit = binaryMessage(first, 28);
+    (void)binaryMessage(second, 28);
+    constexpr std::uint16_t removalTransition = 8;
+    for (auto* member : {&first, &second}) {
+      require(
+          member->handleBinary(29, transition(removeCommit, removalTransition))
+              && member->handleJson(22, {{"transition_id", removalTransition}}),
+          "The remaining group executes the remove epoch"
+      );
+      (void)member->takeMessages();
+    }
+    require(
+        second.decrypt("1001", first.encrypt(stream, opus)) == opus,
+        "Remaining members share the new remove-epoch secret"
     );
     second.removeUser("1001");
     require(
@@ -236,6 +303,79 @@ int main() {
     require(
         arriving.decrypt("1001", remaining.encrypt(stream, opus)) == opus,
         "The reset group derives fresh interoperable media keys"
+    );
+
+    auto welcomeValidation = [&](bool wrongGroup, bool wrongSender, bool unrecognized) {
+      Peer delivery, other;
+      voice::Encryption creator("1001", room), invitee("1002", wrongGroup ? room + 1 : room);
+      creator.addUser("1002");
+      if (!unrecognized)
+        invitee.addUser("1001");
+      initialize(creator, delivery);
+      initialize(invitee, wrongSender ? other : delivery);
+      (void)binaryMessage(creator, 26);
+      require(
+          creator.handleBinary(27, delivery.add(binaryMessage(invitee, 26), 0)),
+          "The welcome validation fixture creates a group"
+      );
+      auto [createdCommit, createdWelcome] = Peer::split(binaryMessage(creator, 28));
+      require(creator.handleBinary(29, transition(createdCommit, 0)), "The fixture creator authenticates its commit");
+      require(
+          invitee.handleBinary(30, transition(createdWelcome, 0)), "Invalid welcome state requests bounded recovery"
+      );
+      if (wrongGroup || wrongSender || unrecognized) {
+        require(
+            !invitee.ready() && invitee.error().empty(), "Wrong group, external sender or roster never activates media"
+        );
+      } else {
+        require(invitee.ready(), "A fully validated welcome activates media");
+        require(
+            invitee.handleBinary(30, transition(createdWelcome, 0)) && !invitee.ready(),
+            "A welcome cannot reuse consumed join material"
+        );
+      }
+      const auto recovery = invitee.takeMessages();
+      require(
+          recovery.size() == 2 && recovery.front().opcode == 31 && recovery.back().opcode == 26,
+          "Welcome rejection reports the transition and replaces the key package"
+      );
+    };
+    welcomeValidation(true, false, false);
+    welcomeValidation(false, true, false);
+    welcomeValidation(false, false, true);
+    welcomeValidation(false, false, false);
+
+    Peer cachePeer;
+    voice::Encryption cacheCreator("1001", room), cacheInvitee("1002", room);
+    cacheCreator.addUser("1002");
+    cacheInvitee.addUser("1001");
+    initialize(cacheCreator, cachePeer);
+    initialize(cacheInvitee, cachePeer);
+    (void)binaryMessage(cacheCreator, 26);
+    require(
+        cacheCreator.handleBinary(27, cachePeer.add(binaryMessage(cacheInvitee, 26), 0)),
+        "The cache fixture prepares a local commit"
+    );
+    auto [cachedCommit, cachedWelcome] = Peer::split(binaryMessage(cacheCreator, 28));
+    cachedCommit.back() ^= 1;
+    require(
+        cacheCreator.handleBinary(29, transition(cachedCommit, 0)) && !cacheCreator.ready(),
+        "A forged local-looking commit cannot activate the cached candidate state"
+    );
+
+    voice::Encryption recoveryLimit("1001", room);
+    initialize(recoveryLimit, cachePeer);
+    (void)recoveryLimit.takeMessages();
+    for (unsigned attempt = 0; attempt < 3; ++attempt) {
+      require(
+          recoveryLimit.handleBinary(30, transition({0xff}, 0)) && !recoveryLimit.ready(),
+          "Malformed welcomes cannot release media"
+      );
+      (void)recoveryLimit.takeMessages();
+    }
+    require(
+        !recoveryLimit.handleBinary(30, transition({0xff}, 0)) && !recoveryLimit.error().empty(),
+        "Repeated invalid updates stop after the finite recovery budget"
     );
 
     std::cout << "Encrypted voice negotiation, MLS group transitions and authenticated Opus frames passed\n";

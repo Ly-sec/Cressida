@@ -436,6 +436,7 @@ namespace voice {
         };
         while (!context.cancelled()) {
           const auto now = Clock::now();
+          encryption.tick();
           if (activity.expire(now))
             updateParticipants();
           if (heartbeat.missed(now))

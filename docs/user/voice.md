@@ -78,6 +78,10 @@ locally while it waits for group keys; it sends no audio during that wait.
 
 ## Requirements and current limits
 
+Encrypted voice support and its MLS library are included in Cressida.
+Distribution builds use system OpenSSL and libsodium; users do not need to
+install libdave separately.
+
 Voice needs a working PulseAudio service or PipeWire's PulseAudio-compatible
 service. If an audio device becomes unavailable, choose a working device and
 join again. A failed network connection also requires an explicit rejoin;

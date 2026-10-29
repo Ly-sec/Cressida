@@ -32,6 +32,7 @@ namespace voice {
     std::vector<EncryptionMessage> takeMessages();
     std::vector<std::uint8_t> encrypt(std::uint32_t ssrc, std::span<const std::uint8_t> opus);
     std::vector<std::uint8_t> decrypt(std::string_view user, std::span<const std::uint8_t> frame);
+    void tick();
     bool ready() const;
     std::string error() const;
 

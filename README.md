@@ -79,6 +79,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request guidance
 ## License
 
 [MIT](LICENSE). Bundled [Tabler icons](assets/fonts/tabler-icons-license.txt),
-[emoji alias data](assets/emoji-data-license.txt), [theme palettes](assets/themes/LICENSES.txt)
-and [Wuffs](third_party/wuffs)
+[emoji alias data](assets/emoji-data-license.txt), [theme palettes](assets/themes/LICENSES.txt),
+[Wuffs](third_party/wuffs) and [MLS++](third_party/mlspp/LICENSE)
 retain their own license notices.

@@ -1,27 +1,24 @@
 #include "voice/encryption.h"
 
+#include "voice/dave/session.h"
+
 #include <charconv>
-#include <dave/dave.h>
 #include <map>
-#include <mutex>
 #include <optional>
 #include <set>
 #include <utility>
 
 namespace voice {
   namespace {
-    constexpr std::size_t maximumParticipants = 256;
-    constexpr std::size_t maximumHandshakeBytes = 1024 * 1024;
-    constexpr std::size_t maximumMediaBytes = 4096;
-    constexpr std::size_t maximumPendingMessages = 32;
-    constexpr std::size_t maximumPendingTransitions = 8;
-    constexpr std::uint16_t initialTransition = 0;
-    constexpr std::uint64_t firstEpoch = 1;
-
+    using namespace dave;
     bool validUser(std::string_view value) {
-      std::uint64_t id = 0;
-      const auto parsed = std::from_chars(value.data(), value.data() + value.size(), id);
-      return !value.empty() && parsed.ec == std::errc{} && parsed.ptr == value.data() + value.size() && id != 0;
+      std::uint64_t number = 0;
+      const auto parsed = std::from_chars(value.data(), value.data() + value.size(), number);
+      return !value.empty()
+          && value.front() != '0'
+          && parsed.ec == std::errc{}
+      && parsed.ptr == value.data() + value.size()
+          && number;
     }
     std::optional<std::uint64_t> unsignedField(const nlohmann::json& value, const char* key) {
       const auto at = value.find(key);
@@ -29,295 +26,242 @@ namespace voice {
         return {};
       return at->get<std::uint64_t>();
     }
-    std::uint16_t transitionPrefix(std::span<const std::uint8_t> bytes) {
-      return static_cast<std::uint16_t>((static_cast<unsigned>(bytes[0]) << 8) | bytes[1]);
-    }
   } // namespace
 
   struct Encryption::Impl {
-    std::string user, failure;
-    std::uint64_t channel;
-    DAVESessionHandle session = nullptr;
-    DAVEEncryptorHandle encryptor = nullptr;
-    std::map<std::string, DAVEDecryptorHandle, std::less<>> decryptors;
+    struct Transition {
+      dave::Secret sending;
+      std::uint64_t revision = 0;
+    };
+    std::string self, failure;
+    std::unique_ptr<dave::Session> session;
+    dave::Sender sender;
+    std::map<std::string, dave::Receiver, std::less<>> receivers;
     std::set<std::string, std::less<>> users;
-    std::map<std::uint16_t, std::uint16_t> transitions;
+    std::map<std::uint16_t, Transition> transitions;
     std::vector<EncryptionMessage> outgoing;
-    std::uint16_t preparedVersion = 0;
-    bool active = false, mlsFailure = false;
+    std::uint64_t activatedRevision = 0;
+    std::size_t outgoingBytes = 0;
+    unsigned recoveryAttempts = 0;
+    bool initialized = false;
 
-    Impl(std::string self, std::uint64_t group) : user(std::move(self)), channel(group) {
-      // Upstream diagnostics may contain protocol records. Surface fixed errors instead.
-      static std::once_flag logger;
-      std::call_once(logger, [] { daveSetLogSinkCallback([](DAVELoggingSeverity, const char*, int, const char*) {}); });
-      session = daveSessionCreate(
-          nullptr, nullptr,
-          [](const char*, const char*, void* context) { static_cast<Impl*>(context)->mlsFailure = true; }, this
-      );
-      encryptor = daveEncryptorCreate();
-      if (encryptor)
-        daveEncryptorSetPassthroughMode(encryptor, false);
-      if (!session || !encryptor || !validUser(user) || !channel)
+    Impl(std::string user, std::uint64_t channel) : self(std::move(user)) {
+      try {
+        if (!validUser(self) || !channel) {
+          fail("Voice encryption could not be initialized.");
+          return;
+        }
+        session = std::make_unique<dave::Session>(self, channel);
+        users.insert(self);
+      } catch (const std::exception&) {
         fail("Voice encryption could not be initialized.");
-      users.insert(user);
-    }
-    ~Impl() {
-      for (const auto& [id, decryptor] : decryptors)
-        daveDecryptorDestroy(decryptor);
-      daveEncryptorDestroy(encryptor);
-      daveSessionDestroy(session);
+      }
     }
     bool fail(const char* message) {
       failure = message;
-      active = false;
+      sender.clear();
+      transitions.clear();
       return false;
     }
     bool queue(EncryptionMessage message) {
-      if (outgoing.size() >= maximumPendingMessages || message.bytes.size() > maximumHandshakeBytes)
+      const auto size = message.binary ? message.bytes.size() : message.data.dump().size();
+      if (outgoing.size() >= maximumPendingMessages || size > maximumHandshakeBytes - outgoingBytes)
         return fail("Voice encryption negotiation exceeded its limits.");
+      outgoingBytes += size;
       outgoing.push_back(std::move(message));
       return true;
     }
-    bool supported(std::uint16_t version) {
-      if (!version || version > daveMaxSupportedProtocolVersion())
-        return fail("The voice server selected an unsupported encryption version.");
-      return true;
-    }
-    std::vector<const char*> recognized() const {
-      std::vector<const char*> result;
-      result.reserve(users.size());
-      for (const auto& id : users)
-        result.push_back(id.c_str());
-      return result;
-    }
-    bool keyPackage() {
-      std::uint8_t* bytes = nullptr;
-      std::size_t count = 0;
-      daveSessionGetMarshalledKeyPackage(session, &bytes, &count);
-      std::vector<std::uint8_t> result;
-      if (bytes && count <= maximumHandshakeBytes)
-        result.assign(bytes, bytes + count);
-      daveFree(bytes);
-      if (result.empty() || mlsFailure)
-        return fail("Voice encryption could not create its session keys.");
-      return queue({.opcode = 26, .binary = true, .bytes = std::move(result), .data = {}});
+    bool supported(std::uint64_t version) {
+      return version == protocolVersion || fail("The voice server selected an unsupported encryption version.");
     }
     bool initialize(std::uint16_t version) {
-      if (!session || !encryptor || !failure.empty() || !supported(version))
+      if (!failure.empty() || !session || !supported(version))
         return false;
-      mlsFailure = false;
+      sender.clear();
+      receivers.clear();
       transitions.clear();
-      daveSessionInit(session, version, channel, user.c_str());
-      preparedVersion = version;
-      return keyPackage();
+      activatedRevision = 0;
+      initialized = false;
+      auto package = session->initialize();
+      initialized = true;
+      return queue({.opcode = KeyPackage, .binary = true, .bytes = std::move(package), .data = {}});
     }
-    void receiver(const std::string& id) {
-      if (id == user || !preparedVersion)
-        return;
-      const auto ratchet = daveSessionGetKeyRatchet(session, id.c_str());
-      if (!ratchet)
-        return;
-      auto& decryptor = decryptors[id];
-      if (!decryptor)
-        decryptor = daveDecryptorCreate();
-      if (decryptor) {
-        daveDecryptorTransitionToPassthroughMode(decryptor, false);
-        daveDecryptorTransitionToKeyRatchet(decryptor, ratchet);
-      }
-      daveKeyRatchetDestroy(ratchet);
+    bool receiver(const std::string& user) {
+      if (user == self || !initialized)
+        return true;
+      const auto secret = session->secret(user);
+      return secret.empty() || receivers.try_emplace(user).first->second.install(secret);
     }
-    bool execute(std::uint16_t transition) {
-      const auto at = transitions.find(transition);
+    bool execute(std::uint16_t id) {
+      const auto at = transitions.find(id);
       if (at == transitions.end())
         return true;
-      const auto ratchet = daveSessionGetKeyRatchet(session, user.c_str());
-      if (!ratchet && transition == initialTransition) {
-        // A sole-member reset settles into a pending group without media keys.
-        // Sending resumes only after an authenticated commit or welcome.
-        daveEncryptorSetKeyRatchet(encryptor, nullptr);
-        active = false;
-        transitions.erase(at);
+      auto transition = std::move(at->second);
+      transitions.erase(at);
+      if (transition.revision < activatedRevision)
+        return true;
+      if (transition.sending.empty()) {
+        if (id != initialTransition)
+          return fail("Voice encryption has no active sending key.");
+        sender.clear();
         return true;
       }
-      if (!ratchet)
-        return fail("Voice encryption has no active sending key.");
-      daveEncryptorSetKeyRatchet(encryptor, ratchet);
-      daveKeyRatchetDestroy(ratchet);
-      daveEncryptorSetPassthroughMode(encryptor, false);
-      active = daveEncryptorHasKeyRatchet(encryptor);
-      transitions.erase(at);
-      return active || fail("Voice encryption could not activate its sending key.");
+      if (!sender.install(transition.sending))
+        return fail("Voice encryption could not activate its sending key.");
+      activatedRevision = transition.revision;
+      return true;
     }
-    bool prepare(std::uint16_t transition, std::uint16_t version) {
+    bool prepare(std::uint16_t id, std::uint64_t version) {
       if (!supported(version))
         return false;
-      if (!transitions.contains(transition) && transitions.size() >= maximumPendingTransitions)
+      if (!initialized || (!transitions.contains(id) && transitions.size() >= maximumPendingTransitions))
         return fail("Voice encryption has too many pending key changes.");
-      preparedVersion = version;
-      for (const auto& id : users)
-        receiver(id);
-      transitions[transition] = version;
-      if (transition == initialTransition)
-        return execute(transition);
-      return queue({.opcode = 23, .bytes = {}, .data = {{"transition_id", transition}}});
+      for (const auto& user : users)
+        if (!receiver(user))
+          return fail("Voice encryption has too many pending receiving keys.");
+      transitions[id] = {session->secret(self), session->revision()};
+      if (id == initialTransition)
+        return execute(id);
+      return queue({.opcode = Ready, .bytes = {}, .data = {{"transition_id", id}}});
     }
-    bool invalidTransition(std::uint16_t transition) {
-      const auto version = daveSessionGetProtocolVersion(session);
-      active = false;
-      transitions.clear();
-      mlsFailure = false;
-      if (!queue({.opcode = 31, .bytes = {}, .data = {{"transition_id", transition}}}))
-        return false;
-      return initialize(version);
+    bool recover(std::uint16_t id) {
+      sender.clear();
+      if (++recoveryAttempts > maximumRecoveryAttempts)
+        return fail("Voice encryption could not recover its group keys.");
+      return queue({.opcode = InvalidUpdate, .bytes = {}, .data = {{"transition_id", id}}})
+          && initialize(protocolVersion);
     }
   };
 
-  std::uint16_t Encryption::maximumVersion() { return daveMaxSupportedProtocolVersion(); }
+  std::uint16_t Encryption::maximumVersion() { return protocolVersion; }
   Encryption::Encryption(std::string user, std::uint64_t channel)
       : m_impl(std::make_unique<Impl>(std::move(user), channel)) {}
   Encryption::~Encryption() = default;
-  bool Encryption::initialize(std::uint16_t version) { return m_impl->initialize(version); }
+  bool Encryption::initialize(std::uint16_t version) {
+    try {
+      return m_impl->initialize(version);
+    } catch (const std::exception&) {
+      return m_impl->fail("Voice encryption could not create its session keys.");
+    }
+  }
   bool Encryption::handleJson(int opcode, const nlohmann::json& data) {
     auto& state = *m_impl;
     if (!state.failure.empty() || !data.is_object())
       return state.fail("Voice encryption received an invalid control message.");
-    if (opcode == 21) {
-      const auto transition = unsignedField(data, "transition_id"), version = unsignedField(data, "protocol_version");
-      if (!transition || *transition > UINT16_MAX || !version || *version > UINT16_MAX)
-        return state.fail("Voice encryption received an invalid key transition.");
-      return state.prepare(static_cast<std::uint16_t>(*transition), static_cast<std::uint16_t>(*version));
-    }
-    if (opcode == 22) {
-      const auto transition = unsignedField(data, "transition_id");
-      if (!transition || *transition > UINT16_MAX)
-        return state.fail("Voice encryption received an invalid transition acknowledgement.");
-      return state.execute(static_cast<std::uint16_t>(*transition));
-    }
-    if (opcode == 24) {
-      const auto version = unsignedField(data, "protocol_version");
-      const auto epoch = data.find("epoch");
-      if (!version || *version > UINT16_MAX || epoch == data.end())
-        return state.fail("Voice encryption received an invalid epoch.");
-      auto epochNumber = unsignedField(data, "epoch");
-      if (epoch->is_string()) {
-        const auto& text = epoch->get_ref<const std::string&>();
-        std::uint64_t number = 0;
-        const auto parsed = std::from_chars(text.data(), text.data() + text.size(), number);
-        if (!text.empty() && parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size())
-          epochNumber = number;
+    try {
+      if (opcode == Prepare || opcode == Execute) {
+        const auto transition = unsignedField(data, "transition_id");
+        if (!transition || *transition > UINT16_MAX)
+          return state.fail("Voice encryption received an invalid key transition.");
+        if (opcode == Execute)
+          return state.execute(static_cast<std::uint16_t>(*transition));
+        const auto version = unsignedField(data, "protocol_version");
+        return version ? state.prepare(static_cast<std::uint16_t>(*transition), *version)
+                       : state.fail("Voice encryption received an invalid key transition.");
       }
-      if (!epochNumber || !*epochNumber)
-        return state.fail("Voice encryption received an invalid epoch.");
-      if (!state.supported(static_cast<std::uint16_t>(*version)))
-        return false;
-      return *epochNumber != firstEpoch || state.initialize(static_cast<std::uint16_t>(*version));
+      if (opcode == Epoch) {
+        const auto version = unsignedField(data, "protocol_version");
+        auto epoch = unsignedField(data, "epoch");
+        const auto at = data.find("epoch");
+        if (at != data.end() && at->is_string()) {
+          const auto& text = at->get_ref<const std::string&>();
+          std::uint64_t value = 0;
+          const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+          if (!text.empty() && parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size())
+            epoch = value;
+        }
+        if (!version || !epoch || !*epoch)
+          return state.fail("Voice encryption received an invalid epoch.");
+        return state.supported(*version) && (*epoch != firstEpoch || state.initialize(protocolVersion));
+      }
+      return state.fail("Voice encryption received an unknown control message.");
+    } catch (const std::exception&) {
+      return state.fail("Voice encryption could not prepare its group keys.");
     }
-    return state.fail("Voice encryption received an unknown control message.");
   }
   bool Encryption::handleBinary(int opcode, std::span<const std::uint8_t> payload) {
     auto& state = *m_impl;
-    if (!state.failure.empty() || !state.preparedVersion || payload.empty() || payload.size() > maximumHandshakeBytes)
+    if (!state.failure.empty() || !state.initialized || payload.empty() || payload.size() > maximumHandshakeBytes)
       return state.fail("Voice encryption received an invalid handshake message.");
-    state.mlsFailure = false;
-    if (opcode == 25) {
-      daveSessionSetExternalSender(state.session, payload.data(), payload.size());
-      return !state.mlsFailure || state.fail("Voice encryption could not validate the external sender.");
-    }
-    if (opcode == 27) {
-      auto users = state.recognized();
-      std::uint8_t* bytes = nullptr;
-      std::size_t count = 0;
-      daveSessionProcessProposals(
-          state.session, payload.data(), payload.size(), users.data(), users.size(), &bytes, &count
-      );
-      std::vector<std::uint8_t> result;
-      if (bytes && count <= maximumHandshakeBytes)
-        result.assign(bytes, bytes + count);
-      daveFree(bytes);
-      if (state.mlsFailure || count > maximumHandshakeBytes)
-        return state.fail("Voice encryption could not validate the proposed keys.");
-      return result.empty() || state.queue({.opcode = 28, .binary = true, .bytes = std::move(result), .data = {}});
-    }
-    if ((opcode != 29 && opcode != 30) || payload.size() <= sizeof(std::uint16_t))
-      return state.fail("Voice encryption received an invalid group update.");
-    const auto transition = transitionPrefix(payload);
-    payload = payload.subspan(sizeof(std::uint16_t));
-    if (opcode == 29) {
-      const auto result = daveSessionProcessCommit(state.session, payload.data(), payload.size());
-      const bool ignored = result && daveCommitResultIsIgnored(result);
-      const bool valid = result && !daveCommitResultIsFailed(result) && !state.mlsFailure;
-      daveCommitResultDestroy(result);
-      if (ignored)
+    std::optional<std::uint16_t> transition;
+    try {
+      if (opcode == ExternalSender) {
+        state.session->externalSender(payload);
         return true;
-      if (!valid)
-        return state.invalidTransition(transition);
-    } else {
-      auto users = state.recognized();
-      const auto result =
-          daveSessionProcessWelcome(state.session, payload.data(), payload.size(), users.data(), users.size());
-      const bool valid = result && !state.mlsFailure;
-      daveWelcomeResultDestroy(result);
-      if (!valid)
-        return state.invalidTransition(transition);
+      }
+      if (opcode == Proposals) {
+        auto result = state.session->proposals(payload, state.users);
+        return state.queue({.opcode = CommitWelcome, .binary = true, .bytes = std::move(result), .data = {}});
+      }
+      if ((opcode != Commit && opcode != Welcome) || payload.size() <= sizeof(std::uint16_t))
+        return state.fail("Voice encryption received an invalid group update.");
+      transition = static_cast<std::uint16_t>((static_cast<unsigned>(payload[0]) << byteBits) | payload[1]);
+      payload = payload.subspan(sizeof(std::uint16_t));
+      if (opcode == Commit) {
+        if (state.session->commit(payload, state.users) == dave::Update::Ignored)
+          return true;
+      } else
+        state.session->welcome(payload, state.users);
+      state.recoveryAttempts = 0;
+      return state.prepare(*transition, protocolVersion);
+    } catch (const std::exception&) {
+      if (transition) {
+        try {
+          return state.recover(*transition);
+        } catch (const std::exception&) {
+          return state.fail("Voice encryption could not recover its group keys.");
+        }
+      }
+      return state.fail("Voice encryption could not validate the proposed keys.");
     }
-    return state.prepare(transition, daveSessionGetProtocolVersion(state.session));
   }
   void Encryption::addUser(std::string user) {
     auto& state = *m_impl;
-    if (!validUser(user) || state.users.size() >= maximumParticipants)
+    if (!state.failure.empty()
+        || !validUser(user)
+        || (state.users.size() >= maximumParticipants && !state.users.contains(user)))
       return;
-    const auto [at, inserted] = state.users.insert(std::move(user));
-    if (inserted && state.preparedVersion)
-      state.receiver(*at);
+    try {
+      const auto [at, inserted] = state.users.insert(std::move(user));
+      if (inserted && !state.receiver(*at))
+        state.fail("Voice encryption has too many pending receiving keys.");
+    } catch (const std::exception&) {
+      state.fail("Voice encryption could not prepare its receiving keys.");
+    }
   }
   void Encryption::removeUser(std::string_view user) {
     auto& state = *m_impl;
-    if (user == state.user)
+    if (user == state.self)
       return;
-    if (const auto at = state.decryptors.find(user); at != state.decryptors.end()) {
-      daveDecryptorDestroy(at->second);
-      state.decryptors.erase(at);
-    }
+    if (const auto at = state.receivers.find(user); at != state.receivers.end())
+      state.receivers.erase(at);
     if (const auto at = state.users.find(user); at != state.users.end())
       state.users.erase(at);
   }
-  std::vector<EncryptionMessage> Encryption::takeMessages() { return std::exchange(m_impl->outgoing, {}); }
+  std::vector<EncryptionMessage> Encryption::takeMessages() {
+    m_impl->outgoingBytes = 0;
+    return std::exchange(m_impl->outgoing, {});
+  }
   std::vector<std::uint8_t> Encryption::encrypt(std::uint32_t ssrc, std::span<const std::uint8_t> opus) {
-    auto& state = *m_impl;
-    if (!ready() || opus.empty() || opus.size() > maximumMediaBytes)
+    if (!ssrc || !ready())
       return {};
-    daveEncryptorAssignSsrcToCodec(state.encryptor, ssrc, DAVE_CODEC_OPUS);
-    const auto capacity = daveEncryptorGetMaxCiphertextByteSize(state.encryptor, DAVE_MEDIA_TYPE_AUDIO, opus.size());
-    if (capacity > maximumMediaBytes)
+    try {
+      return m_impl->sender.encrypt(opus);
+    } catch (const std::exception&) {
+      m_impl->fail("Voice audio encryption failed.");
       return {};
-    std::vector<std::uint8_t> result(capacity);
-    std::size_t count = 0;
-    if (daveEncryptorEncrypt(
-            state.encryptor, DAVE_MEDIA_TYPE_AUDIO, ssrc, opus.data(), opus.size(), result.data(), result.size(), &count
-        ) != DAVE_ENCRYPTOR_RESULT_CODE_SUCCESS
-        || count > result.size())
-      return {};
-    result.resize(count);
-    return result;
+    }
   }
   std::vector<std::uint8_t> Encryption::decrypt(std::string_view user, std::span<const std::uint8_t> frame) {
-    auto& state = *m_impl;
-    const auto at = state.decryptors.find(user);
-    if (!ready() || at == state.decryptors.end() || frame.empty() || frame.size() > maximumMediaBytes)
+    const auto at = m_impl->receivers.find(user);
+    if (!ready() || at == m_impl->receivers.end())
       return {};
-    const auto capacity = daveDecryptorGetMaxPlaintextByteSize(at->second, DAVE_MEDIA_TYPE_AUDIO, frame.size());
-    if (capacity > maximumMediaBytes)
-      return {};
-    std::vector<std::uint8_t> result(capacity);
-    std::size_t count = 0;
-    if (daveDecryptorDecrypt(
-            at->second, DAVE_MEDIA_TYPE_AUDIO, frame.data(), frame.size(), result.data(), result.size(), &count
-        ) != DAVE_DECRYPTOR_RESULT_CODE_SUCCESS
-        || count > result.size())
-      return {};
-    result.resize(count);
-    return result;
+    return at->second.decrypt(frame);
   }
-  bool Encryption::ready() const { return m_impl->active && m_impl->failure.empty(); }
+  void Encryption::tick() {
+    for (auto& [user, receiver] : m_impl->receivers)
+      receiver.expire();
+  }
+  bool Encryption::ready() const { return m_impl->sender.ready() && m_impl->failure.empty(); }
   std::string Encryption::error() const { return m_impl->failure; }
 } // namespace voice

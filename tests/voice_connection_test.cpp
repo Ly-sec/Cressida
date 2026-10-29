@@ -106,31 +106,34 @@ namespace {
   }
   struct Server {
     static constexpr std::uint64_t room = 3;
-    mlspp::CipherSuite suite{mlspp::CipherSuite::ID::P256_AES128GCM_SHA256_P256};
-    mlspp::SignaturePrivateKey signature = mlspp::SignaturePrivateKey::generate(suite);
-    mlspp::bytes_ns::bytes group = mlspp::bytes_ns::bytes(sizeof(room), 0);
+    cressida_mls::CipherSuite suite{cressida_mls::CipherSuite::ID::P256_AES128GCM_SHA256_P256};
+    cressida_mls::SignaturePrivateKey signature = cressida_mls::SignaturePrivateKey::generate(suite);
+    cressida_mls::bytes_ns::bytes group = cressida_mls::bytes_ns::bytes(sizeof(room), 0);
     Server() {
       for (std::size_t i = 0; i < sizeof(room); ++i)
         group.at(i) = static_cast<std::uint8_t>(room >> ((sizeof(room) - i - 1) * 8));
     }
     Bytes sender() const {
-      const mlspp::ExternalSender sender{signature.public_key, mlspp::Credential::basic({0x00, 0x01, 0x01, 0x00})};
-      return mlspp::tls::marshal(sender);
+      const cressida_mls::ExternalSender sender{
+          signature.public_key, cressida_mls::Credential::basic({0x00, 0x01, 0x01, 0x00})
+      };
+      return cressida_mls::tls::marshal(sender);
     }
     Bytes propose(const Bytes& keyPackage) const {
-      const auto package = mlspp::tls::get<mlspp::KeyPackage>(mlspp::bytes_ns::bytes(keyPackage));
-      const auto proposal =
-          mlspp::external_proposal(suite, group, 0, mlspp::Proposal{mlspp::Add{package}}, 0, signature);
-      mlspp::tls::ostream messages;
-      messages << false << std::vector<mlspp::MLSMessage>{proposal};
+      const auto package = cressida_mls::tls::get<cressida_mls::KeyPackage>(cressida_mls::bytes_ns::bytes(keyPackage));
+      const auto proposal = cressida_mls::external_proposal(
+          suite, group, 0, cressida_mls::Proposal{cressida_mls::Add{package}}, 0, signature
+      );
+      cressida_mls::tls::ostream messages;
+      messages << false << std::vector<cressida_mls::MLSMessage>{proposal};
       return messages.bytes();
     }
     static std::pair<Bytes, Bytes> split(const Bytes& payload) {
-      mlspp::tls::istream stream{mlspp::bytes_ns::bytes(payload)};
-      mlspp::MLSMessage commit;
-      mlspp::Welcome welcome;
+      cressida_mls::tls::istream stream{cressida_mls::bytes_ns::bytes(payload)};
+      cressida_mls::MLSMessage commit;
+      cressida_mls::Welcome welcome;
       stream >> commit >> welcome;
-      return {mlspp::tls::marshal(commit), mlspp::tls::marshal(welcome)};
+      return {cressida_mls::tls::marshal(commit), cressida_mls::tls::marshal(welcome)};
     }
   };
   Json command() {

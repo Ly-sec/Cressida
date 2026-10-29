@@ -1,1 +1,3 @@
 option('emoji_font', type: 'string', value: '', description: 'Path to the application color emoji fallback font')
+option('voice_crypto_only', type: 'boolean', value: false, description: 'Build only offline DAVE and bundled MLS tests with system crypto and JSON')
+option('dave_reference', type: 'feature', value: 'disabled', description: 'Compare DAVE against an explicitly installed test-only reference library')

@@ -40,7 +40,7 @@ libraries.
 | Video             | `libavformat`, `libavcodec`, `libavutil`, `libswscale` |
 | Native playback   | `mpv >= 2.3` pkg-config API version                    |
 | Voice audio       | `libpulse`, `opus`                                     |
-| Voice encryption  | `libsodium`, `libdave`                                 |
+| Voice encryption  | `libsodium`, `libcrypto >= 3.0`                        |
 | Animated stickers | `rlottie`                                              |
 | Image headers     | `stb_image_resize2.h`, `stb_image_write.h`             |
 
@@ -57,15 +57,28 @@ executable with different features does not fix the library. Native Meson
 configuration checks the linked library; cross-build packagers must verify their
 target library.
 
-Voice builds require the libdave C API, including `dave/dave.h`, and compatible
-MLS libraries. The supplied Nix build pins and builds these dependencies with
-C++23. Outside Nix, packagers must provide compatible C++23 libdave and MLS
-builds, along with pkg-config metadata for `libdave`. The encryption regression
-fixture also needs the MLS C++ headers and `mlspp` metadata. See
-[Packaging](packaging.md#voice-dependencies) for the source references.
+Cressida builds its DAVE voice encryption code and a pinned MLS++ source
+snapshot with C++23. Install system OpenSSL development files, libsodium, Opus,
+the Pulse client library and JSON headers. Separate libdave or MLS++ packages
+and custom voice dependency prefixes are no longer needed. Meson uses the
+bundled source without downloading dependencies. Wuffs is also bundled.
 
-Wuffs is bundled in the source tree. The project does not download missing
-dependencies during Meson configuration.
+### Voice development packages
+
+These packages cover voice audio, encryption and the bundled MLS library's
+prerequisites. Install the other libraries listed above for a full client build.
+
+| Distribution      | Development packages                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------- |
+| Arch              | `openssl libsodium opus libpulse nlohmann-json`                                       |
+| Fedora            | `openssl-devel libsodium-devel opus-devel pulseaudio-libs-devel json-devel`           |
+| Debian and Ubuntu | `libssl-dev libsodium-dev libopus-dev libpulse-dev nlohmann-json3-dev`                |
+| Alpine            | `openssl-dev libsodium-dev opus-dev pulseaudio-dev nlohmann-json`                     |
+| openSUSE          | `libopenssl-3-devel libsodium-devel libopus-devel libpulse-devel nlohmann_json-devel` |
+
+Arch includes development files in its regular packages. Package availability
+alone does not establish that an older release meets the full client's compiler,
+secure WebSocket, media and image-header requirements.
 
 ## Compile and run
 
@@ -96,3 +109,23 @@ network peers. They do not need account credentials or access to a live account.
 
 See [Contributing](contributing.md) for formatting, lint and headless UI checks,
 or [Packaging](packaging.md) for installed runtime requirements.
+
+## Check encryption without desktop dependencies
+
+The offline encryption fixture needs only a C++23 compiler, Meson, Ninja,
+pkg-config, system OpenSSL 3.0 development files and JSON headers:
+
+```sh
+meson setup build-voice-crypto -Dvoice_crypto_only=true -Dcpp_std=c++23
+meson compile -C build-voice-crypto -j 4
+meson test -C build-voice-crypto --print-errorlogs
+```
+
+This builds frame, parser and encrypted-group tests without graphics, desktop
+audio or network access. It does not build the desktop application.
+
+Developers can separately enable `-Ddave_reference=enabled` when an explicit
+libdave test installation is available. That adds mixed-implementation creator,
+joiner, media and group-transition tests. It is disabled by default and is not
+an application or ordinary-test dependency. Offline results do not establish
+live call interoperability.

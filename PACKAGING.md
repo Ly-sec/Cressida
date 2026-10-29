@@ -53,19 +53,23 @@ them to the installed client's runtime dependencies.
 
 ### Libraries and headers
 
-Voice requires C++23-compatible libdave and MLS builds, libsodium, Opus and
-libpulse. The supplied Nix recipe in [nix/libdave.nix](nix/libdave.nix) pins the
-encryption dependencies. Other packagers must supply the libdave C API
-(`dave/dave.h`) and `libdave` pkg-config metadata. The encryption regression
-test also needs MLS C++ headers and `mlspp` metadata. Meson never downloads
-these dependencies during configuration.
+Voice uses Cressida's inbuilt DAVE layer, a private bundled MLS++ snapshot,
+system OpenSSL 3.0 or newer, libsodium, Opus and libpulse. The bundled dependency
+is compiled with C++23 and does not require system libdave or MLS++ packages,
+custom prefixes, CMake or a separate dependency-install script. Meson downloads
+no sources. See [voice development packages](docs/user/building.md#voice-development-packages)
+for distribution package names and [the bundled provenance](third_party/mlspp/PROVENANCE.md)
+for the source pin, checksums and local patches.
 
-For builds outside Nix, `sh scripts/build-voice-dependencies.sh /usr/local`
-builds the same immutable, checksum-verified encryption sources with C++23.
-It requires CMake, Ninja, Python 3, curl, OpenSSL development files and the
-JSON headers. An optional absolute prefix selects the installation directory;
-add its `lib/pkgconfig` directory to `PKG_CONFIG_PATH` for a custom prefix.
-`CRESSIDA_VOICE_BUILD_JOBS` sets parallel compilation and defaults to four.
+Install all notices under `share/licenses/cressida/mlspp/`, including the
+BSD-2-Clause license, provenance and source manifests. Include the complete
+bundled source closure in source releases. Private MLS/DAVE headers and archives
+are excluded from the public installation.
+
+`-Dvoice_crypto_only=true` builds the offline encryption fixture with only
+system crypto and JSON prerequisites. `-Ddave_reference=enabled` adds a
+separately installed libdave oracle for optional comparison tests; normal builds
+leave it disabled. These options do not change ordinary voice behavior.
 
 | Dependency | pkg-config module / requirement | Purpose |
 |---|---|---|

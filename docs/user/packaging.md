@@ -40,35 +40,33 @@ relative runpath for its renderer, so it does not need `LD_LIBRARY_PATH`.
 
 Keep the complete assets tree, including fonts, icon metadata, emoji data,
 themes and demo media. Preserve the MIT license and bundled notices for Tabler
-icons, emoji aliases, theme palettes and Wuffs. Development headers can be split
-into a development package.
+icons, emoji aliases, theme palettes, Wuffs and MLS++. Development headers can
+be split into a development package.
 
 ## Voice dependencies
 
-Ship the runtime libraries for `libpulse`, Opus, libsodium, libdave and its MLS
-dependencies. Development packages must also expose their headers and pkg-config
-metadata. The client requires the libdave C API in `dave/dave.h`; the encryption
-tests additionally use the MLS C++ API through `mlspp`.
+Ship the runtime libraries for `libpulse`, Opus, libsodium and OpenSSL 3.0 or
+newer. Development packages expose `libpulse`, `opus`, `libsodium`, `libcrypto`
+and `nlohmann_json` to pkg-config. See the distribution package names in
+[Building](building.md#voice-development-packages).
 
-The pinned C++23 build recipes for libdave and MLS are in
-[`nix/libdave.nix`](https://github.com/Ly-sec/Cressida/blob/main/nix/libdave.nix).
-Outside Nix, provide compatible C++23 builds and equivalent `libdave` and
-`mlspp` pkg-config modules. Meson does not download or build these dependencies
-itself.
+The DAVE layer is part of Cressida. The pinned MLS++ snapshot is built privately
+from bundled sources with C++23 and system OpenSSL; no separate libdave, MLS++,
+HPKE support library or custom source-install step is required. Meson performs
+no dependency downloads. Private MLS/DAVE headers and archives are not installed
+as a public library.
 
-For a source build outside Nix, install CMake, Ninja, Python 3, curl, OpenSSL
-development files and the other libraries in [Building](building.md). From the
-client source directory, run:
+Preserve `share/licenses/cressida/mlspp/`, including the BSD-2-Clause LICENSE,
+PROVENANCE.md and both source manifests. Keep the bundled source and these
+notices in source releases as well. The application and other bundled assets
+retain their existing licenses. Static inclusion of MLS++ does not remove its
+notice requirements.
 
-```sh
-sh scripts/build-voice-dependencies.sh /usr/local
-```
-
-This downloads pinned archives, verifies their checksums and builds the native
-encryption libraries. Choose a prefix you can write to. For a custom prefix,
-include its `lib/pkgconfig` directory in `PKG_CONFIG_PATH` before configuring
-Cressida. `CRESSIDA_VOICE_BUILD_JOBS` controls parallel compilation and defaults
-to four jobs.
+The optional `dave_reference` build option adds an external library solely for
+comparison tests; leave it disabled for ordinary packages. The
+`voice_crypto_only` option builds just the offline encryption fixture, not the
+application. See
+[Building](building.md#check-encryption-without-desktop-dependencies).
 
 Voice requires a running PulseAudio service or PipeWire with its
 PulseAudio-compatible service. The client does not start or install an audio

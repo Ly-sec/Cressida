@@ -10,6 +10,8 @@ import sys
 import threading
 import time
 
+MAXIMUM_CONTROL_MESSAGES = 12
+
 
 def exact(connection, size):
     data = b""
@@ -110,13 +112,24 @@ def upgrade(listener, path="/?v=9&encoding=json"):
 
 
 def wait_for(connection, wanted):
-    for _ in range(12):
+    for _ in range(MAXIMUM_CONTROL_MESSAGES):
         value = receive(connection)
         if value["op"] == 1:
             packet(connection, 11, None)
         if value["op"] == wanted:
             return value
     raise AssertionError("expected Gateway opcode was not received")
+
+
+def wait_for_sequence(connection, expected):
+    # An earlier heartbeat may already be in flight when the final dispatches
+    # are sent. Acknowledge it and wait for proof that those dispatches drained.
+    for _ in range(MAXIMUM_CONTROL_MESSAGES):
+        sequence = wait_for(connection, 1)["d"]
+        if sequence == expected:
+            return
+        assert sequence is None or sequence < expected, "heartbeat acknowledged an unsent sequence"
+    raise AssertionError("heartbeat did not acknowledge the final dispatch sequence")
 
 
 def presence_restore(listener, phase):
@@ -237,7 +250,7 @@ def serve(listener, errors):
             packet(connection, 0, {}, "MESSAGE_DELETE", 12)
             # Keep the peer open until the client has drained the final data;
             # closing during a subscription/heartbeat write can reset TCP first.
-            assert wait_for(connection, 1)["d"] == 12
+            wait_for_sequence(connection, 12)
             frame(connection, struct.pack("!H", 4002) + b"synthetic-private-close-reason", opcode=8)
         listener.settimeout(3)
         with upgrade(listener, "/resume?v=9&encoding=json") as connection:
@@ -246,7 +259,7 @@ def serve(listener, errors):
             wait_for(connection, 3)
             wait_for(connection, 37)
             wait_for(connection, 37)
-            assert wait_for(connection, 1)["d"] == 13
+            wait_for_sequence(connection, 13)
             frame(connection, struct.pack("!H", 4004), opcode=8)
     except Exception as error:
         errors.append(error)

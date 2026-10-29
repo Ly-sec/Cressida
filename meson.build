@@ -4,6 +4,17 @@ project('cressida', ['c', 'cpp'],
   default_options: ['cpp_std=c++23', 'cpp_extensions=false', 'warning_level=1'],
 )
 
+# This portable fixture needs only system crypto and JSON, without desktop dependencies.
+if get_option('voice_crypto_only')
+  subdir('third_party/mlspp')
+  dave_library = static_library('cressida-dave',
+    'src/voice/encryption.cpp', 'src/voice/dave/frame.cpp', 'src/voice/dave/session.cpp',
+    include_directories: include_directories('src'), dependencies: mls_dep)
+  dave_dep = declare_dependency(link_with: dave_library, include_directories: include_directories('src'), dependencies: mls_dep)
+  subdir('tests/voice_dave')
+  subdir_done()
+endif
+
 # Rendering and Discord networking remain separate libraries.
 render_deps = []
 foreach name : [
@@ -105,13 +116,15 @@ media_dep = declare_dependency(link_with: media_library, include_directories: in
 video_library = static_library('cressida-video', 'src/media/video_player.cpp',
   include_directories: include_directories('src'), dependencies: [dependency('mpv', version: '>=2.3'), dependency('threads'), log_dep])
 video_dep = declare_dependency(link_with: video_library, include_directories: include_directories('src'), dependencies: [dependency('threads'), log_dep])
+subdir('third_party/mlspp')
 voice_deps = [dependency('libcurl', version: '>=8.16'), dependency('nlohmann_json'), dependency('threads'),
-  dependency('libsodium'), dependency('libdave'), dependency('libpulse'), dependency('opus'), log_dep]
+  dependency('libsodium'), mls_crypto, dependency('libpulse'), dependency('opus'), log_dep]
 voice_library = static_library('cressida-voice',
   'src/voice/audio.cpp', 'src/voice/audio_dsp.cpp', 'src/voice/encryption.cpp',
-  'src/voice/connection.cpp', 'src/voice/protocol.cpp',
-  include_directories: include_directories('src'), dependencies: voice_deps)
-voice_dep = declare_dependency(link_with: voice_library, include_directories: include_directories('src'), dependencies: voice_deps)
+  'src/voice/connection.cpp', 'src/voice/protocol.cpp', 'src/voice/dave/frame.cpp', 'src/voice/dave/session.cpp',
+  include_directories: include_directories('src'), dependencies: voice_deps + [mls_dep])
+voice_link = declare_dependency(link_with: mls_library, dependencies: mls_crypto)
+voice_dep = declare_dependency(link_with: voice_library, include_directories: include_directories('src'), dependencies: voice_deps + [voice_link])
 backend_deps = [dependency('libcurl', version: '>=8.16'), dependency('nlohmann_json'), dependency('threads')]
 if meson.can_run_host_binaries()
   websocket_check = cpp.run('''
@@ -197,11 +210,15 @@ client = executable('cressida',
 install_subdir('src',
   install_dir: get_option('includedir') / 'cressida',
   strip_directory: true,
-  exclude_files: ['app/startup_transition_demo.cpp', 'app/startup_view.cpp', 'auth/qr_login.cpp', 'app/qr_code.cpp', 'app/login_view.cpp', 'voice/audio.cpp', 'voice/audio_dsp.cpp', 'voice/encryption.cpp', 'voice/connection.cpp', 'voice/protocol.cpp', 'api/voice.cpp', 'api/voice_roster.cpp', 'app/voice_view.cpp', 'app/voice_demo.cpp', 'app/ime_demo.cpp', 'core/log.cpp', 'app/single_instance.cpp', 'app/autocomplete.cpp', 'app/syntax_highlight.cpp', 'ui/scroll_into_view.cpp', 'app/typing_view.cpp', 'app/chat_navigation.cpp', 'api/embed_components.cpp', 'api/server_preferences.cpp', 'app/server_menu_dialog.cpp', 'app/server_menu_demo.cpp', 'app/chat_preload.cpp', 'app/dm_home.cpp', 'app/dm_profile.cpp', 'app/dm_profile_demo.cpp', 'app/dm_create.cpp', 'app/dm_request_panel.cpp', 'app/dm_home_demo.cpp', 'app/user_preferences_demo.cpp', 'app/user_account_demo.cpp', 'app/desktop_notifications.cpp', 'app/desktop_tray.cpp', 'app/tray_view.cpp', 'app/user_notifications.cpp', 'api/user_settings.cpp', 'app/user_preferences.cpp', 'app/user_account_view.cpp', 'app/user_account_dialog.cpp', 'app/user_account_profile.cpp', 'app/user_settings_lists.cpp', 'app/connection_state.cpp', 'app/server_commands_demo.cpp', 'app/server_commands.cpp', 'app/server_commands_model.cpp', 'app/server_image_crop.cpp', 'media/lottie.cpp', 'app/server_extra_forms.cpp', 'app/server_expressions.cpp', 'app/server_audit_model.cpp', 'app/server_audit.cpp', 'app/server_audio.cpp', 'app/server_management.cpp', 'app/settings_color_picker.cpp', 'api/guild_settings.cpp', 'app/server_settings.cpp', 'app/server_settings_demo.cpp', 'app/server_menu.cpp', 'app/server_upload.cpp', 'app/file_picker.cpp', 'app/select_popup.cpp', 'app/channel_demo.cpp', 'app/channel_menu.cpp', 'app/channel_create.cpp', 'app/channel_create_demo.cpp', 'app/channel_invite.cpp', 'app/channel_view.cpp', 'app/component_view.cpp', 'api/channel_features.cpp', 'api/message_search.cpp', 'api/inbox.cpp', 'api/threads.cpp', 'app/thread_view.cpp', 'app/forum_view.cpp'] + render_source_paths + control_source_paths + ['app/sticker_picker.cpp', 'api/stickers.cpp', 'app/emoji_picker.cpp', 'app/emoji_catalog.cpp', 'api/emoji.cpp', 'api/role_styles.cpp', 'api/profile.cpp', 'api/cosmetics.cpp', 'app/profile_view.cpp', 'app/profile_cosmetics.cpp', 'app/profile_cosmetics_demo.cpp', 'app/name_badges.cpp', 'app/guild_profile_view.cpp', 'app/server_view.cpp', 'app/role_view.cpp', 'app/system_message_view.cpp', 'app/message_log_view.cpp', 'app/message_dialog.cpp', 'app/video_view.cpp', 'media/video_player.cpp', 'api/video_source.cpp'] + ['meson.build', 'main.cpp', 'app/theme_catalog.cpp', 'app/theme_runtime.cpp', 'app/font_catalog.cpp', 'app/window.cpp', 'app/window_activation.cpp', 'app/window_icons.cpp', 'app/window_control_view.cpp', 'app/window_controls_demo.cpp', 'app/media_view.cpp', 'app/sidebar_view.cpp', 'app/server_rail.cpp', 'app/server_rail_demo.cpp', 'app/server_rail_drag.cpp', 'app/gif_picker.cpp', 'app/user_settings.cpp', 'app/native_controls.cpp', 'app/context_actions.cpp', 'app/client_application.cpp', 'app/image_cache.cpp', 'app/outgoing_messages.cpp', 'app/search_view.cpp', 'app/inbox_view.cpp', 'app/session_store.cpp', 'app/message_layout.cpp', 'api/client.cpp', 'api/rest_restrictions.cpp', 'api/models.cpp', 'api/settings.cpp', 'api/gifs.cpp', 'api/read_state.cpp', 'api/user_directory.cpp', 'api/actions.cpp', 'api/application_commands.cpp', 'api/command_uploads.cpp', 'app/slash_commands.cpp', 'app/slash_composer.cpp', 'app/slash_commands_demo.cpp', 'app/bot_messages_demo.cpp', 'api/assets.cpp', 'api/gateway.cpp', 'api/uploads.cpp', 'auth/browser_login.cpp', 'auth/credentials.cpp', 'auth/secret_service.cpp', 'media/animation.cpp'],
+  exclude_directories: ['voice/dave'],
+  exclude_files: ['voice/dave/frame.cpp', 'voice/dave/session.cpp', 'app/startup_transition_demo.cpp', 'app/startup_view.cpp', 'auth/qr_login.cpp', 'app/qr_code.cpp', 'app/login_view.cpp', 'voice/audio.cpp', 'voice/audio_dsp.cpp', 'voice/encryption.cpp', 'voice/connection.cpp', 'voice/protocol.cpp', 'api/voice.cpp', 'api/voice_roster.cpp', 'app/voice_view.cpp', 'app/voice_demo.cpp', 'app/ime_demo.cpp', 'core/log.cpp', 'app/single_instance.cpp', 'app/autocomplete.cpp', 'app/syntax_highlight.cpp', 'ui/scroll_into_view.cpp', 'app/typing_view.cpp', 'app/chat_navigation.cpp', 'api/embed_components.cpp', 'api/server_preferences.cpp', 'app/server_menu_dialog.cpp', 'app/server_menu_demo.cpp', 'app/chat_preload.cpp', 'app/dm_home.cpp', 'app/dm_profile.cpp', 'app/dm_profile_demo.cpp', 'app/dm_create.cpp', 'app/dm_request_panel.cpp', 'app/dm_home_demo.cpp', 'app/user_preferences_demo.cpp', 'app/user_account_demo.cpp', 'app/desktop_notifications.cpp', 'app/desktop_tray.cpp', 'app/tray_view.cpp', 'app/user_notifications.cpp', 'api/user_settings.cpp', 'app/user_preferences.cpp', 'app/user_account_view.cpp', 'app/user_account_dialog.cpp', 'app/user_account_profile.cpp', 'app/user_settings_lists.cpp', 'app/connection_state.cpp', 'app/server_commands_demo.cpp', 'app/server_commands.cpp', 'app/server_commands_model.cpp', 'app/server_image_crop.cpp', 'media/lottie.cpp', 'app/server_extra_forms.cpp', 'app/server_expressions.cpp', 'app/server_audit_model.cpp', 'app/server_audit.cpp', 'app/server_audio.cpp', 'app/server_management.cpp', 'app/settings_color_picker.cpp', 'api/guild_settings.cpp', 'app/server_settings.cpp', 'app/server_settings_demo.cpp', 'app/server_menu.cpp', 'app/server_upload.cpp', 'app/file_picker.cpp', 'app/select_popup.cpp', 'app/channel_demo.cpp', 'app/channel_menu.cpp', 'app/channel_create.cpp', 'app/channel_create_demo.cpp', 'app/channel_invite.cpp', 'app/channel_view.cpp', 'app/component_view.cpp', 'api/channel_features.cpp', 'api/message_search.cpp', 'api/inbox.cpp', 'api/threads.cpp', 'app/thread_view.cpp', 'app/forum_view.cpp'] + render_source_paths + control_source_paths + ['app/sticker_picker.cpp', 'api/stickers.cpp', 'app/emoji_picker.cpp', 'app/emoji_catalog.cpp', 'api/emoji.cpp', 'api/role_styles.cpp', 'api/profile.cpp', 'api/cosmetics.cpp', 'app/profile_view.cpp', 'app/profile_cosmetics.cpp', 'app/profile_cosmetics_demo.cpp', 'app/name_badges.cpp', 'app/guild_profile_view.cpp', 'app/server_view.cpp', 'app/role_view.cpp', 'app/system_message_view.cpp', 'app/message_log_view.cpp', 'app/message_dialog.cpp', 'app/video_view.cpp', 'media/video_player.cpp', 'api/video_source.cpp'] + ['meson.build', 'main.cpp', 'app/theme_catalog.cpp', 'app/theme_runtime.cpp', 'app/font_catalog.cpp', 'app/window.cpp', 'app/window_activation.cpp', 'app/window_icons.cpp', 'app/window_control_view.cpp', 'app/window_controls_demo.cpp', 'app/media_view.cpp', 'app/sidebar_view.cpp', 'app/server_rail.cpp', 'app/server_rail_demo.cpp', 'app/server_rail_drag.cpp', 'app/gif_picker.cpp', 'app/user_settings.cpp', 'app/native_controls.cpp', 'app/context_actions.cpp', 'app/client_application.cpp', 'app/image_cache.cpp', 'app/outgoing_messages.cpp', 'app/search_view.cpp', 'app/inbox_view.cpp', 'app/session_store.cpp', 'app/message_layout.cpp', 'api/client.cpp', 'api/rest_restrictions.cpp', 'api/models.cpp', 'api/settings.cpp', 'api/gifs.cpp', 'api/read_state.cpp', 'api/user_directory.cpp', 'api/actions.cpp', 'api/application_commands.cpp', 'api/command_uploads.cpp', 'app/slash_commands.cpp', 'app/slash_composer.cpp', 'app/slash_commands_demo.cpp', 'app/bot_messages_demo.cpp', 'api/assets.cpp', 'api/gateway.cpp', 'api/uploads.cpp', 'auth/browser_login.cpp', 'auth/credentials.cpp', 'auth/secret_service.cpp', 'media/animation.cpp'],
 )
 install_subdir('assets',
   install_dir: get_option('datadir') / 'cressida',
 )
+install_data('third_party/mlspp/LICENSE', 'third_party/mlspp/PROVENANCE.md',
+  'third_party/mlspp/upstream-files.json', 'third_party/mlspp/patched-files.json',
+  install_dir: get_option('datadir') / 'licenses/cressida/mlspp')
 install_data('LICENSE', 'third_party/wuffs/LICENSE-APACHE', 'third_party/wuffs/LICENSE-MIT',
   install_dir: get_option('datadir') / 'licenses/cressida',
 )
@@ -488,12 +505,12 @@ voice_audio_test = executable('voice_audio_test', 'tests/voice_audio_test.cpp', 
 test('voice_audio', voice_audio_test)
 voice_protocol_test = executable('voice_protocol_test', 'tests/voice_protocol_test.cpp', dependencies: voice_dep)
 test('voice_protocol', voice_protocol_test)
-voice_encryption_test = executable('voice_encryption_test', 'tests/voice_encryption_test.cpp', dependencies: [voice_dep, dependency('mlspp')])
+voice_encryption_test = executable('voice_encryption_test', 'tests/voice_encryption_test.cpp', dependencies: [voice_dep, mls_dep])
 test('voice_encryption', voice_encryption_test)
 voice_session_test = executable('voice_session_test', 'tests/voice_session_test.cpp', dependencies: backend_dep)
 test('voice_session', voice_session_test)
 
-voice_connection_test = executable('voice_connection_test', 'tests/voice_connection_test.cpp', dependencies: [voice_dep, dependency('mlspp')])
+voice_connection_test = executable('voice_connection_test', 'tests/voice_connection_test.cpp', dependencies: [voice_dep, mls_dep])
 test('voice_connection', python, args: [files('tests/voice_connection_fixture.py'), voice_connection_test], timeout: 30)
 pulse_server = find_program('pulseaudio', required: false)
 if pulse_server.found()
@@ -508,3 +525,6 @@ test('voice_roster', voice_roster_test)
 
 voice_speaking_test = executable('voice_speaking_test', 'tests/voice_speaking_test.cpp', dependencies: voice_dep)
 test('voice_speaking', voice_speaking_test)
+
+dave_dep = declare_dependency(dependencies: [voice_dep, mls_dep])
+subdir('tests/voice_dave')

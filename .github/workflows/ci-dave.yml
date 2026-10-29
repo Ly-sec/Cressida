@@ -1,0 +1,65 @@
+name: CI (portable DAVE)
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  crypto:
+    name: DAVE with distribution packages (${{ matrix.distro }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: arch
+            image: archlinux:base-devel
+          - distro: fedora
+            image: fedora:44
+          - distro: ubuntu
+            image: ubuntu:24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install ordinary distribution development packages
+        env:
+          DISTRO: ${{ matrix.distro }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -eu
+          docker run --name cressida-dave-packages --env DISTRO "$IMAGE" sh -eu -c '
+            case "$DISTRO" in
+              arch) pacman -Syu --noconfirm gcc meson ninja pkgconf openssl nlohmann-json python ;;
+              fedora) dnf install -y gcc-c++ meson ninja-build pkgconf-pkg-config openssl-devel json-devel python3 ;;
+              ubuntu) apt-get update; apt-get install -y g++ meson ninja-build pkg-config libssl-dev nlohmann-json3-dev python3 ;;
+              *) exit 2 ;;
+            esac'
+          docker commit cressida-dave-packages cressida-dave-packaged
+          docker rm cressida-dave-packages
+      - name: Build and test bundled sources without network access
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/dave-build" ci-logs/dave
+          docker run --rm --network none --user "$(id -u):$(id -g)" \
+            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
+            --volume "$RUNNER_TEMP/dave-build:/build" \
+            --env HOME=/tmp cressida-dave-packaged sh -eu -c '
+              python3 /workspace/.github/workflows/scripts/check_mls_snapshot.py
+              meson setup /build /workspace -Dvoice_crypto_only=true -Dcpp_std=c++23
+              meson compile -C /build -j 4
+              meson test -C /build --no-rebuild --print-errorlogs'
+      - name: Collect diagnostics
+        if: always()
+        run: cp -R "$RUNNER_TEMP/dave-build/meson-logs" ci-logs/dave/ || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: dave-${{ matrix.distro }}
+          path: ci-logs/dave/
+          if-no-files-found: ignore
+          retention-days: 7

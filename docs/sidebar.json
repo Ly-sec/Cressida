@@ -85,13 +85,15 @@
     "collapsed": true,
     "items": [
       {
-        "slug": "docs/building"
+        "slug": "docs/building",
+        "label": "Building with system packages"
       },
       {
         "slug": "docs/contributing"
       },
       {
-        "slug": "docs/packaging"
+        "slug": "docs/packaging",
+        "label": "Packaging and bundled libraries"
       }
     ]
   }

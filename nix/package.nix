@@ -103,7 +103,6 @@ stdenv.mkDerivation {
     opus
     libsodium
     libpulseaudio
-    (callPackage ./libdave.nix { })
     (curl.override { websocketSupport = true; })
     (callPackage ./stb.nix { })
   ];
@@ -125,6 +124,7 @@ stdenv.mkDerivation {
     license = with lib.licenses; [
       mit
       asl20
+      bsd2
     ];
     platforms = lib.platforms.linux;
   };

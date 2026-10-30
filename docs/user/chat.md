@@ -1,7 +1,8 @@
 ---
 title: Chat, Markdown and embeds
 description:
-  Send messages, reply to a conversation, use completion and format your text.
+  Send messages, check message dates, reply, use completion and format your
+  text.
 ---
 
 ## Send a message
@@ -24,11 +25,17 @@ composer. Your newer draft is kept until you clear it. Cressida does not retry
 automatically, since a delayed confirmation could mean the message already
 arrived. Pending messages are kept for the current session only.
 
-Message times use your system timezone, including daylight-saving changes for
-the date of each message. This applies to chat headers, hover timestamps,
-forwarded messages and message previews. Pinned-message dates also use your
-local calendar day. Consecutive messages start a new group at local midnight.
-For AM/PM times, enable **Use 12-hour clock** in
+Today's messages show just the time. Yesterday's messages show **Yesterday at**
+before the time, and older messages show a numeric date and time, such as
+**10/15/26, 14:22**. Hover any timestamp to see the weekday, full date, year and
+time. Grouped follow-ups show a compact time when you hover their row; hover
+that time for the full date too. System notices, forwarded messages and
+message-request previews use the same date rules.
+
+Message dates and times use your system timezone, including daylight-saving
+changes for the date of each message. Pinned-message dates also use your local
+calendar day. Consecutive messages start a new group at local midnight. For
+AM/PM times, enable **Use 12-hour clock** in
 [Appearance settings](appearance.md).
 
 Bot authors show an **APP** chip beside their name and role icon. The chip

@@ -22,7 +22,7 @@
     "items": [
       {
         "slug": "docs/chat",
-        "label": "Chat, Markdown and embeds"
+        "label": "Chat, formatting and message dates"
       },
       {
         "slug": "docs/inbox"

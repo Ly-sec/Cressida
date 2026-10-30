@@ -85,6 +85,49 @@ namespace app {
       result.erase(0, 1);
     return result;
   }
+  inline std::string formatMessageTimestamp(
+      std::string_view value, bool twelveHourClock = false,
+      std::chrono::sys_time<std::chrono::milliseconds> now =
+          std::chrono::floor<std::chrono::milliseconds>(std::chrono::system_clock::now())
+  ) {
+    const auto time = messageTime(value);
+    if (!time)
+      return {};
+    const auto local = localMessageTime(*time), today = localMessageTime(now);
+    if (!local || !today)
+      return {};
+    const auto day = [](const std::tm& date) {
+      using namespace std::chrono;
+      return sys_days{
+          year{date.tm_year + 1900}
+          / month{static_cast<unsigned>(date.tm_mon + 1)}
+          / std::chrono::day{static_cast<unsigned>(date.tm_mday)}
+      };
+    };
+    const auto age = day(*today) - day(*local);
+    const auto clock = formatMessageClock(value, twelveHourClock);
+    if (age == std::chrono::days{0})
+      return clock;
+    if (age == std::chrono::days{1})
+      return "Yesterday at " + clock;
+    return std::to_string(local->tm_mon + 1)
+        + '/'
+        + std::to_string(local->tm_mday)
+        + formatMessageTime(value, "/%y, ")
+        + clock;
+  }
+  inline std::string formatMessageTimeTooltip(std::string_view value, bool twelveHourClock = false) {
+    const auto time = messageTime(value);
+    if (!time)
+      return {};
+    const auto local = localMessageTime(*time);
+    if (!local)
+      return {};
+    return formatMessageTime(value, "%A, %B ")
+        + std::to_string(local->tm_mday)
+        + formatMessageTime(value, ", %Y\nat ")
+        + formatMessageClock(value, twelveHourClock);
+  }
   inline bool sameLocalMessageDay(
       std::chrono::sys_time<std::chrono::milliseconds> before, std::chrono::sys_time<std::chrono::milliseconds> after
   ) {

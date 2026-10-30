@@ -34,6 +34,32 @@ int main() {
         "Clock choices distinguish midnight, noon, morning and evening without changing 24-hour output"
     );
     require(app::formatMessageClock("invalid", true).empty(), "Invalid timestamps stay empty in 12-hour mode");
+    const auto stamp = [](std::string_view value, std::string_view now, bool twelveHourClock = false) {
+      return app::formatMessageTimestamp(value, twelveHourClock, *app::messageTime(now));
+    };
+    require(
+        stamp("2026-10-30T09:05:00Z", "2026-10-30T12:00:00Z") == "09:05"
+            && stamp("2026-10-30T09:05:00Z", "2026-10-30T12:00:00Z", true) == "9:05 AM"
+            && stamp("2026-10-29T23:59:00Z", "2026-10-30T00:01:00Z", true) == "Yesterday at 11:59 PM"
+            && stamp("2026-10-15T14:22:00Z", "2026-10-30T12:00:00Z", true) == "10/15/26, 2:22 PM"
+            && stamp("2025-01-02T09:05:00Z", "2026-10-30T12:00:00Z") == "1/2/25, 09:05"
+            && stamp("2026-11-01T00:00:00Z", "2026-10-30T12:00:00Z") == "11/1/26, 00:00",
+        "Headers use local calendar-relative dates and explicit dates for older or future messages"
+    );
+    require(
+        stamp("2025-12-31T23:59:00Z", "2026-01-01T00:01:00Z") == "Yesterday at 23:59"
+            && stamp("2024-02-29T23:59:00Z", "2024-03-01T00:01:00Z") == "Yesterday at 23:59",
+        "Yesterday crosses calendar years and leap days"
+    );
+    require(
+        app::formatMessageTimeTooltip("2026-10-15T14:22:00Z", true) == "Thursday, October 15, 2026\nat 2:22 PM"
+            && app::formatMessageTimeTooltip("2026-10-15T14:22:00Z") == "Thursday, October 15, 2026\nat 14:22",
+        "Timestamp tooltips include the weekday, full date, year and preferred clock"
+    );
+    require(
+        app::formatMessageTimeTooltip("2026-10-30T09:05:00Z") == "Friday, October 30, 2026\nat 09:05",
+        "Clock-only headers still expose their full date in the tooltip"
+    );
     require(app::formatMessageTime("2026-10-24T09:16:12Z") == "09:16", "UTC displays without an offset");
     require(
         app::formatMessageTime("2026-10-24T14:46:12.123456+05:30") == "09:16",
@@ -50,7 +76,12 @@ int main() {
     );
     for (const auto* invalid :
          {"", "invalid", "2026-02-30T09:16:12Z", "2026-10-24T09:16:12", "2026-10-24T09:16:12Zjunk"})
-      require(app::formatMessageTime(invalid).empty(), "Invalid times never display a misleading clock value");
+      require(
+          app::formatMessageTime(invalid).empty()
+              && stamp(invalid, "2026-10-30T12:00:00Z").empty()
+              && app::formatMessageTimeTooltip(invalid).empty(),
+          "Invalid times never display a misleading clock, date or tooltip"
+      );
 
     setTestTimezone("IST-5:30");
     require(
@@ -64,6 +95,12 @@ int main() {
     require(
         app::formatMessageTime("2026-12-31T20:00:00Z", "%Y-%m-%d") == "2027-01-01",
         "Displayed dates follow local year boundaries"
+    );
+    require(
+        stamp("2026-10-29T19:00:00Z", "2026-10-30T12:00:00Z") == "00:30"
+            && stamp("2026-10-29T18:00:00Z", "2026-10-30T12:00:00Z") == "Yesterday at 23:30"
+            && app::formatMessageTimeTooltip("2026-12-31T20:00:00Z") == "Friday, January 1, 2027\nat 01:30",
+        "Relative dates and full tooltips use local rather than UTC calendar boundaries"
     );
     for (const bool pending : {false, true}) {
       require(
@@ -100,6 +137,12 @@ int main() {
             && app::formatMessageTime("2026-03-29T01:00:00Z") == "03:00"
             && grouped("2026-03-29T00:59:59Z", "2026-03-29T01:00:00Z"),
         "The spring clock jump does not create an artificial message gap"
+    );
+    require(
+        stamp("2026-03-28T23:30:00Z", "2026-03-29T22:15:00Z") == "Yesterday at 00:30"
+            && stamp("2026-10-24T22:30:00Z", "2026-10-25T23:15:00Z") == "Yesterday at 00:30"
+            && stamp("2026-10-25T00:59:00Z", "2026-10-25T01:01:00Z") == "02:59",
+        "Yesterday follows calendar days across 23-hour and 25-hour daylight-saving days"
     );
     require(
         app::formatMessageTime("2026-10-25T00:59:59Z") == "02:59"

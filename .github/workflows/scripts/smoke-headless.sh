@@ -52,6 +52,7 @@ for view in startup-transition startup-transition-light startup-transition-narro
     chat-links-light chat-links-narrow embed-cycle embed-cycle-light embed-cycle-narrow categories animation-cycle gif-cycle attachment-cycle \
     autocomplete-tokens autocomplete-tokens-light slash-commands-cycle slash-commands-cycle-light slash-commands-cycle-narrow reply-grouping reply-grouping-light reply-grouping-compact \
     bot-messages-cycle bot-messages-cycle-light bot-messages-cycle-narrow \
+    timestamps-cycle timestamps-cycle-light timestamps-cycle-narrow \
     media-gallery-cycle media-gallery-cycle-light image-menu-cycle image-menu-cycle-light tray-cycle \
     tray-startup-host tray-startup-missing tray-startup-open tray-startup-notification tray-startup-host-loss \
     window-controls-cycle window-controls-cycle-light server-settings-cycle server-settings-narrow server-settings-role-light; do

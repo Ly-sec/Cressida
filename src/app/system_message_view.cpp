@@ -10,6 +10,148 @@
 #include <stdexcept>
 
 namespace app {
+  float ClientApplication::timestampLabel(
+      Node& parent, float x, float y, float width, const std::string& caption, std::string_view timestamp, float size,
+      Color color
+  ) {
+    if (width <= 0 || caption.empty())
+      return 0;
+    const float height = label(parent, x, y, width, caption, size, color);
+    if (m_contextOpen
+        || !m_dialogKind.empty()
+        || settingsVisible()
+        || m_emojiMenu
+        || m_gifMenu
+        || m_presenceMenu
+        || m_selectRequest
+        || userAccountDialogOpen()
+        || m_inboxOpen
+        || !m_searchInput.empty())
+      return height;
+    float right = x + std::min(width, m_window.target().renderer().measureText(caption, size).width);
+    float bottom = y + height;
+    for (const auto* node = &parent; node && node != m_scene.get(); node = node->parent()) {
+      if (node->clipChildren()) {
+        x = std::max(x, 0.0F);
+        y = std::max(y, 0.0F);
+        right = std::min(right, node->width());
+        bottom = std::min(bottom, node->height());
+      }
+      x += node->x();
+      y += node->y();
+      right += node->x();
+      bottom += node->y();
+    }
+    if (right > x && bottom > y && hovered(x, y, right - x, bottom - y)) {
+      m_tooltip = formatMessageTimeTooltip(timestamp, m_preferences.twelveHourClock);
+      m_tooltipX = (x + right) / 2;
+      m_tooltipY = y;
+    }
+    return height;
+  }
+  void ClientApplication::demoTimestampStep() {
+    const auto require = [](bool value, const char* reason) {
+      if (!value)
+        throw std::runtime_error(reason);
+    };
+    const auto findText = [&](const std::string& caption) {
+      const TextNode* result = nullptr;
+      const auto inspect = [&](auto&& self, const Node& node) -> void {
+        if (node.type() == NodeType::Text && static_cast<const TextNode&>(node).text() == caption)
+          result = static_cast<const TextNode*>(&node);
+        for (const auto& child : node.children())
+          self(self, *child);
+      };
+      inspect(inspect, *m_scene);
+      return result;
+    };
+    const auto move = [&](float x, float y) {
+      m_window.motion(x, y + m_window.titlebarHeight() - layout::Window::titlebarHeight);
+    };
+    const auto hoverCaption = [&](std::size_t index) {
+      const auto caption = formatMessageTimestamp(m_messages[index].timestamp, m_preferences.twelveHourClock);
+      const auto* text = findText(caption);
+      require(text != nullptr, "Older messages paint a date and time beside the author or system notice");
+      float x = 0, y = 0;
+      for (const auto* node = static_cast<const Node*>(text); node && node != m_scene.get(); node = node->parent()) {
+        x += node->x();
+        y += node->y();
+      }
+      const auto metrics = m_window.target().renderer().measureText(caption, text->fontSize());
+      move(x + Style::spaceXs, y + (metrics.inkTop + metrics.inkBottom) / 2);
+    };
+    const auto hoverContinuation = [&] {
+      const auto row = std::ranges::find_if(m_hits, [&](const auto& hit) {
+        return hit.action == Action::SelectMessage && hit.id == m_messages[1].id;
+      });
+      require(row != m_hits.end(), "The grouped follow-up keeps its own visible row");
+      const auto& runs = m_messageLayouts.at(m_messages[1].id).layout.runs;
+      require(!runs.empty(), "The grouped follow-up has a first text line");
+      move(row->x - layout::Chat::authorGutter + Style::spaceXs, row->y + runs.front().height / 2);
+    };
+    const auto tooltip = [&](std::size_t index) {
+      const auto caption = formatMessageTimeTooltip(m_messages[index].timestamp, m_preferences.twelveHourClock);
+      if (m_tooltip != caption || !findText(caption))
+        throw std::runtime_error(
+            "Timestamp hover failed at replay step "
+            + std::to_string(m_demoInteractionStep - 1)
+            + " for item "
+            + std::to_string(index)
+            + ": "
+            + m_tooltip
+        );
+      require(
+          m_tooltipY >= m_messageViewportTop && m_tooltipY < m_messageViewportBottom,
+          "Timestamp hover anchors stay inside the clipped conversation"
+      );
+    };
+    switch (m_demoInteractionStep++) {
+    case 0:
+      hoverCaption(0);
+      break;
+    case 1:
+      tooltip(0);
+      hoverContinuation();
+      break;
+    case 2:
+      tooltip(1);
+      m_preferences.twelveHourClock = true;
+      break;
+    case 3:
+      hoverCaption(0);
+      break;
+    case 4:
+      tooltip(0);
+      hoverContinuation();
+      break;
+    case 5:
+      tooltip(1);
+      m_preferences.compact = true;
+      m_messageLayouts.clear();
+      break;
+    case 6:
+      hoverCaption(0);
+      break;
+    case 7:
+      tooltip(0);
+      hoverCaption(2);
+      break;
+    case 8:
+      tooltip(2);
+      m_inboxOpen = true;
+      break;
+    case 9:
+      require(m_tooltip.empty(), "The inbox suppresses covered message timestamp tooltips");
+      m_inboxOpen = false;
+      move(Style::spaceXs, layout::Window::titlebarHeight + Style::spaceXs);
+      break;
+    case 10:
+      require(m_tooltip.empty(), "Moving away clears the timestamp tooltip");
+      std::clog << "Offline message dates and timestamp hover check passed\n";
+      break;
+    }
+    m_window.invalidate();
+  }
   void ClientApplication::drawMessageStrikes(
       Node& parent, const MessageLayout& message, float x, float y, Color color, bool showSpoilers,
       std::optional<float> baseline, std::optional<float> height
@@ -145,7 +287,7 @@ namespace app {
       }
     }
     drawMessageStrikes(parent, layout, layout::Chat::authorGutter, y, automod ? foreground : muted);
-    const auto timestamp = formatMessageClock(message.timestamp, m_preferences.twelveHourClock);
+    const auto timestamp = formatMessageTimestamp(message.timestamp, m_preferences.twelveHourClock);
     if (!layout.runs.empty() && !timestamp.empty()) {
       const auto headerEnd = automod
           ? std::ranges::find_if(layout.runs, [&](const auto& run) { return run.y >= automod->authorTop; })
@@ -153,9 +295,11 @@ namespace app {
       const auto& last = *(headerEnd == layout.runs.begin() ? headerEnd : std::prev(headerEnd));
       const auto caption = timestamp + (message.deleted ? " · Deleted" : "");
       const auto timestampWidth = m_window.target().renderer().measureText(caption, Style::fontSizeDetail).width;
-      label(
-          parent, 50 + last.x + last.width + Style::spaceCompact, y + last.y + Style::spaceXs,
-          timestampWidth + Style::spaceXxs, caption, Style::fontSizeDetail, message.deleted ? theme::danger : muted
+      const float timestampX = layout::Chat::authorGutter + last.x + last.width + Style::spaceCompact;
+      timestampLabel(
+          parent, timestampX, y + last.y + Style::spaceXs,
+          std::max(0.0F, std::min(timestampWidth + Style::spaceXxs, layout::Chat::authorGutter + width - timestampX)),
+          caption, message.timestamp, Style::fontSizeDetail, message.deleted ? theme::danger : muted
       );
     }
     if (automod) {

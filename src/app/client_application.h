@@ -81,6 +81,7 @@ namespace app {
     static constexpr int composerReplyReplayFrames = 10;
     static constexpr int embedReplayFrames = 23;
     static constexpr int botMessagesReplayFrames = 8;
+    static constexpr int timestampReplayFrames = 11;
     static constexpr int loginReplayFrames = 18;
     static constexpr int startupReplayFrames = 14;
     static constexpr int startupTransitionReplayFrames = 6;
@@ -678,6 +679,11 @@ namespace app {
     );
     void glyph(Node& parent, float x, float y, float size, const std::string& name, Color color);
     void iconButton(Node& parent, Hit hit, const std::string& icon, const std::string& tooltip, bool selected = false);
+    float timestampLabel(
+        Node& parent, float x, float y, float width, const std::string& caption, std::string_view timestamp, float size,
+        Color color
+    );
+    void demoTimestampStep();
     void drawEmojiPicker(Node& root, float w, float h);
     void prepareEmojiPicker();
     void closeEmojiPicker();

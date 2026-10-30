@@ -595,6 +595,8 @@ namespace app {
         demoEmbedStep();
       if (m_demo && m_demoOverlay.starts_with("bot-messages-cycle") && m_demoInteractionStep < botMessagesReplayFrames)
         demoBotMessagesStep();
+      if (m_demo && m_demoOverlay.starts_with("timestamps-cycle") && m_demoInteractionStep < timestampReplayFrames)
+        demoTimestampStep();
       if (m_demo && m_demoOverlay.starts_with("markdown-cycle") && m_demoInteractionStep < markdownReplayFrames)
         demoMarkdownStep();
       if (m_demo
@@ -626,7 +628,7 @@ namespace app {
           }
           if (node.type() == NodeType::Text
               && static_cast<const TextNode&>(node).text()
-                  == formatMessageClock(m_messages.front().timestamp, m_preferences.twelveHourClock)
+                  == formatMessageTimestamp(m_messages.front().timestamp, m_preferences.twelveHourClock)
               && node.x() > 300)
             throw std::runtime_error("Message timestamps must follow the author header instead of the right edge");
           for (const auto& child : node.children())
@@ -1545,7 +1547,8 @@ namespace app {
                    : m_demo && view && std::string_view(view).starts_with("embed-cycle")   ? embedReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("bot-messages-cycle")
                    ? botMessagesReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("login-cycle") ? loginReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("timestamps-cycle") ? timestampReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("login-cycle")      ? loginReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("startup-transition")
                    ? startupTransitionReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("startup-cycle")  ? startupReplayFrames
@@ -1698,6 +1701,8 @@ namespace app {
       throw std::runtime_error("AutoMod and embed link replay did not complete");
     if (m_demoOverlay.starts_with("bot-messages-cycle") && m_demoInteractionStep != botMessagesReplayFrames)
       throw std::runtime_error("Bot identity and message deletion replay did not complete");
+    if (m_demoOverlay.starts_with("timestamps-cycle") && m_demoInteractionStep != timestampReplayFrames)
+      throw std::runtime_error("Message timestamp replay did not complete");
     if (m_demoOverlay.starts_with("markdown-cycle") && m_demoInteractionStep != markdownReplayFrames)
       throw std::runtime_error("Markdown replay did not complete");
     if (m_demoOverlay.starts_with("reply-grouping") && m_demoInteractionStep != replyGroupingReplayFrames)
@@ -1788,6 +1793,25 @@ namespace app {
           if (view.ends_with("narrow"))
             m_window.setUiScale(1.5F);
           prepareBotMessagesDemo();
+        }
+        if (view.starts_with("timestamps-cycle")) {
+          m_demoOverlay = view;
+          m_showMembers = false;
+          m_preferences.twelveHourClock = false;
+          if (view.ends_with("light"))
+            m_preferences.theme = "light";
+          if (view.ends_with("narrow"))
+            m_window.setUiScale(1.5F);
+          m_messages = {
+              {"9401", m_channelId, "Maya", "An older message with its original date.", "2026-10-15T14:22:00Z", "11"},
+              {"9402", m_channelId, "Maya", "A grouped follow-up keeps its own timestamp.", "2026-10-15T14:23:00Z",
+               "11"},
+              {"9403", m_channelId, "Noah", "", "2026-10-16T09:05:00Z", "12"}
+          };
+          m_messages.back().type = 7;
+          m_unreadTimeline.snapshot({});
+          m_unreadTimeline.positioned();
+          m_messageLayouts.clear();
         }
         if (view.starts_with("inbox-cycle")) {
           m_demoOverlay = view;
@@ -4816,7 +4840,7 @@ namespace app {
               if (!continuation) {
                 const auto author = userName(message.authorId, message.author);
                 const auto authorTag = m_userDirectory.guildTag(message.authorId, message.authorTag);
-                auto timestamp = formatMessageClock(message.timestamp, m_preferences.twelveHourClock);
+                auto timestamp = formatMessageTimestamp(message.timestamp, m_preferences.twelveHourClock);
                 if (message.deleted)
                   timestamp += timestamp.empty() ? "Deleted" : " · Deleted";
                 const float timestampWidth =
@@ -4921,15 +4945,15 @@ namespace app {
                 }
                 const float timestampAvailable = 50 + textWidth - timestampX;
                 if (!timestamp.empty() && timestampAvailable > 0)
-                  label(
+                  timestampLabel(
                       *messageContent, timestampX, y + (Style::spaceXxs + Style::borderWidth),
-                      std::min(timestampWidth + Style::spaceXxs, timestampAvailable), timestamp, Style::fontSizeDetail,
-                      message.deleted ? theme::danger : muted
+                      std::min(timestampWidth + Style::spaceXxs, timestampAvailable), timestamp, message.timestamp,
+                      Style::fontSizeDetail, message.deleted ? theme::danger : muted
                   );
               } else if (messageHovered) {
                 const auto timestamp = formatMessageClock(message.timestamp, m_preferences.twelveHourClock);
                 const auto metrics = m_window.target().renderer().measureText(timestamp, Style::fontSizeFine);
-                label(
+                timestampLabel(
                     *messageContent, 0,
                     y
                         + layout::Chat::centeredTextTop(
@@ -4937,7 +4961,7 @@ namespace app {
                         ),
                     m_preferences.twelveHourClock ? layout::Chat::authorGutter - Style::spaceXxs
                                                   : layout::Chat::continuationTimestampWidth,
-                    timestamp, Style::fontSizeFine, muted
+                    timestamp, message.timestamp, Style::fontSizeFine, muted
                 );
               }
               const float bodyY = y + (continuation ? 0 : 18);
@@ -4986,12 +5010,13 @@ namespace app {
                   }
                   if (origin)
                     source = guild->name + " · #" + origin->name;
-                  const auto time = formatMessageClock(card.timestamp, m_preferences.twelveHourClock);
+                  const auto time = formatMessageTimestamp(card.timestamp, m_preferences.twelveHourClock);
                   if (!time.empty())
                     source += (source.empty() ? "" : " · ") + time;
                   if (!source.empty()) {
-                    const auto footerHeight = label(
-                        *messageContent, 62, footerY, textWidth - Style::spaceMd, source, Style::fontSizeMini, muted
+                    const auto footerHeight = timestampLabel(
+                        *messageContent, 62, footerY, textWidth - Style::spaceMd, source, card.timestamp,
+                        Style::fontSizeMini, muted
                     );
                     const float linkTop = std::max(top, top + footerY),
                                 linkBottom = std::min(bottom, top + footerY + footerHeight);

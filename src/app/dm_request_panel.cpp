@@ -211,7 +211,7 @@ namespace app {
             *content, 0, rowY + Style::spaceXxs, layout::Avatar::member, face, author,
             message.authorId.empty() ? user.id : message.authorId
         );
-        const auto timestamp = formatMessageClock(message.timestamp, m_preferences.twelveHourClock);
+        const auto timestamp = formatMessageTimestamp(message.timestamp, m_preferences.twelveHourClock);
         const auto timestampWidth =
             m_window.target().renderer().measureText(timestamp, Style::fontSizeDetail).width + Style::spaceXxs;
         label(
@@ -220,9 +220,9 @@ namespace app {
             Style::fontSizeCaption, foreground, FontWeight::SemiBold
         );
         if (!timestamp.empty())
-          label(
+          timestampLabel(
               *content, inner - timestampWidth, rowY + (Style::spaceXxs + Style::borderWidth), timestampWidth,
-              timestamp, Style::fontSizeDetail, muted
+              timestamp, message.timestamp, Style::fontSizeDetail, muted
           );
         label(
             *content, 46, rowY + (Style::spaceXl + Style::borderWidth),

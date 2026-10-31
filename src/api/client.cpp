@@ -421,7 +421,13 @@ namespace api {
         if (status == 429) {
           if (!transfer.retryRateLimits)
             return std::unexpected(
-                Failure{"The preview update was rate limited. A later fresh preview can update it.", false, {}, status, serviceCode}
+                Failure{
+                    "The preview update was rate limited. A later fresh preview can update it.",
+                    false,
+                    {},
+                    status,
+                    serviceCode
+                }
             );
           if (retryAt - std::chrono::steady_clock::now() > maximumInlineRateLimitWait)
             return std::unexpected(
@@ -505,8 +511,8 @@ namespace api {
       gatewayEvent(session, type, data);
     });
     m_voiceAudio = audio ? std::move(audio) : voice::makeAudio();
-    m_streams=std::make_unique<StreamManager>(
-        [this](std::uint64_t session,StreamCommand command) { return m_gateway->stream(session,std::move(command)); },
+    m_streams = std::make_unique<StreamManager>(
+        [this](std::uint64_t session, StreamCommand command) { return m_gateway->stream(session, std::move(command)); },
         [this](StreamPreviewQuery query) { return streamPreview(std::move(query)); }
     );
     m_voice = std::make_unique<voice::Connection>(m_voiceAudio, [this](voice::State state) {
@@ -852,12 +858,18 @@ namespace api {
       if (query.key.owner != m_authenticatedUser)
         return false;
     }
-    const auto version = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    if (version <= 0 || !streamPreviewHttpRequest(query,static_cast<std::uint64_t>(version)))
+    const auto version =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count();
+    if (version <= 0 || !streamPreviewHttpRequest(query, static_cast<std::uint64_t>(version)))
       return false;
-    Command command{query.kind == StreamPreviewKind::Read ? Operation::StreamPreviewRead : Operation::StreamPreviewWrite,
-        query.generation,query.key.value(),{}};
-    command.streamPreview=std::move(query);
+    Command command{
+        query.kind == StreamPreviewKind::Read ? Operation::StreamPreviewRead : Operation::StreamPreviewWrite,
+        query.generation,
+        query.key.value(),
+        {}
+    };
+    command.streamPreview = std::move(query);
     return enqueue(std::move(command));
   }
   bool Client::channelPage(ChannelPageQuery query) {
@@ -1090,12 +1102,12 @@ namespace api {
     if (session != m_session)
       return;
     if (type.starts_with("STREAM_")) {
-      m_streams->event(session,type,data);
+      m_streams->event(session, type, data);
       return;
     }
-    if (type=="READY" && data.is_object() && data.contains("streams") && data["streams"].is_array())
+    if (type == "READY" && data.is_object() && data.contains("streams") && data["streams"].is_array())
       for (const auto& stream : data["streams"])
-        m_streams->event(session,"STREAM_CREATE",stream);
+        m_streams->event(session, "STREAM_CREATE", stream);
     if (type == "VOICE_STATE_UPDATE" || type == "VOICE_SERVER_UPDATE") {
       if (type == "VOICE_STATE_UPDATE")
         voiceRosterEvent(session, type, data);
@@ -1775,7 +1787,8 @@ namespace api {
       event.inboxQuery = command.inboxQuery;
       event.commandIndex = command.commandIndex;
       if (command.streamPreview)
-        event.streamPreview=StreamPreviewResult{command.streamPreview->key,command.streamPreview->request,{},false};
+        event.streamPreview =
+            StreamPreviewResult{command.streamPreview->key, command.streamPreview->request, {}, false};
       RestRequestScope scope{
           stop, &m_session, command.session, optional ? &m_foregroundRevision : nullptr, foregroundRevision
       };
@@ -1800,9 +1813,14 @@ namespace api {
           path = inboxHttpRequest(*command.inboxQuery)->path;
           break;
         case Operation::StreamPreviewRead: {
-          const auto version=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-          const auto route=streamPreviewHttpRequest(*command.streamPreview,static_cast<std::uint64_t>(std::max<std::int64_t>(version,0)));
-          if (route) path=route->path;
+          const auto version =
+              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                  .count();
+          const auto route = streamPreviewHttpRequest(
+              *command.streamPreview, static_cast<std::uint64_t>(std::max<std::int64_t>(version, 0))
+          );
+          if (route)
+            path = route->path;
           break;
         }
         case Operation::Messages:
@@ -2140,7 +2158,7 @@ namespace api {
       event.channelQuery = command.channelQuery;
       event.inboxQuery = command.inboxQuery;
       if (command.streamPreview)
-        event.streamPreview=StreamPreviewResult{command.streamPreview->key,command.streamPreview->request,{},true};
+        event.streamPreview = StreamPreviewResult{command.streamPreview->key, command.streamPreview->request, {}, true};
       event.guildSettingsRequest = command.guildSettings;
       if (command.userSettings)
         event.userSettingsRequest = publicUserSettingsRequest(*command.userSettings);
@@ -2150,7 +2168,9 @@ namespace api {
         event.messageId = command.content;
       Transfer transfer{
           {},
-          {stop, &m_session, command.session, command.background && command.operation != Operation::StreamPreviewWrite ? &m_foregroundRevision : nullptr, foregroundRevision,
+          {stop, &m_session, command.session,
+           command.background && command.operation != Operation::StreamPreviewWrite ? &m_foregroundRevision : nullptr,
+           foregroundRevision,
            command.operation == Operation::Guilds                  ? &m_guildsReadySession
                : command.operation == Operation::BootstrapSettings ? &m_bootstrapSettingsReadySession
                                                                    : nullptr},
@@ -2159,8 +2179,8 @@ namespace api {
           &m_requestWake
       };
       if (command.streamPreview && command.streamPreview->kind == StreamPreviewKind::Upload) {
-        transfer.scope.revoked=command.streamPreview->revoked.get();
-        transfer.retryRateLimits=false;
+        transfer.scope.revoked = command.streamPreview->revoked.get();
+        transfer.retryRateLimits = false;
       }
       event.restoredLogin = command.restoredLogin;
       transfer.restrictions = &m_restRestrictions;
@@ -2856,12 +2876,12 @@ namespace api {
           break;
         }
         case Operation::StreamPreviewWrite: {
-          const auto route=streamPreviewHttpRequest(*command.streamPreview,0);
+          const auto route = streamPreviewHttpRequest(*command.streamPreview, 0);
           if (!route)
             throw std::runtime_error("The preview publication was revoked.");
-          path=route->path;
-          method="POST";
-          body=route->body;
+          path = route->path;
+          method = "POST";
+          body = route->body;
           break;
         }
         case Operation::Send:

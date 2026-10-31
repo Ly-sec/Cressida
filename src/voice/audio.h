@@ -38,7 +38,7 @@ namespace voice {
     std::vector<std::uint8_t> opus;
     std::uint32_t timestamp = 0;
     bool speaking = false;
-    std::int64_t capturedAtUs=0;
+    std::int64_t capturedAtUs = 0;
   };
   class Audio {
   public:

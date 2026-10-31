@@ -55,7 +55,7 @@ namespace voice {
     int width = 0, height = 0;
     bool keyframe = false;
     std::uint64_t revision = 0;
-    std::int64_t capturedAtUs=0;
+    std::int64_t capturedAtUs = 0;
     std::chrono::steady_clock::time_point presentAt{};
   };
 } // namespace voice

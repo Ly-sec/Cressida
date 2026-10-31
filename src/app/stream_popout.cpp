@@ -32,10 +32,13 @@ namespace app {
         m_action("volume-down:" + m_key);
     };
     m_window.click = [this](float x, float y, std::uint32_t) {
-      const auto controls=layout::Sharing::popoutControls(m_window.width(),m_window.height());
-      const auto target=std::ranges::find_if(controls,[&](const auto& frame) { return x>=frame.x && x<frame.x+frame.width && y>=frame.y && y<frame.y+frame.height; });
-      if (target==controls.end()) return;
-      const auto index=target-controls.begin();
+      const auto controls = layout::Sharing::popoutControls(m_window.width(), m_window.height());
+      const auto target = std::ranges::find_if(controls, [&](const auto& frame) {
+        return x >= frame.x && x < frame.x + frame.width && y >= frame.y && y < frame.y + frame.height;
+      });
+      if (target == controls.end())
+        return;
+      const auto index = target - controls.begin();
       if (index == 0)
         m_action("volume-down:" + m_key);
       else if (index == 1)
@@ -63,8 +66,9 @@ namespace app {
   void StreamPopout::draw() {
     using namespace theme;
     auto& textures = m_window.context().textureManager();
-    const auto snapshot=m_video->snapshot(); const auto& frame=snapshot.frame;
-    const auto revision=snapshot.statistics.frameRevision;
+    const auto snapshot = m_video->snapshot();
+    const auto& frame = snapshot.frame;
+    const auto revision = snapshot.statistics.frameRevision;
     if (frame && frame->valid() && (!m_texture.valid() || revision != m_revision)) {
       if (m_texture.valid() && m_texture.width == frame->width && m_texture.height == frame->height)
         textures.updateSubImage(
@@ -106,18 +110,15 @@ namespace app {
     const std::array<std::string, 4> captions{
         "Volume −", std::to_string(static_cast<int>(m_volume * 100)) + "% +", "Fullscreen", "Stop watching"
     };
-    const auto controls=layout::Sharing::popoutControls(width,height);
+    const auto controls = layout::Sharing::popoutControls(width, height);
     for (std::size_t i = 0; i < captions.size(); ++i) {
       auto button = std::make_unique<RectNode>();
-      const auto& frame=controls[i];
-      button->setPosition(frame.x,frame.y);
-      button->setSize(frame.width,frame.height);
+      const auto& frame = controls[i];
+      button->setPosition(frame.x, frame.y);
+      button->setSize(frame.width, frame.height);
       button->setStyle({.fill = panel, .radius = Style::scaledRadiusMd()});
       m_scene->addChild(std::move(button));
-      label(
-          frame.x+Style::spaceSm,frame.y+Style::spaceXs,
-          frame.width-Style::spaceLg, captions[i]
-      );
+      label(frame.x + Style::spaceSm, frame.y + Style::spaceXs, frame.width - Style::spaceLg, captions[i]);
     }
     m_window.context().renderScene(m_window.target(), m_scene.get());
   }

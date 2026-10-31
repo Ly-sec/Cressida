@@ -178,7 +178,7 @@ namespace api {
       if (session != m_session)
         return;
       m_voiceRoster.apply(*update);
-      m_streams->roster(session,*update);
+      m_streams->roster(session, *update);
       removedActive = m_voiceSession.active()
           && (std::ranges::find(update->removedChannels, m_voiceSession.channel()) != update->removedChannels.end()
               || (type == "GUILD_DELETE"

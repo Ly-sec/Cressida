@@ -46,7 +46,7 @@ namespace app {
     bool twelveHourClock = false;
     voice::AudioSettings voice;
     voice::ShareSettings sharing;
-    bool sharingCursor=true;
+    bool sharingCursor = true;
   };
   struct LastChannel {
     std::string guild, channel;

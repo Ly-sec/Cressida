@@ -28,9 +28,12 @@ namespace api {
       bool VoiceMember::* member;
     };
     constexpr std::array flags{
-        Flag{"mute", 1U << 3, &VoiceMember::muted},          Flag{"deaf", 1U << 4, &VoiceMember::deafened},
-        Flag{"self_mute", 1U << 5, &VoiceMember::selfMuted}, Flag{"self_deaf", 1U << 6, &VoiceMember::selfDeafened},
-        Flag{"suppress", 1U << 7, &VoiceMember::suppressed}, Flag{"self_video", 1U << 8, &VoiceMember::video},
+        Flag{"mute", 1U << 3, &VoiceMember::muted},
+        Flag{"deaf", 1U << 4, &VoiceMember::deafened},
+        Flag{"self_mute", 1U << 5, &VoiceMember::selfMuted},
+        Flag{"self_deaf", 1U << 6, &VoiceMember::selfDeafened},
+        Flag{"suppress", 1U << 7, &VoiceMember::suppressed},
+        Flag{"self_video", 1U << 8, &VoiceMember::video},
         Flag{"self_stream", voiceMemberStreamField, &VoiceMember::stream}
     };
     struct PublicProfile {

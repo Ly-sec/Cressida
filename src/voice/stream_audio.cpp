@@ -289,7 +289,8 @@ namespace voice {
               if (id.empty())
                 id = name;
               self.applications.push_back(
-                  {info->index, info->sink,id.empty() ? "" : "application:"+id,name.empty() ? "System audio" : name,!info->corked}
+                  {info->index, info->sink, id.empty() ? "" : "application:" + id, name.empty() ? "System audio" : name,
+                   !info->corked}
               );
             },
             this
@@ -465,7 +466,8 @@ namespace voice {
                 std::lock_guard lock(mutex);
                 stateValue.inputs.clear();
                 for (const auto& app : applications)
-                  if (!app.id.empty() && std::ranges::none_of(stateValue.inputs, [&](const auto& item) { return item.id == app.id; }))
+                  if (!app.id.empty()
+                      && std::ranges::none_of(stateValue.inputs, [&](const auto& item) { return item.id == app.id; }))
                     stateValue.inputs.push_back({app.id, app.name});
                 changed();
               }

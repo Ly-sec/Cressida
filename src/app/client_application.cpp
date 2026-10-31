@@ -1,5 +1,4 @@
 #include "app/client_application.h"
-#include "app/stream_popout.h"
 
 #include "api/uploads.h"
 #include "app/automod_message.h"
@@ -11,6 +10,7 @@
 #include "app/message_preferences.h"
 #include "app/reply_preview.h"
 #include "app/single_instance.h"
+#include "app/stream_popout.h"
 #include "app/system_message.h"
 #include "app/theme.h"
 #include "core/deferred_call.h"
@@ -105,7 +105,8 @@ namespace app {
   } // namespace
 
   ClientApplication::ClientApplication(bool demoMode, std::string token, SingleInstance* instance)
-      : m_instance(instance),m_screen([this](auto frame) { m_client.streams().preview()->source(std::move(frame)); }), m_token(std::move(token)) {
+      : m_instance(instance), m_screen([this](auto frame) { m_client.streams().preview()->source(std::move(frame)); }),
+        m_token(std::move(token)) {
     m_window.setTextInputDispatcher(&m_controlInput);
     const auto* trace = std::getenv("CRESSIDA_TRACE_SCROLL");
     m_traceScroll = trace && std::string_view(trace) == "1";
@@ -461,7 +462,8 @@ namespace app {
         demoFloatingStep();
       if (m_demo && m_demoOverlay.starts_with("reply-cycle") && m_demoInteractionStep < composerReplyReplayFrames)
         demoComposerReplyStep();
-      if (m_demo && m_demoOverlay.starts_with("sharing-cycle") && m_demoInteractionStep < sharingReplayFrames) demoSharingStep();
+      if (m_demo && m_demoOverlay.starts_with("sharing-cycle") && m_demoInteractionStep < sharingReplayFrames)
+        demoSharingStep();
       if (m_demo && m_demoOverlay.starts_with("voice-cycle") && m_demoInteractionStep < voiceReplayFrames)
         demoVoiceStep();
       if (m_demo && m_demoOverlay.starts_with("ime-cycle") && m_demoInteractionStep < imeReplayFrames)
@@ -1067,8 +1069,14 @@ namespace app {
         return;
       if (fontPickerClick(x, y))
         return;
-      if (!m_contextOpen && !m_emojiMenu && !m_gifMenu && !m_presenceMenu && m_dialogKind.empty()
-          && m_viewImage.empty() && !m_videoExpanded && sharingClick(x,y))
+      if (!m_contextOpen
+          && !m_emojiMenu
+          && !m_gifMenu
+          && !m_presenceMenu
+          && m_dialogKind.empty()
+          && m_viewImage.empty()
+          && !m_videoExpanded
+          && sharingClick(x, y))
         return;
       if (m_emojiMenu
           && m_emojiBounds.contains(x, y)
@@ -1600,24 +1608,24 @@ namespace app {
                    : m_demo && view && std::string_view(view).starts_with("decorations-cycle") ? 4
                    : m_demo && view && std::string_view(view).starts_with("reduced-motion-cycle")
                    ? reducedMotionReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("sharing-cycle")           ? sharingReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("voice-cycle")             ? voiceReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("ime-cycle")               ? imeReplayFrames
-                   : m_demo && view && std::string_view(view) == "user-preferences-cycle"            ? 12
-                   : m_demo && view && std::string_view(view) == "user-account-cycle"                ? 16
-                   : m_demo && view && std::string_view(view) == "user-settings-lists-cycle"         ? 30
-                   : m_demo && view && std::string_view(view) == "settings-font-cycle"               ? 12
-                   : m_demo && view && std::string_view(view) == "server-hover-cycle"                ? 7
-                   : m_demo && view && std::string_view(view) == "themes-cycle"                      ? 11
-                   : m_demo && view && std::string_view(view).starts_with("message-hover-cycle")     ? 10
-                   : m_demo && view && std::string_view(view) == "sidebar-cycle"                     ? 10
-                   : m_demo && view && std::string_view(view) == "role-emoji-cycle"                  ? 3
-                   : m_demo && view && std::string_view(view) == "role-members-cycle"                ? 2
-                   : m_demo && view && std::string_view(view) == "mentions-cycle"                    ? 4
-                   : m_demo && view && std::string_view(view) == "channel-menu-scroll-cycle"         ? 3
-                   : m_demo && view && std::string_view(view) == "channel-create-cycle"              ? 12
-                   : m_demo && view && std::string_view(view) == "channel-invite-cycle"              ? 18
-                   : m_demo && view && std::string_view(view) == "server-settings-commands-cycle"    ? 12
+                   : m_demo && view && std::string_view(view).starts_with("sharing-cycle")        ? sharingReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("voice-cycle")          ? voiceReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("ime-cycle")            ? imeReplayFrames
+                   : m_demo && view && std::string_view(view) == "user-preferences-cycle"         ? 12
+                   : m_demo && view && std::string_view(view) == "user-account-cycle"             ? 16
+                   : m_demo && view && std::string_view(view) == "user-settings-lists-cycle"      ? 30
+                   : m_demo && view && std::string_view(view) == "settings-font-cycle"            ? 12
+                   : m_demo && view && std::string_view(view) == "server-hover-cycle"             ? 7
+                   : m_demo && view && std::string_view(view) == "themes-cycle"                   ? 11
+                   : m_demo && view && std::string_view(view).starts_with("message-hover-cycle")  ? 10
+                   : m_demo && view && std::string_view(view) == "sidebar-cycle"                  ? 10
+                   : m_demo && view && std::string_view(view) == "role-emoji-cycle"               ? 3
+                   : m_demo && view && std::string_view(view) == "role-members-cycle"             ? 2
+                   : m_demo && view && std::string_view(view) == "mentions-cycle"                 ? 4
+                   : m_demo && view && std::string_view(view) == "channel-menu-scroll-cycle"      ? 3
+                   : m_demo && view && std::string_view(view) == "channel-create-cycle"           ? 12
+                   : m_demo && view && std::string_view(view) == "channel-invite-cycle"           ? 18
+                   : m_demo && view && std::string_view(view) == "server-settings-commands-cycle" ? 12
                    : m_demo && view && std::string_view(view) == "server-settings-expressions-cycle" ? 26
                    : m_demo && view && std::string_view(view) == "server-settings-management-cycle"  ? 12
                    : m_demo && view && std::string_view(view) == "server-settings-cycle"             ? 42
@@ -1646,7 +1654,7 @@ namespace app {
         m_assets.eventFd(), m_video.eventFd(), m_themes.eventFd(), m_filePicker.eventFd(), m_soundPreview.eventFd(),
         m_desktopNotifications.eventFd(), m_tray.eventFd(), m_windowIcons.eventFd(),
         m_instance ? m_instance->eventFd() : -1, m_client.voiceAudio()->eventFd(), m_qrLogin.fd(),
-        m_client.streams().eventFd(),m_screen.eventFd(),m_client.streams().sharedAudio()->eventFd()
+        m_client.streams().eventFd(), m_screen.eventFd(), m_client.streams().sharedAudio()->eventFd()
     );
     if (m_demoOverlay.starts_with("login-cycle") && m_demoInteractionStep != loginReplayFrames)
       throw std::runtime_error("Sign-in replay did not finish");
@@ -1708,7 +1716,8 @@ namespace app {
       throw std::runtime_error("Reduced motion media replay did not finish");
     if (m_demoOverlay.starts_with("voice-cycle") && m_demoInteractionStep != voiceReplayFrames)
       throw std::runtime_error("The voice replay did not complete");
-    if (m_demoOverlay.starts_with("sharing-cycle") && m_demoInteractionStep!=sharingReplayFrames) throw std::runtime_error("Sharing replay did not finish");
+    if (m_demoOverlay.starts_with("sharing-cycle") && m_demoInteractionStep != sharingReplayFrames)
+      throw std::runtime_error("Sharing replay did not finish");
     if (m_demoOverlay.starts_with("ime-cycle") && m_demoInteractionStep != imeReplayFrames)
       throw std::runtime_error("The input-method replay did not complete");
     if (m_demoOverlay == "user-preferences-cycle" && m_demoInteractionStep != 12)
@@ -3291,7 +3300,9 @@ namespace app {
           selectSettingsPage("accessibility");
           m_demoOverlay = view;
           m_demoInteractionStep = 0;
-        } else if (view.starts_with("sharing-cycle") || view.starts_with("sharing-picker") || view.starts_with("sharing-stage")) {
+        } else if (
+            view.starts_with("sharing-cycle") || view.starts_with("sharing-picker") || view.starts_with("sharing-stage")
+        ) {
           prepareSharingDemo(view);
         } else if (view.starts_with("voice-cycle")) {
           prepareVoiceDemo(view);
@@ -3758,8 +3769,8 @@ namespace app {
     m_floatingFrames.clear();
     m_shareHits.clear();
     m_visibleStreamFrames.clear();
-    m_sharingPreviewBounds={};
-    m_voiceStageBounds={};
+    m_sharingPreviewBounds = {};
+    m_voiceStageBounds = {};
     m_streamPreviewHovered.clear();
     m_typingVisible = false;
     m_roleMotion.begin();
@@ -4241,10 +4252,10 @@ namespace app {
       const bool forum = forumView();
       const float panelWidth = m_channelPanel.empty() ? 0 : channelPanelWidth();
       const float memberWidth = memberPaneWidth();
-      const bool voiceStage=voiceStageVisible();
-      auto stage=layout::Sharing::stage(chatLeft(),w,h);
+      const bool voiceStage = voiceStageVisible();
+      auto stage = layout::Sharing::stage(chatLeft(), w, h);
       const float left = voiceStage ? stage.chat.x : chatLeft();
-      const float bodyWidth = voiceStage ? stage.chat.width : w-left-memberWidth-panelWidth;
+      const float bodyWidth = voiceStage ? stage.chat.width : w - left - memberWidth - panelWidth;
       if (m_messageEdit
           && (m_messageEdit->channel != m_channelId
               || std::ranges::find(m_messages, m_messageEdit->message, &api::Message::id) == m_messages.end()))
@@ -4293,26 +4304,48 @@ namespace app {
         const float stickerHeight = m_draftStickers[m_channelId].empty() ? 0 : 100;
         const float attachmentHeight = uploadHeight + stickerHeight;
         const float replyHeight = m_replies.contains(m_channelId) ? layout::ComposerReply::height : 0;
-        if (voiceStage) m_draftHeight=std::min(m_draftHeight,std::max(layout::Composer::minimumTextHeight,
-          h-stage.video.y-Style::controlHeightSm-layout::Composer::bottomInset-layout::Composer::verticalPadding-attachmentHeight-replyHeight));
+        if (voiceStage)
+          m_draftHeight = std::min(
+              m_draftHeight,
+              std::max(
+                  layout::Composer::minimumTextHeight,
+                  h
+                      - stage.video.y
+                      - Style::controlHeightSm
+                      - layout::Composer::bottomInset
+                      - layout::Composer::verticalPadding
+                      - attachmentHeight
+                      - replyHeight
+              )
+          );
         const float composerHeight = slashComposerActive()
             ? measureSlashComposer(bodyWidth - layout::Floating::gap, h)
             : m_draftHeight + layout::Composer::verticalPadding + attachmentHeight + replyHeight;
         if (voiceStage) {
-          stage=layout::Sharing::stage(chatLeft(),w,h,composerHeight+layout::Composer::bottomInset+Style::controlHeightSm+layout::Typing::height+Style::spaceGroup);
-          drawVoiceStage(root,stage.video);
+          stage = layout::Sharing::stage(
+              chatLeft(), w, h,
+              composerHeight
+                  + layout::Composer::bottomInset
+                  + Style::controlHeightSm
+                  + layout::Typing::height
+                  + Style::spaceGroup
+          );
+          drawVoiceStage(root, stage.video);
         }
         const auto composer = layout::composerFrame(h, composerHeight);
         const float composerY = composer.top;
         float top = m_unreadTimeline.unread() ? layout::Chat::unreadTimelineTop : layout::Chat::timelineTop;
-        if (voiceStage) top=stage.chat.y+Style::controlHeightSm+Style::spaceMd;
+        if (voiceStage)
+          top = stage.chat.y + Style::controlHeightSm + Style::spaceMd;
         constexpr float timelineTopPadding = layout::Chat::topPadding,
                         timelineBottomPadding = layout::Chat::bottomPadding;
         const auto typing = typingText();
         // Reserve typing space inside the conversation panel, keeping its bottom
         // aligned with the sidebar even when nobody is typing.
         const float bottom = composer.viewportBottom, textWidth = std::max(32.0F, bodyWidth - 104);
-        const float panelTop = voiceStage ? stage.chat.y+layout::Floating::inset : layout::Window::titlebarHeight + layout::ChannelHeader::height + layout::Floating::inset;
+        const float panelTop = voiceStage
+            ? stage.chat.y + layout::Floating::inset
+            : layout::Window::titlebarHeight + layout::ChannelHeader::height + layout::Floating::inset;
         floatingPanel(
             root,
             {left + layout::Floating::inset, panelTop, std::max(0.0F, bodyWidth - layout::Floating::gap),
@@ -4320,7 +4353,10 @@ namespace app {
             background
         );
         if (voiceStage && !m_unreadTimeline.unread())
-          label(root,left+Style::spaceLg,stage.chat.y+Style::spaceSm,bodyWidth-Style::spaceLg*2,"Chat",Style::fontSizeBody,foreground,FontWeight::Medium);
+          label(
+              root, left + Style::spaceLg, stage.chat.y + Style::spaceSm, bodyWidth - Style::spaceLg * 2, "Chat",
+              Style::fontSizeBody, foreground, FontWeight::Medium
+          );
         const MessageMeasure measure = [&](std::string_view text, const MessageStyle& style) {
           return m_window.target()
               .renderer()
@@ -4571,7 +4607,7 @@ namespace app {
               totalHeight += height;
           }
           if (!m_unreadTimeline.unread())
-            top = voiceStage ? stage.chat.y+Style::controlHeightSm+Style::spaceMd : layout::Chat::timelineTop;
+            top = voiceStage ? stage.chat.y + Style::controlHeightSm + Style::spaceMd : layout::Chat::timelineTop;
           m_messageMaxScroll = std::max(0.0F, totalHeight - (bottom - top));
           m_scrolling.limit(m_messageScroll, m_messageMaxScroll);
         }
@@ -5547,7 +5583,9 @@ namespace app {
             if (!timestamp.empty())
               caption += " since " + timestamp;
           }
-          const float x = left + Style::spaceLg, y = voiceStage ? stage.chat.y+Style::spaceSm : layout::Chat::timelineTop-Style::spaceMd, width = bodyWidth - Style::space2Xl;
+          const float x = left + Style::spaceLg,
+                      y = voiceStage ? stage.chat.y + Style::spaceSm : layout::Chat::timelineTop - Style::spaceMd,
+                      width = bodyWidth - Style::space2Xl;
           const float readWidth = 144;
           const bool over = hovered(x, y, width - readWidth, 36);
           rectangle(root, x, y, width, 36, lerpColor(background, accent, 0.3F), Style::surfaceRadius);
@@ -5724,7 +5762,12 @@ namespace app {
           );
         }
         if (!m_status.empty())
-          label(root, left + Style::spaceWide, voiceStage ? stage.chat.y+Style::controlHeightSm : layout::Window::titlebarHeight+layout::ChannelHeader::height, bodyWidth - Style::spaceGroup-Style::spaceSm, m_status, Style::fontSizeMini, muted);
+          label(
+              root, left + Style::spaceWide,
+              voiceStage ? stage.chat.y + Style::controlHeightSm
+                         : layout::Window::titlebarHeight + layout::ChannelHeader::height,
+              bodyWidth - Style::spaceGroup - Style::spaceSm, m_status, Style::fontSizeMini, muted
+          );
         if (memberWidth > 0 && dmRecipient()) {
           drawDmProfile(
               root,
@@ -7526,7 +7569,9 @@ namespace app {
           } else if (!event.error.empty())
             m_settingsStatus = event.error;
         }
-      } else if (event.operation==api::Operation::StreamPreviewRead || event.operation==api::Operation::StreamPreviewWrite) {
+      } else if (
+          event.operation == api::Operation::StreamPreviewRead || event.operation == api::Operation::StreamPreviewWrite
+      ) {
         streamPreviewResult(event);
       } else if (event.operation == api::Operation::UserSettings) {
         if (event.userSettingsSessionEnded && event.error.empty()) {
@@ -7902,7 +7947,8 @@ namespace app {
   }
 
   void ClientApplication::onKey(const Key& key) {
-    if (sharingKey(key)) return;
+    if (sharingKey(key))
+      return;
     if (auto* area = m_controlInput.focusedArea())
       if (const auto* input = dynamic_cast<Input*>(area->textInputClient()); input && input->hasPreedit()) {
         const auto unicode = key.text.empty() ? 0U : static_cast<std::uint32_t>(g_utf8_get_char(key.text.c_str()));
@@ -7945,7 +7991,8 @@ namespace app {
     }
     if (userAccountDialogKey(key))
       return;
-    if (sharingKey(key)) return;
+    if (sharingKey(key))
+      return;
     if (inboxKey(key))
       return;
     if (searchMenuKey(key))
@@ -8064,7 +8111,10 @@ namespace app {
       activate({.action = Action::CancelReply});
       return;
     }
-    if (key.symbol==XKB_KEY_Escape && voiceStageVisible()) { sharingAction("close-stage"); return; }
+    if (key.symbol == XKB_KEY_Escape && voiceStageVisible()) {
+      sharingAction("close-stage");
+      return;
+    }
     if (key.control && (key.symbol == XKB_KEY_r || key.symbol == XKB_KEY_R)) {
       refresh();
       return;

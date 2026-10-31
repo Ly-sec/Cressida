@@ -79,6 +79,12 @@ namespace api {
     if (type == "READY" || type == "READY_SUPPLEMENTAL" || type == "GUILD_CREATE") {
       auto guild = [&](const nlohmann::json& item) {
         const auto id = string(item, "id");
+        if (!validSnowflake(id))
+          return;
+        if (item.contains("channels"))
+          channels(item["channels"], id);
+        if (item.contains("threads"))
+          channels(item["threads"], id);
         if (item.contains("members") && item["members"].is_array())
           for (const auto& entry : item["members"])
             member(entry, id);
@@ -104,6 +110,12 @@ namespace api {
           for (const auto& item : entries)
             settings(item);
       }
+      if (type == "READY_SUPPLEMENTAL" && value.contains("lazy_private_channels"))
+        channels(value["lazy_private_channels"]);
+    } else if (type == "CHANNEL_CREATE" || type == "CHANNEL_UPDATE") {
+      const auto guild = string(value, "guild_id");
+      if (guild.empty() || validSnowflake(guild))
+        channels(nlohmann::json::array({value}), guild);
     } else if (type == "USER_GUILD_SETTINGS_UPDATE")
       settings(value);
     else if (type == "GUILD_MEMBER_UPDATE" || type == "GUILD_MEMBER_ADD")
@@ -129,13 +141,6 @@ namespace api {
     context("READY", value, value.contains("user") ? string(value["user"], "id") : "");
     if (value.contains("private_channels"))
       channels(value["private_channels"]);
-    if (value.contains("guilds") && value["guilds"].is_array())
-      for (const auto& guild : value["guilds"]) {
-        if (guild.contains("channels"))
-          channels(guild["channels"], string(guild, "id"));
-        if (guild.contains("threads"))
-          channels(guild["threads"], string(guild, "id"));
-      }
     for (auto& [id, entry] : m_channels)
       entry.processed = entry.latest;
     if (!value.contains("read_state"))

@@ -941,6 +941,7 @@ namespace app {
     std::string channelName(const api::Channel& channel) const;
     void updateDmMembers();
     const api::Account* dmRecipient() const;
+    bool sidePaneEnabled() const;
     float memberPaneWidth() const;
     void refreshDmProfile(bool retry = false);
     bool dmProfileResult(const api::Event& event);
@@ -1343,6 +1344,7 @@ namespace app {
     bool m_sending = false;
     bool m_live = false;
     bool m_showMembers = true;
+    bool m_showDmProfile = true;
     bool m_dmMode = false;
     bool m_loadingPrivate = false;
     std::string m_gatewayStatus = "Connecting…";

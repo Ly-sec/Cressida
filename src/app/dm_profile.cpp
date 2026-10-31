@@ -21,6 +21,7 @@ namespace app {
     });
     return recipient == channel->recipients.end() ? nullptr : &*recipient;
   }
+  bool ClientApplication::sidePaneEnabled() const { return dmRecipient() ? m_showDmProfile : m_showMembers; }
   float ClientApplication::memberPaneWidth() const {
     if (voiceStageVisible())
       return 0;
@@ -29,7 +30,7 @@ namespace app {
         || (m_dmMode && !m_dmPage.empty())
         || forumView()
         || !m_channelPanel.empty()
-        || !m_showMembers
+        || !sidePaneEnabled()
         || m_window.width() < layout::Members::minimumWindowWidth
         || available < layout::Members::minimumAvailableWidth)
       return 0;

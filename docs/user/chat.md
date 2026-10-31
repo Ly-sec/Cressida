@@ -185,5 +185,11 @@ Requests are never retried automatically.
 
 ## Catch up and save for later
 
+Unread conversations use brighter, bold names and an edge marker. Server and
+folder number badges count mentions, while unmuted direct messages also add to
+their conversation badge. These indicators update as channel details arrive
+after sign-in and when new messages or read acknowledgements arrive. Muted
+channels suppress ordinary unread styling; mentions can still show a badge.
+
 Use the [Inbox](inbox.md) for unread conversations and mentions across your
 account. Message menus also let you bookmark a message or set a reminder.

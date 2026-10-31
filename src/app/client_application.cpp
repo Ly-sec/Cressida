@@ -3408,6 +3408,7 @@ namespace app {
         }
       }
     }
+    m_showDmProfile = m_showMembers;
   }
 
   void ClientApplication::rectangle(Node& parent, float x, float y, float w, float h, Color fill, float radius) {
@@ -8587,15 +8588,16 @@ namespace app {
     case Action::DmProfileRetry:
       refreshDmProfile(true);
       break;
-    case Action::ToggleMembers:
+    case Action::ToggleMembers: {
+      auto& visible = dmRecipient() ? m_showDmProfile : m_showMembers;
       if (!m_channelPanel.empty()) {
         closeChannelPanel();
-        m_showMembers = true;
+        visible = true;
       } else
-        m_showMembers = !m_showMembers;
-      if (m_showMembers)
+        visible = !visible;
+      if (visible)
         refreshDmProfile();
-      break;
+    } break;
     case Action::PasteClipboard:
       if (!m_demo && !m_channelId.empty()) {
         focusControl("composer");

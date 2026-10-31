@@ -233,7 +233,7 @@ namespace app {
     );
     iconButton(
         root, {icons + layout::ChannelHeader::actionStep * 3, 52, 30, 32, Action::ToggleMembers, {}}, "users",
-        dmRecipient() ? "Profile panel" : "Member list", m_showMembers && m_channelPanel.empty()
+        dmRecipient() ? "Profile panel" : "Member list", sidePaneEnabled() && m_channelPanel.empty()
     );
     float nameX = left + (Style::spaceXl - Style::spaceXxs);
     if (m_dmMode || channel->type == 2) {

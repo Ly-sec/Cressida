@@ -1473,9 +1473,14 @@ namespace api {
       if (type == "THREAD_LIST_SYNC" && data.contains("threads"))
         m_readState.channels(data["threads"], data.value("guild_id", ""));
       if (type == "CHANNEL_DELETE"
+          || type == "CHANNEL_CREATE"
+          || type == "CHANNEL_UPDATE"
+          || type == "GUILD_CREATE"
           || type == "GUILD_DELETE"
+          || type == "READY_SUPPLEMENTAL"
           || type == "THREAD_DELETE"
           || type == "THREAD_CREATE"
+          || type == "THREAD_UPDATE"
           || type == "THREAD_LIST_SYNC")
         publishReads();
       if (type == "CHANNEL_UNREAD_UPDATE") {

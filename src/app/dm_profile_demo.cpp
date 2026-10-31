@@ -9,6 +9,7 @@
 #include <linux/input-event-codes.h>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
+#include <xkbcommon/xkbcommon-keysyms.h>
 
 namespace app {
   namespace {
@@ -47,6 +48,7 @@ namespace app {
     ])"));
     m_privateReady = true;
     m_showMembers = true;
+    m_showDmProfile = true;
     m_userDirectory.consume("READY_SUPPLEMENTAL", nlohmann::json::parse(R"({
       "merged_presences":{"friends":[
         {"user_id":"11","status":"online","activities":[{"type":4,"state":"Building native things","emoji":{"id":null,"name":"👀"}}]},
@@ -198,9 +200,10 @@ namespace app {
     } else if (step == 2) {
       closeDialog();
     } else if (step == 3) {
-      click(Action::ToggleMembers);
+      m_window.key({.symbol = XKB_KEY_u, .control = true});
     } else if (step == 4) {
       require(memberPaneWidth() == 0 && !profileButton(), "The header toggle hides the profile surface and hits");
+      require(m_showMembers && !m_showDmProfile, "Hiding the DM profile preserves member-list visibility");
       click(Action::ToggleMembers);
     } else if (step == 5) {
       require(profileButton() && m_dmProfile.data && !m_dmProfile.request, "Reopening reuses the current profile");
@@ -236,13 +239,21 @@ namespace app {
       m_window.scroll(Style::spaceGroup);
       require(m_scrolling.active(m_dmProfile.scroll), "Wheel input over the profile uses the profile scroll owner");
     } else if (step == 8) {
+      click(Action::ToggleMembers);
       click(Action::Channel, "9003");
       require(!dmRecipient() && m_dmProfile.user.empty(), "Group conversations keep participant mode");
     } else if (step == 9) {
       require(
           memberPaneWidth() == layout::Members::width && !profileButton(), "Groups retain the ordinary member list"
       );
+      click(Action::ToggleMembers);
+      require(!m_showMembers && !m_showDmProfile, "Group members toggle independently of the hidden DM profile");
       click(Action::Channel, "9001");
+      require(memberPaneWidth() == 0, "Returning to a DM preserves its independently hidden profile");
+      click(Action::ToggleMembers);
+      require(
+          memberPaneWidth() > 0 && !m_showMembers, "Showing a DM profile leaves group and server member lists hidden"
+      );
       response({}, false, true);
     } else if (step == 10) {
       require(

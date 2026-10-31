@@ -57,6 +57,73 @@ int main() {
     require(state.unread().contains("20"), "Explicit mark-unread can rewind read state");
     state.ready(json::object());
     require(state.unread().empty(), "Fresh login replaces previous account read state");
+    state.ready(
+        json{
+            {"read_state",
+             {{"entries",
+               json::array(
+                   {{{"id", "10"}, {"last_message_id", "99"}, {"mention_count", 2}},
+                    {{"id", "20"}, {"last_message_id", "899"}}}
+               )}}}
+        }
+    );
+    state.context(
+        "GUILD_CREATE",
+        json{
+            {"id", "1"},
+            {"channels",
+             json::array({{{"id", "10"}, {"last_message_id", "100"}}, {{"id", "11"}, {"last_message_id", "101"}}})}
+        },
+        "2"
+    );
+    require(
+        state.unread().at("10") == "1"
+            && state.unread().contains("11")
+            && state.unreadCursors().at("10").latest == "100"
+            && state.unreadCursors().at("10").mentions == 2,
+        "Delayed guild hydration restores unread styling and scopes imported mention badges to the server"
+    );
+    state.context(
+        "READY_SUPPLEMENTAL",
+        json{{"lazy_private_channels", json::array({{{"id", "20"}, {"last_message_id", "900"}}})}}, "2"
+    );
+    require(
+        state.unreadCursors().at("20").after == "899" && state.unreadCursors().at("20").latest == "900",
+        "Lazy private channels hydrate latest messages without dropping their initial read cursor"
+    );
+    state.acknowledge(json{{"channel_id", "10"}, {"message_id", "100"}});
+    state.context("CHANNEL_UPDATE", json{{"guild_id", "1"}, {"id", "10"}, {"last_message_id", "102"}}, "2");
+    require(
+        state.unread().at("10") == "1" && state.unreadCursors().at("10").after == "100",
+        "Later channel metadata restores new unread state without replacing acknowledgements"
+    );
+    state.context("CHANNEL_UPDATE", json{{"guild_id", "1"}, {"id", "10"}, {"last_message_id", "99"}}, "2");
+    require(state.unreadCursors().at("10").latest == "102", "Stale metadata cannot rewind the newest message");
+    state.context(
+        "READY_SUPPLEMENTAL",
+        json{
+            {"guilds",
+             json::array({{{"id", "1"}, {"threads", json::array({{{"id", "12"}, {"last_message_id", "103"}}})}}})}
+        },
+        "2"
+    );
+    require(state.unread().at("12") == "1", "Supplemental threads retain their server association");
+    state.context("CHANNEL_CREATE", json{{"guild_id", "1"}, {"id", "13"}, {"last_message_id", "104"}}, "2");
+    require(state.unread().at("13") == "1", "Newly discovered channels can expose existing unread history");
+    state.context(
+        "GUILD_CREATE",
+        json{
+            {"id", "1"},
+            {"channels",
+             json::array({{{"id", "10"}, {"last_message_id", "102"}}, {{"id", "invalid"}, {"last_message_id", "200"}}})}
+        },
+        "2"
+    );
+    require(
+        state.unreadCursors().at("10").after == "100" && !state.unread().contains("invalid"),
+        "Repeated hydration preserves reads and ignores malformed channel identities"
+    );
+    state.ready(json::object());
     auto count = [&](const std::string& channel) {
       const auto cursors = state.unreadCursors();
       const auto found = cursors.find(channel);

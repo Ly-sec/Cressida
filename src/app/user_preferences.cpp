@@ -218,7 +218,7 @@ namespace app {
         m_channelPanel = "search";
         m_focusedInput = "channel-search-panel";
       } else if (name == "toggle_members") {
-        m_showMembers = !m_showMembers;
+        activate({0, 0, 0, 0, Action::ToggleMembers, {}});
       } else if (name == "next_channel" || name == "previous_channel") {
         const auto& channels = m_dmMode ? m_privateChannels : m_channels;
         if (channels.empty())

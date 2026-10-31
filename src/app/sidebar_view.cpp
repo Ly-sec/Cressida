@@ -12,7 +12,7 @@ namespace app {
   }
   float ClientApplication::chatLeft() const { return layout::Sidebar::railWidth + channelSidebarWidth(); }
   float ClientApplication::channelPanelWidth() const {
-    const float available = m_window.width() - chatLeft();
+    const float available = std::max(0.0F, m_window.width() - conversationLeft());
     return std::min(
         {layout::Sidebar::panelPreferredWidth,
          std::max(layout::Sidebar::panelMinimumWidth, available - layout::Sidebar::panelMinimumWidth), available / 2}

@@ -20,7 +20,8 @@ namespace api {
   };
 
   // A background GET may yield to accepted user work, but a mutation must only
-  // be cancelled by shutdown or an account/session change.
+  // be cancelled by shutdown or an account/session change. Publication preview
+  // updates can additionally be revoked when sharing stops or previews are hidden.
   struct RestRequestScope {
     std::stop_token stop;
     const std::atomic<std::uint64_t>* session = nullptr;
@@ -35,12 +36,15 @@ namespace api {
     std::uint64_t expectedCredentialRevision = 0;
     const RestReadIntent* intent = nullptr;
     const std::atomic<std::uint64_t>* promotedNavigation = nullptr;
+    const std::atomic_bool* revoked = nullptr;
 
     RestCancellation cancellation() const noexcept {
       if (stop.stop_requested())
         return RestCancellation::Stopped;
       if (session && session->load() != expectedSession)
         return RestCancellation::SessionChanged;
+      if (revoked && revoked->load())
+        return RestCancellation::Superseded;
       const bool promoted = intent && intent->foreground.load();
       if (intent
           && (intent->cancelled.load()

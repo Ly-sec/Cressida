@@ -1,6 +1,7 @@
 #include "app/client_application.h"
 #include "app/single_instance.h"
 
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 #include <utility>
@@ -18,6 +19,7 @@ namespace app {
     });
   }
   void ClientApplication::closeToTray() {
+    sharingRelease();
     releasePushToTalk();
     m_client.voiceAudio()->stopTest();
     // A window must remain reachable when the desktop has no tray host.
@@ -30,6 +32,18 @@ namespace app {
     finishSidebarResize();
     closeContext();
     closeSelectDropdown();
+    if (m_shareOpen || m_shareAwaitingSource) {
+      m_shareOpen = m_shareAwaitingSource = false;
+      ++m_shareSourceRequest;
+      m_screen.cancelSelection();
+      const bool publishing = std::ranges::any_of(m_streamSnapshot.active, [](const auto& stream) {
+        return stream.publishing && stream.connection.phase != voice::Phase::Failed;
+      });
+      if (!publishing && !m_sharingPublicationRequested) {
+        m_screen.stop();
+        m_client.streams().preview()->clear();
+      }
+    }
     m_controlInput.cancelPointerCapture();
     m_controlInput.setFocus(nullptr);
     m_dragDraft = m_dragMessage = m_dragImage = false;
@@ -70,6 +84,9 @@ namespace app {
       m_trayStartupTimer.stop();
       m_restartRequested = false;
       m_window.close();
+      break;
+    case TrayCommand::StopSharing:
+      sharingAction("stop");
       break;
     }
   }

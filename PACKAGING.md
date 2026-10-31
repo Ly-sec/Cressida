@@ -43,7 +43,7 @@ client.
   archivers without the compiler's LTO plugin can produce archives whose symbols
   the linker cannot find. See [GCC's LTO documentation](https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html#index-flto).
 - `wayland-scanner` and `wayland-protocols`, including xdg-shell, xdg-decoration,
-  viewporter, fractional-scale-v1 and xdg-activation-v1 XML files.
+  viewporter, fractional-scale-v1, xdg-activation-v1 and xdg-foreign-v2 XML files.
 - Python 3, `readelf` (binutils) and the `ffmpeg` executable for the test fixtures.
 - `dbus-daemon` for private test buses.
 
@@ -87,11 +87,12 @@ leave it disabled. These options do not change ordinary voice behavior.
 | libxkbcommon | `xkbcommon` | Keyboard input |
 | nlohmann JSON | `nlohmann_json` | Protocol and state data |
 | toml++ | `tomlplusplus` | Theme configuration |
-| GLib / GIO | `gio-2.0` | D-Bus, portals and theme file monitoring |
+| GLib / GIO | `gio-2.0`, `gio-unix-2.0` | D-Bus, portals and theme file monitoring |
 | libcurl | `libcurl >= 8.16`, with HTTPS, `ws` and `wss` enabled | REST and Gateway connections |
 | libsecret | `libsecret-1` | Secret Service credentials |
 | MD4C | `md4c` | Markdown parsing |
-| FFmpeg libraries | `libavformat`, `libavcodec`, `libavutil`, `libswscale` | Media decoding |
+| FFmpeg libraries | `libavformat`, `libavcodec`, `libavutil`, `libswscale` | Media decoding and stream encoding |
+| PipeWire client | `libpipewire-0.3` | Consented screen and window capture |
 | libmpv | `mpv >= 2.3` pkg-config API version | Embedded native video and audio playback |
 | rlottie | `rlottie` | Animated stickers |
 | stb headers | `stb_image_resize2.h` and `stb_image_write.h` | Image resizing and encoding |
@@ -259,6 +260,11 @@ Voice needs a running PulseAudio service or PipeWire's PulseAudio-compatible
 service, plus the voice libraries listed above. Cressida does not install or
 start an audio daemon.
 
+Screen sharing also needs a running PipeWire service and a compositor-compatible
+ScreenCast portal backend. Keep FFmpeg's supported H.264, VP8 or VP9 encoders
+available for publication; decoder-only media builds cannot publish a screen.
+Screen and application audio capture begin only after explicit user actions.
+
 | Dependency | Requirement |
 |---|---|
 | Wayland compositor and EGL/GLES driver | Required to display the client |
@@ -269,6 +275,7 @@ start an audio daemon.
 | shared-mime-info database | File-type detection for uploads and image copy/save; expose its share directory through XDG_DATA_DIRS at runtime and in clean tests |
 | Secret Service provider | Recommended for remembering sign-in; libsecret alone does not provide a keyring |
 | XDG desktop portal with Settings / FileChooser backends | System color mode and native file selection where supported |
+| XDG desktop portal with a ScreenCast backend and PipeWire | Screen/window selection and capture |
 | Desktop notification service | Native notification delivery |
 
 GNOME Keyring or KeePassXC with Secret Service enabled can store credentials.

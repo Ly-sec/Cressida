@@ -24,6 +24,7 @@ namespace api {
     const Logger gatewayLog("gateway");
     constexpr std::string_view gatewayQuery = "?v=9&encoding=json";
     constexpr auto voiceUpdateSpacing = 250ms;
+    constexpr std::size_t maximumStreamCommands = 128;
 
     enum class IdentifyCapability : std::uint64_t {
       VersionedReadStates = 1ULL << 2,
@@ -163,6 +164,7 @@ namespace api {
       m_presenceChosen = false;
       m_presenceRestored = false;
       m_voiceChosen = false;
+      m_streamCommands.clear();
       m_voiceGuild.clear();
       m_voiceChannel.clear();
       m_voiceVersion = 0;
@@ -190,6 +192,7 @@ namespace api {
     m_presenceChosen = false;
     m_presenceRestored = false;
     m_voiceChosen = false;
+    m_streamCommands.clear();
     m_voiceGuild.clear();
     m_voiceChannel.clear();
     m_voiceVersion = 0;
@@ -302,11 +305,45 @@ namespace api {
     if (session != m_generation || session != m_session || m_token.empty())
       return false;
     m_voiceGuild = std::move(guild);
+    if (m_voiceChannel != channel)
+      m_streamCommands.clear();
     m_voiceChannel = std::move(channel);
     m_voiceMuted = muted;
     m_voiceDeafened = deafened;
     m_voiceChosen = true;
     ++m_voiceVersion;
+    (void)m_wake.signal();
+    return true;
+  }
+
+  bool Gateway::stream(std::uint64_t session, StreamCommand command) {
+    if (!streamCommand(command))
+      return false;
+    std::lock_guard lock(m_mutex);
+    if (session != m_generation
+        || session != m_session
+        || m_token.empty()
+        || !m_voiceChosen
+        || command.target.guild != m_voiceGuild
+        || command.target.channel != m_voiceChannel)
+      return false;
+    if (command.kind == StreamCommandKind::Delete)
+      std::erase_if(m_streamCommands, [&](const auto& queued) { return queued.command.target == command.target; });
+    else
+      for (auto& queued : m_streamCommands)
+        if (queued.command.target == command.target && queued.command.kind == command.kind) {
+          if (command.kind == StreamCommandKind::Create || command.kind == StreamCommandKind::Watch)
+            return false;
+          queued.command = std::move(command);
+          return true;
+        }
+    if (m_streamCommands.size() >= maximumStreamCommands)
+      return false;
+    auto queued = QueuedStream{std::move(command), Clock::now()};
+    if (queued.command.kind == StreamCommandKind::Delete)
+      m_streamCommands.push_front(std::move(queued));
+    else
+      m_streamCommands.push_back(std::move(queued));
     (void)m_wake.signal();
     return true;
   }
@@ -406,6 +443,29 @@ namespace api {
           }
           auto nextControl = heartbeatAt;
           if (ready) {
+            std::optional<StreamCommand> stream;
+            std::vector<StreamCommand> expired;
+            {
+              std::lock_guard lock(m_mutex);
+              while (!m_streamCommands.empty() && now - m_streamCommands.front().queued >= streamSetupDeadline) {
+                expired.push_back(std::move(m_streamCommands.front().command));
+                m_streamCommands.pop_front();
+              }
+              if (!m_streamCommands.empty()) {
+                const auto sendAt = applicationBudget.ready(now);
+                nextControl = std::min(nextControl, sendAt);
+                if (now >= sendAt && applicationBudget.acquire(now)) {
+                  stream = std::move(m_streamCommands.front().command);
+                  m_streamCommands.pop_front();
+                }
+              }
+            }
+            for (const auto& command : expired)
+              if (command.kind != StreamCommandKind::Ping)
+                m_dispatch(session, "STREAM_COMMAND_FAILED", {{"stream_key", command.target.value()}});
+            if (stream)
+              if (const auto payload = streamCommand(*stream))
+                send(curl.get(), *payload, connection);
             Json voiceUpdate;
             std::uint64_t desiredVoiceVersion = 0;
             {

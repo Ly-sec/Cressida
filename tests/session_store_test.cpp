@@ -90,6 +90,72 @@ int main() {
       );
     }
     {
+      const auto sharingPath = std::filesystem::path(directory) / "sharing.json";
+      app::SessionStore store(sharingPath);
+      app::Preferences preferences;
+      preferences.sharing = {
+          .resolution = 1440,
+          .frameRate = 60,
+          .content = voice::ContentPreference::Clarity,
+          .hardware = false,
+          .audioSources = {"application:test-player", "system"},
+          .audioVolume = 0.5F,
+          .hidePreview = true
+      };
+      preferences.sharingCursor = false;
+      store.savePreferences("123", preferences);
+      app::SessionStore restarted(sharingPath);
+      auto expected = preferences.sharing;
+      expected.hidePreview = false;
+      require(
+          restarted.preferences("123").sharing == expected && !restarted.preferences("123").sharingCursor,
+          "Sharing quality, application audio and cursor preferences survive restart"
+      );
+      require(
+          restarted.preferences("456").sharing == voice::ShareSettings{}
+              && restarted.preferences("456").sharingCursor
+              && restarted.startupPreferences().sharing == voice::ShareSettings{}
+              && restarted.startupPreferences().sharingCursor,
+          "Sharing preferences stay isolated to the signed-in account"
+      );
+      std::ifstream saved(sharingPath);
+      const auto savedSharing = nlohmann::json::parse(saved)["123"]["preferences"]["sharing"];
+      require(
+          !savedSharing.contains("hide_preview")
+              && !savedSharing.contains("hidePreview")
+              && !restarted.preferences("123").sharing.hidePreview,
+          "A stream preview privacy override is never restored from local preferences"
+      );
+      preferences.sharing.resolution = 0;
+      preferences.sharing.frameRate = 15;
+      preferences.sharing.audioSources.clear();
+      preferences.sharingCursor = true;
+      store.savePreferences("123", preferences);
+      require(
+          restarted.preferences("123").sharing.resolution == 0
+              && restarted.preferences("123").sharing.frameRate == 15
+              && restarted.preferences("123").sharing.audioSources.empty()
+              && restarted.preferences("123").sharingCursor,
+          "Source resolution and an explicit no-audio choice survive restart"
+      );
+      std::ofstream(
+          sharingPath
+      ) << R"({"123":{"preferences":{"theme":"light","sharing":{"resolution":999,"frame_rate":-1,"clarity":"yes","hardware":0,"audio_volume":999,"audio_sources":["system","",false,"system"],"cursor":"no","hide_preview":true}}}})";
+      const auto malformed = restarted.preferences("123");
+      require(
+          malformed.theme == "light"
+              && malformed.sharing.resolution == voice::ShareSettings{}.resolution
+              && malformed.sharing.frameRate == voice::ShareSettings{}.frameRate
+              && malformed.sharing.content == voice::ContentPreference::Smoothness
+              && malformed.sharing.hardware
+              && malformed.sharing.audioVolume == voice::maximumAudioVolume
+              && malformed.sharing.audioSources == std::vector<std::string>{"system"}
+              && !malformed.sharing.hidePreview
+              && malformed.sharingCursor,
+          "Malformed sharing preferences retain bounded defaults and unrelated settings"
+      );
+    }
+    {
       const auto clockPath = std::filesystem::path(directory) / "clock.json";
       app::SessionStore store(clockPath);
       require(!store.preferences("123").twelveHourClock, "The clock defaults to 24-hour time");

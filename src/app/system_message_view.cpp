@@ -177,8 +177,8 @@ namespace app {
       Node& parent, const api::Message& message, const MessageLayout& layout, float y, float width
   ) {
     using namespace theme;
-    const float absoluteX = chatLeft() + 74, absoluteY = m_messageViewportTop + y;
-    const bool over = hovered(chatLeft() + Style::spaceXl, absoluteY, width + 50, layout.height);
+    const float absoluteX = conversationLeft() + 74, absoluteY = m_messageViewportTop + y;
+    const bool over = hovered(conversationLeft() + Style::spaceXl, absoluteY, width + 50, layout.height);
     const auto& automod = layout.autoModeration;
     glyph(
         parent, Style::spaceSm, y + Style::spaceXxs, Style::glyphSizeLarge, automod ? "shield-check" : "arrow-right",

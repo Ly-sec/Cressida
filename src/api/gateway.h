@@ -1,11 +1,13 @@
 #pragma once
 
 #include "api/models.h"
+#include "api/streams.h"
 #include "core/process/wake_event.h"
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -39,6 +41,7 @@ namespace api {
     bool setPresence(std::uint64_t session, std::string status, std::optional<std::string> customText = {});
     bool restorePresence(std::uint64_t session, Presence presence);
     bool setVoice(std::uint64_t session, std::string guild, std::string channel, bool muted, bool deafened);
+    bool stream(std::uint64_t session, StreamCommand command);
     void subscribe(std::string guild, std::string channel, int first, bool force = false, bool thread = false);
 
   private:
@@ -57,6 +60,11 @@ namespace api {
     std::string m_voiceGuild, m_voiceChannel;
     bool m_voiceMuted = false, m_voiceDeafened = false, m_voiceChosen = false;
     std::uint64_t m_voiceVersion = 0;
+    struct QueuedStream {
+      StreamCommand command;
+      std::chrono::steady_clock::time_point queued;
+    };
+    std::deque<QueuedStream> m_streamCommands;
     int m_first = 0;
     bool m_thread = false;
     std::set<std::pair<std::string, std::string>> m_memberRequested;

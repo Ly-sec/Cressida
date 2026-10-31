@@ -33,13 +33,14 @@ libraries.
 | Animation cache   | `libzstd`                                              |
 | Keyboard          | `xkbcommon`                                            |
 | Data              | `nlohmann_json`, `tomlplusplus`                        |
-| Desktop services  | `gio-2.0`, `libsecret-1`                               |
+| Desktop services  | `gio-2.0`, `gio-unix-2.0`, `libsecret-1`               |
 | Network           | `libcurl >= 8.16`, with HTTPS, `ws` and `wss`          |
 | QR sign-in        | `openssl >= 3.0`, `libqrencode`                        |
 | Markdown          | `md4c`                                                 |
 | Video             | `libavformat`, `libavcodec`, `libavutil`, `libswscale` |
 | Native playback   | `mpv >= 2.3` pkg-config API version                    |
 | Voice audio       | `libpulse`, `opus`                                     |
+| Screen capture    | `libpipewire-0.3`                                      |
 | Voice encryption  | `libsodium`, `libcrypto >= 3.0`                        |
 | Animated stickers | `rlottie`                                              |
 | Image headers     | `stb_image_resize2.h`, `stb_image_write.h`             |
@@ -80,6 +81,22 @@ Arch includes development files in its regular packages. Package availability
 alone does not establish that an older release meets the full client's compiler,
 secure WebSocket, media and image-header requirements.
 
+### Screen sharing development packages
+
+Screen capture adds the PipeWire client headers and `libpipewire-0.3` pkg-config
+metadata. Package names include
+[`libpipewire` on Arch](https://archlinux.org/packages/extra/x86_64/libpipewire/files/),
+[`pipewire-devel` on Fedora](https://packages.fedoraproject.org/pkgs/pipewire/pipewire-devel/),
+[`libpipewire-0.3-dev` on Debian](https://packages.debian.org/source/pipewire)
+and [Ubuntu](https://packages.ubuntu.com/en/noble-updates/libpipewire-0.3-dev),
+and
+[`pipewire-dev` on Alpine](https://pkgs.alpinelinux.org/package/edge/community/x86_64/pipewire-dev).
+GIO's Unix development files supply `gio-unix-2.0`.
+
+Publishing also needs FFmpeg with an available H.264, VP8 or VP9 encoder;
+decoders alone do not provide screen sharing. The native client tries its
+supported hardware encoders where available and otherwise uses software.
+
 ## Compile and run
 
 From the client source directory:
@@ -98,6 +115,12 @@ commands. For a release install, follow [Installation](installation.md).
 Test fixtures additionally need Python 3, `readelf`, the `ffmpeg` executable,
 `dbus-daemon` and Wayland server headers/library. Graphics tests need a usable
 EGL context. Local sockets must be permitted.
+
+When the `pipewire` executable is available, the capture regression starts a
+private server with a synthetic video source and a private portal bus. It needs
+PipeWire's `videotestsrc` SPA plugin. When `pulseaudio` is available, native
+audio tests use their own server and synthetic applications. These fixtures
+never capture your desktop or microphone.
 
 ```sh
 meson compile -C build-debug -j 4

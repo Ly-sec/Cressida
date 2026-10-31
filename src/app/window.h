@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 class InputDispatcher;
 
@@ -34,7 +35,8 @@ namespace app {
     void
     run(int wakeFd, std::function<void()> tick, int frameLimit = 0, int assetFd = -1, int videoFd = -1,
         int themeFd = -1, int pickerFd = -1, int audioFd = -1, int notificationFd = -1, int trayFd = -1,
-        int iconFd = -1, int instanceFd = -1, int voiceFd = -1, int authFd = -1);
+        int iconFd = -1, int instanceFd = -1, int voiceFd = -1, int authFd = -1,
+        int shareFd=-1,int captureFd=-1,int shareAudioFd=-1);
     void close();
     void requestClose();
     void hide();
@@ -47,9 +49,12 @@ namespace app {
     bool maximized() const;
     bool fullscreen() const;
     void setFullscreen(bool enabled);
+    void portalParent(std::function<void(std::string)> ready);
     bool active() const;
     bool shiftPressed() const;
     bool preciseScroll() const;
+    int eventFd() const;
+    bool dispatch();
     float titlebarHeight() const;
     void setDesktopDecorations(bool enabled);
     bool desktopDecorations() const;
@@ -71,6 +76,7 @@ namespace app {
     GlSharedContext& graphics();
 
     std::function<void()> draw;
+    std::function<std::vector<int>()> auxiliaryFds;
     // Run before a presented frame; true requests another compositor-paced frame.
     std::function<bool()> animate;
     std::function<void(float, float, std::uint32_t)> click;

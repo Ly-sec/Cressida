@@ -22,6 +22,7 @@
 #include "api/user_settings.h"
 #include "api/voice_roster.h"
 #include "api/voice_session.h"
+#include "api/stream_manager.h"
 #include "auth/credentials.h"
 #include "core/process/wake_event.h"
 
@@ -100,7 +101,9 @@ namespace api {
     Voice,
     VoiceRoster,
     CommandIndex,
-    CommandChoices
+    CommandChoices,
+    StreamPreviewRead,
+    StreamPreviewWrite
   };
 
   struct Event {
@@ -175,6 +178,7 @@ namespace api {
     std::optional<InboxPage> inboxPage;
     std::optional<voice::State> voice;
     std::optional<api::VoiceRosterUpdate> voiceRoster;
+    std::optional<StreamPreviewResult> streamPreview;
   };
 
   // An ordered account/mutation owner and three independent, bounded GET lanes.
@@ -198,6 +202,8 @@ namespace api {
     void leaveVoice(std::uint64_t expectedSession = 0);
     void configureVoice(voice::AudioSettings settings);
     std::shared_ptr<voice::Audio> voiceAudio() const { return m_voiceAudio; }
+    StreamManager& streams() { return *m_streams; }
+    bool streamPreview(StreamPreviewQuery query);
     bool channels(const std::string& guildId);
     bool privateChannels();
     bool threads(ThreadQuery query);
@@ -267,6 +273,7 @@ namespace api {
       std::string nonce;
       std::optional<InboxQuery> inboxQuery;
       std::optional<CommandIndexQuery> commandIndex;
+      std::optional<StreamPreviewQuery> streamPreview;
     };
     struct PreloadRead {
       std::uint64_t session;
@@ -319,6 +326,7 @@ namespace api {
     voice::AudioSettings m_voiceSettings;
     std::shared_ptr<voice::Audio> m_voiceAudio;
     std::unique_ptr<voice::Connection> m_voice;
+    std::unique_ptr<StreamManager> m_streams;
     std::unique_ptr<auth::CredentialStore> m_credentials;
     std::string m_selectedGuild, m_selectedChannel;
     std::optional<MemberListIdentity> m_selectedMemberIdentity;

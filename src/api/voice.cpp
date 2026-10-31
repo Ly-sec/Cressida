@@ -20,6 +20,7 @@ namespace api {
     if (session != m_session)
       return false;
     const auto revision = ++m_voiceRevision;
+    m_streams->reset();
     m_voice->disconnect();
     m_voiceAudio->stopTest();
     m_voiceSettings = voice::sanitizeAudioSettings(std::move(settings));
@@ -55,6 +56,8 @@ namespace api {
     const auto guild = m_voiceSession.guild();
     const bool active = m_voiceSession.active();
     const auto revision = ++m_voiceRevision;
+    if (m_streams)
+      m_streams->reset(!notifyGateway);
     m_voiceSession.clear();
     if (!notifyGateway)
       m_voiceRoster.clear();
@@ -82,6 +85,7 @@ namespace api {
     settings.deafened |= m_voiceSession.deafened;
     m_voiceAudio->configure(settings);
     m_voice->configure(settings);
+    m_streams->playback(settings);
     if (flagsChanged && m_voiceSession.active())
       m_gateway->setVoice(
           m_session, m_voiceSession.guild(), m_voiceSession.channel(), m_voiceSettings.muted, m_voiceSettings.deafened
@@ -95,6 +99,7 @@ namespace api {
     const auto guild = m_voiceSession.guild();
     const auto result = m_voiceSession.receive(type, data);
     if (result == VoiceSession::Update::Ended) {
+      m_streams->reset();
       ++m_voiceRevision;
       m_voice->disconnect();
       m_gateway->setVoice(session, guild, {}, false, false);
@@ -114,6 +119,7 @@ namespace api {
       return;
     }
     if (result == VoiceSession::Update::Migrating) {
+      m_streams->reset();
       const auto migrationRevision = ++m_voiceRevision;
       m_voiceSession.setRevision(migrationRevision);
       m_voice->disconnect();
@@ -136,11 +142,13 @@ namespace api {
     effective.deafened |= m_voiceSession.deafened;
     m_voiceAudio->configure(effective);
     m_voice->configure(effective);
+    m_streams->playback(effective);
     if (result != VoiceSession::Update::Ready)
       return;
     const auto transportRevision = ++m_voiceRevision;
     m_voiceSession.setRevision(transportRevision);
     auto info = m_voiceSession.take();
+    m_streams->parent({session, guild, channel, info.user, info.session});
     for (const auto& member : m_voiceRoster.members(guild, channel))
       info.participants.push_back(member.user);
     if (!m_voice->connect(std::move(info)))
@@ -170,6 +178,7 @@ namespace api {
       if (session != m_session)
         return;
       m_voiceRoster.apply(*update);
+      m_streams->roster(session,*update);
       removedActive = m_voiceSession.active()
           && (std::ranges::find(update->removedChannels, m_voiceSession.channel()) != update->removedChannels.end()
               || (type == "GUILD_DELETE"

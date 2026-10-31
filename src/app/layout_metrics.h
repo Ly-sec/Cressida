@@ -15,6 +15,7 @@
 namespace app::layout {
   struct Frame {
     float x, y, width, height;
+    bool contains(float px, float py) const { return px >= x && py >= y && px < x + width && py < y + height; }
   };
   struct MediaGallery {
     static constexpr float maximumWidth = Style::mediaGalleryMaximumWidth;
@@ -752,8 +753,8 @@ namespace app::layout {
           sidebarRight - Sidebar::railWidth - Floating::inset * 2, height
       };
     }
-    static std::array<Frame, 4> controls(const Frame& bar) {
-      std::array<Frame, 4> frames;
+    static std::array<Frame, 5> controls(const Frame& bar) {
+      std::array<Frame, 5> frames;
       const float width =
           std::max(0.0F, (bar.width - padding * 2 - Style::spaceXs * (frames.size() - 2)) / (frames.size() - 1));
       const float y = bar.y + bar.height - padding - Style::controlHeightSm;
@@ -772,6 +773,309 @@ namespace app::layout {
       const auto icon = connectionIcon(bar), disconnect = controls(bar).back();
       const float x = icon.x + icon.width + Style::spaceSm;
       return {x, icon.y, std::max(0.0F, disconnect.x - Style::spaceXs - x), icon.height};
+    }
+  };
+  struct Sharing {
+    static constexpr float preferredWidth = Style::embedMaximumWidth + Style::spaceSection * 6;
+    static constexpr float pickerHeight = Style::spaceGroup * 15;
+    static constexpr float viewerHeight = Style::spaceGroup * 15;
+    static constexpr float header = Style::controlHeightLg + Style::spaceSm;
+    static constexpr float footer = Style::controlHeight + Style::spaceLg * 2;
+    static constexpr float row = Style::controlHeightSm + Style::spaceSm;
+    static constexpr float previewMaximumHeight = Style::spaceGroup * 3;
+    static constexpr float liveWidth = Style::spaceWide + Style::spaceXs;
+    static constexpr float liveHeight = Style::fontSizeDetail + Style::spaceSm;
+    static Frame liveBadge(float width, float rowY) {
+      return {width - liveWidth, rowY + (Voice::memberHeight - liveHeight) / 2, liveWidth, liveHeight};
+    }
+    static constexpr std::size_t visibleStreams = 8;
+    struct PreviewTooltip {
+      Frame panel, title, image;
+    };
+    static PreviewTooltip previewTooltip(float width, float height, Frame anchor) {
+      const float margin = Style::spaceSm, padding = Style::spaceMd;
+      const float top = Window::titlebarHeight + margin;
+      const float titleHeight = Style::fontSizeBody + Style::spaceSm;
+      const float availableHeight = std::max(0.0F, height - top - margin);
+      const float maximumImageHeight = std::max(0.0F, availableHeight - padding * 2 - titleHeight - Style::spaceSm);
+      const float panelWidth = std::min(
+          {Style::profileCardWidth + padding * 2, std::max(0.0F, width - margin * 2),
+           maximumImageHeight * 16 / 9 + padding * 2}
+      );
+      const float imageWidth = std::max(0.0F, panelWidth - padding * 2), imageHeight = imageWidth * 9 / 16;
+      const float panelHeight = std::min(availableHeight, padding * 2 + titleHeight + Style::spaceSm + imageHeight);
+      const float preferredX = anchor.x + anchor.width + margin;
+      const float x = std::clamp(
+          preferredX + panelWidth <= width - margin ? preferredX : anchor.x - panelWidth - margin, margin,
+          std::max(margin, width - panelWidth - margin)
+      );
+      const float y =
+          std::clamp(anchor.y + (anchor.height - panelHeight) / 2, top, std::max(top, height - panelHeight - margin));
+      return {
+          {x, y, panelWidth, panelHeight},
+          {x + padding, y + padding, imageWidth, std::min(titleHeight, std::max(0.0F, panelHeight - padding * 2))},
+          {x + padding, y + padding + titleHeight + Style::spaceSm, imageWidth, imageHeight}
+      };
+    }
+    struct Stage {
+      Frame video, chat;
+    };
+    static Stage stage(float left, float right, float height, float chatMinimumHeight = 0) {
+      const float top = Window::titlebarHeight + ChannelHeader::height;
+      const float width = std::max(0.0F, right - left), available = std::max(0.0F, height - top);
+      if (width < Style::profileCardWidth * 2) {
+        float videoHeight = std::min(
+            std::max(Style::spaceGroup * 4, width * 9 / 16),
+            std::min(available / 2, std::max(0.0F, available - chatMinimumHeight))
+        );
+        if (videoHeight < Style::controlHeightSm * 3 + Style::spaceGroup + Style::spaceMd * 2)
+          videoHeight = 0;
+        return {{left, top, width, videoHeight}, {left, top + videoHeight, width, available - videoHeight}};
+      }
+      const float chatWidth = std::min(Style::profileCardWidth, width / 2);
+      return {{left, top, width - chatWidth, available}, {right - chatWidth, top, chatWidth, available}};
+    }
+    struct StageTile {
+      Frame title, video, error;
+      std::array<Frame, 5> controls;
+    };
+    static Frame stageArea(Frame frame) {
+      return {
+          frame.x + Style::spaceMd, frame.y + Style::spaceMd + row, std::max(0.0F, frame.width - Style::spaceMd * 2),
+          std::max(0.0F, frame.height - Style::spaceMd * 2 - row)
+      };
+    }
+    static std::size_t stagePageSize(Frame frame) {
+      const auto area = stageArea(frame);
+      const auto columns = area.width >= Style::profileCardWidth * 2 ? std::size_t{2} : std::size_t{1};
+      const float minimumTile = Style::controlHeightSm * 2 + Style::spaceGroup;
+      const auto rows = std::max(
+          std::size_t{1}, static_cast<std::size_t>((area.height + Style::spaceSm) / (minimumTile + Style::spaceSm))
+      );
+      return std::min(visibleStreams, columns * rows);
+    }
+    static StageTile stageTile(Frame area, std::size_t index, std::size_t count, bool multiple = true) {
+      const auto columns = count > 1 && area.width >= Style::profileCardWidth * 2 ? std::size_t{2} : std::size_t{1};
+      const auto rows = (count + columns - 1) / columns;
+      const float gap = Style::spaceSm, w = (area.width - gap * (columns - 1)) / columns,
+                  h = std::max(0.0F, (area.height - gap * (rows - 1)) / rows);
+      const float x = area.x + (index % columns) * (w + gap), y = area.y + (index / columns) * (h + gap);
+      StageTile result{
+          {x, y, w, Style::controlHeightSm},
+          {x, y + Style::controlHeightSm, w, std::max(0.0F, h - Style::controlHeightSm * 2 - Style::spaceSm)},
+          {x + Style::spaceMd, y + Style::controlHeightSm + Style::spaceMd, std::max(0.0F, w - Style::spaceMd * 2),
+           Style::fontSizeCaption * 3},
+          {}
+      };
+      result.error.height = std::min(result.error.height, std::max(0.0F, result.video.height - Style::spaceMd * 2));
+      const std::size_t first = multiple ? 0 : 1, actions = result.controls.size() - first;
+      const float cell = (w - Style::spaceXs * (actions - 1)) / actions;
+      for (std::size_t i = first; i < result.controls.size(); ++i)
+        result.controls[i] = {
+            x + (i - first) * (cell + Style::spaceXs), y + h - Style::controlHeightSm, cell, Style::controlHeightSm
+        };
+      return result;
+    }
+    struct Picker {
+      Frame sourceTitle, change, preview, settingsTitle, settings, resolutionLabel, rateLabel, contentLabel, hint,
+          audioLabel, audio, refresh, audioSettings, status;
+      std::array<Frame, 5> resolutions;
+      std::array<Frame, 3> rates;
+      std::array<Frame, 2> content;
+      float bottom = 0;
+    };
+    static Picker picker(float width, bool status, float availableHeight = 0) {
+      Picker result;
+      const float titleHeight = Style::fontSizeBody + Style::spaceMd, inset = Style::spaceMd;
+      const float smallLabel = Style::fontSizeCaption + Style::spaceSm;
+      const float changeWidth = Style::spaceGroup * 2 + Style::spaceMd;
+      result.sourceTitle = {0, 0, width - changeWidth - Style::spaceSm, titleHeight};
+      result.change = {width - changeWidth, 0, changeWidth, titleHeight};
+      result.preview = {0, titleHeight, width, std::min(Style::spaceGroup * 5, width * 9 / 16)};
+      if (availableHeight > 0) {
+        const auto base = picker(width, false);
+        result.preview.height = std::max(
+            std::min(result.preview.height, Style::spaceGroup * 2),
+            result.preview.height - std::max(0.0F, base.bottom - availableHeight)
+        );
+      }
+      float y = titleHeight + result.preview.height + Style::spaceLg;
+      result.settingsTitle = {0, y, width, titleHeight};
+      y += titleHeight;
+      const float top = y, inner = std::max(0.0F, width - inset * 2);
+      const bool split = inner >= Style::embedMaximumWidth;
+      const float column = split ? (inner - Style::spaceMd) / 2 : inner;
+      y += inset;
+      result.resolutionLabel = {inset, y, column, smallLabel};
+      result.rateLabel = {split ? inset + column + Style::spaceMd : inset, y, column, smallLabel};
+      y += smallLabel;
+      const float preset = (column - Style::borderWidth * (result.resolutions.size() - 1)) / result.resolutions.size();
+      for (std::size_t i = 0; i < result.resolutions.size(); ++i)
+        result.resolutions[i] = {inset + i * (preset + Style::borderWidth), y, preset, Style::controlHeightSm};
+      if (!split) {
+        y += row;
+        result.rateLabel.y = y;
+        y += smallLabel;
+      }
+      const float rate = (column - Style::borderWidth * (result.rates.size() - 1)) / result.rates.size();
+      for (std::size_t i = 0; i < result.rates.size(); ++i)
+        result.rates[i] = {result.rateLabel.x + i * (rate + Style::borderWidth), y, rate, Style::controlHeightSm};
+      y += row;
+      result.contentLabel = {inset, y, inner, smallLabel};
+      y += smallLabel;
+      const float half = (inner - Style::borderWidth) / 2;
+      result.content = {
+          Frame{inset, y, half, Style::controlHeightSm},
+          Frame{inset + half + Style::borderWidth, y, half, Style::controlHeightSm}
+      };
+      y += row;
+      result.hint = {inset, y, inner, Style::fontSizeCaption * 2};
+      y += result.hint.height + Style::spaceSm;
+      result.audioLabel = {inset, y, inner, smallLabel};
+      y += smallLabel;
+      result.audio = {inset, y, inner, Style::controlHeight};
+      y += Style::controlHeight + Style::spaceSm;
+      result.refresh = {inset, y, half, Style::controlHeightSm};
+      result.audioSettings = {inset + half + Style::borderWidth, y, half, Style::controlHeightSm};
+      y += Style::controlHeightSm + inset;
+      result.settings = {0, top, width, y - top};
+      if (status) {
+        y += Style::spaceSm;
+        result.status = {0, y, width, Style::fontSizeCaption * 3};
+        y += result.status.height;
+      }
+      result.bottom = y;
+      return result;
+    }
+    static Frame pickerOverflow(Frame modal) {
+      return {
+          modal.x + modal.width - Style::spaceSm - Style::controlHeightSm * 2 - Style::spaceXs,
+          modal.y + Style::spaceSm, Style::controlHeightSm, Style::controlHeightSm
+      };
+    }
+    struct Menu {
+      Frame panel, viewport;
+      float contentHeight = 0;
+    };
+    static Menu menu(Frame anchor, std::size_t count, float windowWidth, float windowHeight, bool matchAnchor) {
+      const float margin = Style::spaceSm, padding = Style::spaceXs;
+      const float top = Window::titlebarHeight + margin;
+      const float maximumWidth = std::max(0.0F, windowWidth - margin * 2);
+      const float width = std::min(matchAnchor ? anchor.width : Style::profileCardWidth, maximumWidth);
+      const float content = count * Style::controlHeightSm;
+      const float below = anchor.y + anchor.height + Style::spaceXs;
+      const float belowRoom = std::max(0.0F, windowHeight - margin - below);
+      const float aboveRoom = std::max(0.0F, anchor.y - Style::spaceXs - top);
+      const float desired = std::min(content + padding * 2, Style::spaceGroup * 5);
+      const bool down = belowRoom >= desired || belowRoom >= aboveRoom;
+      const float height = std::min(desired, down ? belowRoom : aboveRoom);
+      const float x = std::clamp(
+          matchAnchor ? anchor.x : anchor.x + anchor.width - width, margin,
+          std::max(margin, windowWidth - margin - width)
+      );
+      const float y = down ? below : anchor.y - Style::spaceXs - height;
+      return {
+          {x, y, width, height},
+          {x + padding, y + padding, std::max(0.0F, width - padding * 2), std::max(0.0F, height - padding * 2)},
+          content
+      };
+    }
+    static Frame menuRow(const Menu& menu, std::size_t index, float scroll) {
+      return {0, index * Style::controlHeightSm - scroll, menu.viewport.width, Style::controlHeightSm};
+    }
+    struct SelfPreview {
+      Frame card, title, close, video, detail;
+      std::array<Frame, 4> controls;
+    };
+    static Frame selfPreviewArea(float left, float right, float bottom) {
+      const float margin = Style::spaceMd;
+      const float top = Window::titlebarHeight + ChannelHeader::height + margin;
+      return {left + margin, top, std::max(0.0F, right - left - margin * 2), std::max(0.0F, bottom - top - margin)};
+    }
+    static SelfPreview selfPreview(float left, float right, float bottom, float horizontal = 1, float vertical = 1) {
+      const float margin = Style::spaceMd;
+      const auto area = selfPreviewArea(left, right, bottom);
+      const float fixedHeight = margin * 4 + Style::controlHeightSm * 2 + Style::fontSizeCaption;
+      if (area.height <= fixedHeight || area.width <= margin * 2 + Style::controlHeightSm)
+        return {};
+      const float width =
+          std::min({Style::profileCardWidth, area.width, (area.height - fixedHeight) * 16 / 9 + margin * 2});
+      const float minimumWidth = Style::glyphSizeMedium * SelfPreview{}.controls.size()
+          + Style::spaceXs * (SelfPreview{}.controls.size() - 1)
+          + margin * 2;
+      if (width < minimumWidth)
+        return {};
+      const float inner = std::max(0.0F, width - margin * 2), videoHeight = inner * 9 / 16;
+      const float height = fixedHeight + videoHeight;
+      const float x = area.x + std::max(0.0F, area.width - width) * std::clamp(horizontal, 0.0F, 1.0F),
+                  y = area.y + std::max(0.0F, area.height - height) * std::clamp(vertical, 0.0F, 1.0F);
+      SelfPreview result{
+          {x, y, width, height},
+          {x + margin, y + margin, inner - Style::controlHeightSm, Style::controlHeightSm},
+          {x + width - margin - Style::controlHeightSm, y + margin, Style::controlHeightSm, Style::controlHeightSm},
+          {x + margin, y + margin + Style::controlHeightSm, inner, videoHeight},
+          {x + margin, y + margin * 2 + Style::controlHeightSm + videoHeight, inner, Style::fontSizeCaption},
+          {}
+      };
+      const float cell = (inner - Style::spaceXs * (result.controls.size() - 1)) / result.controls.size();
+      for (std::size_t i = 0; i < result.controls.size(); ++i)
+        result.controls[i] = {
+            x + margin + i * (cell + Style::spaceXs), y + height - margin - Style::controlHeightSm, cell,
+            Style::controlHeightSm
+        };
+      return result;
+    }
+    static std::array<Frame, 4> popoutControls(float width, float height) {
+      std::array<Frame, 4> frames;
+      const float cell = (width - Style::spaceLg * 2) / frames.size();
+      for (std::size_t i = 0; i < frames.size(); ++i)
+        frames[i] = {
+            Style::spaceLg + i * cell, height - footer + Style::spaceSm, cell - Style::spaceXs, Style::controlHeight
+        };
+      return frames;
+    }
+    static Frame dialog(float width, float height, bool streams = false) {
+      const float margin = Style::spaceLg, top = Window::titlebarHeight;
+      const float w = std::max(0.0F, std::min(streams ? preferredWidth * 2 : preferredWidth, width - margin * 2));
+      const float h = std::max(0.0F, std::min(streams ? viewerHeight : pickerHeight, height - top - margin * 2));
+      return {(width - w) / 2, top + (height - top - h) / 2, w, h};
+    }
+    static Frame body(const Frame& dialog) {
+      return {
+          dialog.x + Style::spaceLg, dialog.y + header, dialog.width - Style::spaceLg * 2,
+          std::max(0.0F, dialog.height - header - footer)
+      };
+    }
+    struct Tile {
+      Frame title, video, focus, popout, volumeDown, volumeUp, stop, error;
+      float bottom;
+    };
+    static std::size_t columns(float width, bool focused) {
+      return !focused && width >= Style::spaceGroup * 12 ? 2 : 1;
+    }
+    static Tile tile(float width, float availableHeight, bool focused, std::size_t index, float top) {
+      const auto count = columns(width, focused);
+      const float cardWidth = (width - Style::spaceMd * (count - 1)) / count;
+      const float videoHeight = std::max(
+          Style::controlHeight, std::min(cardWidth * 9 / 16, focused ? availableHeight - row * 4 : previewMaximumHeight)
+      );
+      const float titleHeight = Style::fontSizeBody + Style::spaceMd;
+      const float cardHeight =
+          titleHeight + videoHeight + Style::spaceSm + row * 2 + Style::fontSizeCaption * 2 + Style::spaceLg;
+      const float x = (index % count) * (cardWidth + Style::spaceMd), y = top + (index / count) * cardHeight;
+      const float controls = y + titleHeight + videoHeight + Style::spaceSm;
+      const float half = (cardWidth - Style::spaceXs) / 2, third = (cardWidth - Style::spaceXs * 2) / 3;
+      return {
+          {x, y, cardWidth, titleHeight},
+          {x, y + titleHeight, cardWidth, videoHeight},
+          {x, controls, half, Style::controlHeightSm},
+          {x + half + Style::spaceXs, controls, half, Style::controlHeightSm},
+          {x, controls + row, third, Style::controlHeightSm},
+          {x + third + Style::spaceXs, controls + row, third, Style::controlHeightSm},
+          {x + (third + Style::spaceXs) * 2, controls + row, third, Style::controlHeightSm},
+          {x, controls + row * 2, cardWidth, Style::fontSizeCaption * 2},
+          y + cardHeight
+      };
     }
   };
   struct CountBadge {

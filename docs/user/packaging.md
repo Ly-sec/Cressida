@@ -72,6 +72,11 @@ Voice requires a running PulseAudio service or PipeWire with its
 PulseAudio-compatible service. The client does not start or install an audio
 daemon. Device enumeration alone does not start microphone capture.
 
+Screen capture additionally links the PipeWire client library (`libpipewire-0.3`
+through pkg-config) and GIO's Unix support (`gio-unix-2.0`). Keep the FFmpeg
+encoders required for publication available alongside its decoders. See
+[Building](building.md#screen-sharing-development-packages).
+
 ## Desktop runtime
 
 Ship OpenSSL 3.0 or newer and libqrencode with the client. QR sign-in uses them
@@ -92,6 +97,12 @@ Recommended integrations include a Secret Service keyring, a desktop
 notification service, a tray host and XDG portal backends for Settings and
 FileChooser. The client does not install its own keyring, notification service
 or autostart entry.
+
+For [screen sharing](screen-sharing.md), provide PipeWire and a portal backend
+that implements ScreenCast for the active compositor. Shared application audio
+also needs a PulseAudio-compatible service. A ScreenCast chooser grants access
+to the selected source; the client does not request or restore screen access on
+sign-in.
 
 Do not ship user state, credentials or runtime sockets. Custom themes under the
 user's configuration directory must stay user-owned. Installed packages should

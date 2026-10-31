@@ -6,19 +6,20 @@ description:
 
 ## What works today?
 
-| Area          | Current support                                                          |
-| ------------- | ------------------------------------------------------------------------ |
-| Platforms     | Linux with Wayland. No X11 window backend.                               |
-| Messaging     | Text chat, replies, DMs, threads and forum conversations.                |
-| Inbox         | Unread conversations, mentions, synced bookmarks and reminders.          |
-| App commands  | Slash-command picker, app filtering, arguments and responses.            |
-| Rich content  | Markdown, embeds, custom emoji, GIFs and stickers.                       |
-| Uploads       | Pasted chat images and files requested by slash commands.                |
-| Media viewing | Image galleries and native received-video playback.                      |
-| Voice         | Server voice channels and joining existing direct or group calls.        |
-| Profiles      | Rich profiles, equipped cosmetics and a profile panel in one-to-one DMs. |
-| Appearance    | Dark, Light and System modes; bundled and custom palettes.               |
-| Desktop       | Tray, notification activation and reuse of the running window.           |
+| Area           | Current support                                                           |
+| -------------- | ------------------------------------------------------------------------- |
+| Platforms      | Linux with Wayland. No X11 window backend.                                |
+| Messaging      | Text chat, replies, DMs, threads and forum conversations.                 |
+| Inbox          | Unread conversations, mentions, synced bookmarks and reminders.           |
+| App commands   | Slash-command picker, app filtering, arguments and responses.             |
+| Rich content   | Markdown, embeds, custom emoji, GIFs and stickers.                        |
+| Uploads        | Pasted chat images and files requested by slash commands.                 |
+| Media viewing  | Image galleries and native received-video playback.                       |
+| Voice          | Server voice channels and joining existing direct or group calls.         |
+| Screen sharing | Experimental screen/window capture, application audio and stream viewing. |
+| Profiles       | Rich profiles, equipped cosmetics and a profile panel in one-to-one DMs.  |
+| Appearance     | Dark, Light and System modes; bundled and custom palettes.                |
+| Desktop        | Tray, notification activation and reuse of the running window.            |
 
 ## What is not supported yet?
 
@@ -39,6 +40,10 @@ incoming-call notifications are not implemented. See [Voice chat](voice.md).
 Received video attachments can play in the native viewer. Video calls and
 video-file uploads from the composer are separate features and are not currently
 supported.
+
+Experimental [screen sharing](screen-sharing.md) is separate from camera calls.
+It needs PipeWire and a working ScreenCast portal for your desktop. A local
+preview alone does not establish that a live publication has connected.
 
 ## Is it a browser wrapper?
 

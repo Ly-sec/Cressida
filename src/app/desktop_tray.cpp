@@ -26,8 +26,8 @@ namespace app {
     constexpr auto watcherPath = "/StatusNotifierWatcher";
     constexpr int callDeadlineMs = 2000;
     constexpr std::size_t maximumPendingEvents = 32;
-    constexpr unsigned menuVersion = 4, menuRevision = 1;
-    constexpr std::array labels{"", "Open", "Restart", "Close"};
+    constexpr unsigned menuVersion = 4;
+    constexpr std::array labels{"", "Open", "Restart", "Close", "Stop Sharing"};
     constexpr auto itemBody = R"XML(
       <property name="Category" type="s" access="read"/><property name="Id" type="s" access="read"/>
       <property name="Title" type="s" access="read"/><property name="Status" type="s" access="read"/>
@@ -61,11 +61,11 @@ namespace app {
       <signal name="ItemsPropertiesUpdated"><arg type="a(ia{sv})"/><arg type="a(ias)"/></signal>
     </interface></node>)XML";
     bool validId(int id) { return id >= 0 && id < static_cast<int>(labels.size()); }
-    GVariant* menuProperty(int id, std::string_view name) {
+    GVariant* menuProperty(int id, std::string_view name, bool sharing) {
       if (name == "label")
         return g_variant_new_string(labels[id]);
       if (name == "enabled" || name == "visible")
-        return g_variant_new_boolean(true);
+        return g_variant_new_boolean(id != 4 || sharing);
       if (name == "type")
         return g_variant_new_string("standard");
       if (name == "children-display")
@@ -79,29 +79,30 @@ namespace app {
         );
       return nullptr;
     }
-    GVariant* properties(int id, GVariant* names) {
+    GVariant* properties(int id, GVariant* names, bool sharing) {
       GVariantBuilder result;
       g_variant_builder_init(&result, G_VARIANT_TYPE_VARDICT);
       if (!names || g_variant_n_children(names) == 0) {
         for (auto name : {"label", "enabled", "visible", "type", "children-display", "icon-name"})
-          g_variant_builder_add(&result, "{sv}", name, menuProperty(id, name));
+          g_variant_builder_add(&result, "{sv}", name, menuProperty(id, name, sharing));
       } else {
         GVariantIter iterator;
         const char* name;
         g_variant_iter_init(&iterator, names);
         while (g_variant_iter_next(&iterator, "&s", &name))
-          if (auto* value = menuProperty(id, name))
+          if (auto* value = menuProperty(id, name, sharing))
             g_variant_builder_add(&result, "{sv}", name, value);
       }
       return g_variant_builder_end(&result);
     }
-    GVariant* layout(int id, int depth, GVariant* names) {
+    GVariant* layout(int id, int depth, GVariant* names, bool sharing) {
       GVariantBuilder children;
       g_variant_builder_init(&children, G_VARIANT_TYPE("av"));
       if (id == 0 && depth != 0)
         for (int child = 1; child < static_cast<int>(labels.size()); ++child)
-          g_variant_builder_add(&children, "v", layout(child, 0, names));
-      return g_variant_new("(i@a{sv}@av)", id, properties(id, names), g_variant_builder_end(&children));
+          if (child != 4 || sharing)
+            g_variant_builder_add(&children, "v", layout(child, 0, names, sharing));
+      return g_variant_new("(i@a{sv}@av)", id, properties(id, names, sharing), g_variant_builder_end(&children));
     }
   } // namespace
   struct DesktopTray::Impl {
@@ -118,6 +119,8 @@ namespace app {
     DesktopActivationToken activationToken;
     GVariant* pixmap = nullptr;
     bool available = false;
+    bool sharing = false;
+    unsigned menuRevision = 1;
     struct Watcher {
       Impl* self;
       const char* name;
@@ -188,8 +191,13 @@ namespace app {
       guint32 timestamp;
       g_variant_get(event, "(i&svu)", &id, &kind, &data, &timestamp);
       g_variant_unref(data);
-      if (id > 0 && validId(id) && std::string_view(kind) == "clicked")
-        command(id == 1 ? TrayCommand::Open : id == 2 ? TrayCommand::Restart : TrayCommand::Close);
+      if (id > 0 && validId(id) && (id != 4 || sharing) && std::string_view(kind) == "clicked")
+        command(
+            id == 1       ? TrayCommand::Open
+                : id == 2 ? TrayCommand::Restart
+                : id == 4 ? TrayCommand::StopSharing
+                          : TrayCommand::Close
+        );
     }
     void method(const char* interface, const char* name, GVariant* args, GDBusMethodInvocation* invocation) {
       const std::string_view method(name);
@@ -210,7 +218,7 @@ namespace app {
         g_variant_get(args, "(ii@as)", &id, &depth, &names);
         if (validId(id))
           g_dbus_method_invocation_return_value(
-              invocation, g_variant_new("(u@(ia{sv}av))", menuRevision, layout(id, depth, names))
+              invocation, g_variant_new("(u@(ia{sv}av))", menuRevision, layout(id, depth, names, sharing))
           );
         else
           g_dbus_method_invocation_return_error(
@@ -224,14 +232,15 @@ namespace app {
         g_variant_builder_init(&result, G_VARIANT_TYPE("a(ia{sv})"));
         if (g_variant_n_children(ids) == 0) {
           for (int id = 0; id < static_cast<int>(labels.size()); ++id)
-            g_variant_builder_add(&result, "(i@a{sv})", id, properties(id, names));
+            if (id != 4 || sharing)
+              g_variant_builder_add(&result, "(i@a{sv})", id, properties(id, names, sharing));
         } else {
           GVariantIter iterator;
           gint32 id;
           g_variant_iter_init(&iterator, ids);
           while (g_variant_iter_next(&iterator, "i", &id))
             if (validId(id))
-              g_variant_builder_add(&result, "(i@a{sv})", id, properties(id, names));
+              g_variant_builder_add(&result, "(i@a{sv})", id, properties(id, names, sharing));
         }
         g_dbus_method_invocation_return_value(
             invocation, g_variant_new("(@a(ia{sv}))", g_variant_builder_end(&result))
@@ -242,7 +251,7 @@ namespace app {
         gint32 id;
         const char* name;
         g_variant_get(args, "(i&s)", &id, &name);
-        auto* value = validId(id) ? menuProperty(id, name) : nullptr;
+        auto* value = validId(id) ? menuProperty(id, name, sharing) : nullptr;
         if (value)
           g_dbus_method_invocation_return_value(invocation, g_variant_new("(v)", value));
         else
@@ -479,6 +488,30 @@ namespace app {
     m->worker = std::jthread([this] { m->run(); });
   }
   int DesktopTray::eventFd() const { return m->wake.fd(); }
+  void DesktopTray::sharing(bool active) {
+    struct Change {
+      Impl* impl;
+      bool active;
+    };
+    g_main_context_invoke_full(
+        m->context, G_PRIORITY_DEFAULT,
+        [](gpointer data) -> gboolean {
+          const auto& change = *static_cast<Change*>(data);
+          auto& self = *change.impl;
+          if (self.stopping || self.sharing == change.active)
+            return G_SOURCE_REMOVE;
+          self.sharing = change.active;
+          ++self.menuRevision;
+          if (self.bus)
+            g_dbus_connection_emit_signal(
+                self.bus, nullptr, menuPath, menuInterface, "LayoutUpdated",
+                g_variant_new("(ui)", self.menuRevision, 0), nullptr
+            );
+          return G_SOURCE_REMOVE;
+        },
+        new Change{m.get(), active}, [](gpointer data) { delete static_cast<Change*>(data); }
+    );
+  }
   std::optional<TrayEvent> DesktopTray::poll() {
     m->wake.drain();
     std::lock_guard lock(m->mutex);

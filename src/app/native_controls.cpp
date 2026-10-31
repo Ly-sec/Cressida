@@ -1,5 +1,6 @@
 #include "app/client_application.h"
 #include "app/font_catalog.h"
+#include "app/stream_popout.h"
 #include "app/theme.h"
 #include "core/input/key_modifiers.h"
 #include "core/input/keybind_matcher.h"
@@ -87,6 +88,7 @@ namespace app {
     );
   }
   ClientApplication::~ClientApplication() {
+    clearSharing();
     m_window.setTextInputDispatcher(nullptr);
     clearOutgoing();
     m_inboxReminderTimer.stop();
@@ -169,6 +171,7 @@ namespace app {
   }
   void ClientApplication::windowFocusChanged(bool focused) {
     if (!focused) {
+      sharingRelease();
       releasePushToTalk();
       finishRailDrag(true);
     }
@@ -185,6 +188,7 @@ namespace app {
         || m_contextOpen
         || m_messageEdit
         || m_inboxOpen
+        || m_shareOpen
         || m_selectRequest
         || m_emojiMenu
         || m_gifMenu

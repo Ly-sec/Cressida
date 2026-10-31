@@ -69,7 +69,9 @@ namespace app {
     m_window.invalidate();
   }
   void ClientApplication::voiceAction(const std::string& action) {
-    if (action == "settings") {
+    if (action == "share") {
+      sharingAction("open");
+    } else if (action == "settings") {
       openSettings();
       selectSettingsPage("voice");
     } else if (action == "refresh") {
@@ -258,10 +260,7 @@ namespace app {
     form.row("Microphone level", std::to_string(static_cast<int>(m_voiceAudioState.inputLevel * percentage)) + "%");
     if (!m_voiceAudioState.error.empty())
       form.row("Audio unavailable", m_voiceAudioState.error);
-    form.row(
-        "Video and processing",
-        "Camera calls, screen sharing, echo cancellation and noise suppression are not available."
-    );
+    form.row("Video and processing", "Camera calls, echo cancellation and noise suppression are not available.");
   }
   void ClientApplication::drawVoiceBar(Node& root, float height) {
     if (!voiceBarVisible())
@@ -270,15 +269,32 @@ namespace app {
     const auto frame = layout::Voice::frame(height, chatLeft());
     floatingPanel(root, frame, background);
     const auto statusIcon = layout::Voice::connectionIcon(frame), statusText = layout::Voice::connectionText(frame);
-    const auto statusColor = m_voiceState.phase == voice::Phase::Failed ? danger : success;
+    const auto publisher =
+        std::ranges::find_if(m_streamSnapshot.active, [](const auto& stream) { return stream.publishing; });
+    const bool sharing = publisher != m_streamSnapshot.active.end() || m_sharingPublicationRequested;
+    const auto sharePhase =
+        publisher == m_streamSnapshot.active.end() ? voice::Phase::Connecting : publisher->connection.phase;
+    const bool shareFailed = sharePhase == voice::Phase::Failed
+        || (m_sharingPublicationRequested && publisher == m_streamSnapshot.active.end() && !m_sharingStatus.empty());
+    const bool shareReady = sharePhase == voice::Phase::Connected || sharePhase == voice::Phase::WaitingForParticipants;
+    const auto statusColor = m_voiceState.phase == voice::Phase::Failed || shareFailed ? danger
+        : sharing && !shareReady                                                       ? muted
+                                                                                       : success;
     rectangle(root, statusIcon.x, statusIcon.y, statusIcon.width, statusIcon.height, panel, Style::radiusMd);
     glyph(
         root, statusIcon.x + (statusIcon.width - Style::glyphSizeLarge) / 2,
         statusIcon.y + (statusIcon.height - Style::glyphSizeLarge) / 2, Style::glyphSizeLarge,
-        m_voiceState.phase == voice::Phase::Failed ? "broadcast-off" : "broadcast", statusColor
+        sharing                                          ? "screen-share"
+            : m_voiceState.phase == voice::Phase::Failed ? "broadcast-off"
+                                                         : "broadcast",
+        statusColor
     );
     const auto roster = m_voiceRoster.members(m_voiceGuild, m_voiceState.channel);
-    const auto title = m_voiceState.phase == voice::Phase::Connected ? "Voice connected"
+    const auto title = sharing                          ? shareFailed ? "Screen share failed"
+            : !shareReady                    ? "Starting screen share…"
+            : publisher->paused              ? "Sharing paused"
+                                             : "Screen sharing live"
+        : m_voiceState.phase == voice::Phase::Connected ? "Voice connected"
         : m_voiceState.phase == voice::Phase::WaitingForParticipants
         ? (roster.size() <= 1 ? "Voice connected" : "Securing voice…")
         : m_voiceState.phase == voice::Phase::Failed   ? "Voice disconnected"
@@ -338,19 +354,20 @@ namespace app {
       m_tooltipY = statusText.y;
     }
     const auto controls = layout::Voice::controls(frame);
-    const std::array<std::string, 4> actions{"mute", "deafen", "settings", "leave"};
-    const std::array<std::string, 4> icons{
+    const std::array<std::string, 5> actions{"mute", "deafen", "share", "settings", "leave"};
+    const std::array<std::string, 5> icons{
         m_voiceMuted || m_voiceDeafened ? "microphone-off" : "microphone",
-        m_voiceDeafened ? "headphones-off" : "headphones", "settings", "phone-end"
+        m_voiceDeafened ? "headphones-off" : "headphones", "screen-share", "settings", "phone-end"
     };
-    const std::array<std::string, 4> captions{
+    const std::array<std::string, 5> captions{
         m_voiceMuted ? "Unmute microphone" : "Mute microphone", m_voiceDeafened ? "Undeafen" : "Deafen",
-        "Voice settings", "Disconnect voice"
+        "Screen sharing and live streams", "Voice settings", "Disconnect voice"
     };
     for (std::size_t i = 0; i < actions.size(); ++i) {
       const auto& control = controls[i];
       const bool over = hovered(control.x, control.y, control.width, control.height);
       const bool stopped = (i == 0 && (m_voiceMuted || m_voiceDeafened)) || (i == 1 && m_voiceDeafened);
+      const bool sharingControl = actions[i] == "share" && sharing;
       const bool leave = actions[i] == "leave";
       const Hit hit{control.x, control.y, control.width, control.height, Action::VoiceAction, actions[i]};
       const auto id = "voice-button:" + actions[i];
@@ -383,8 +400,12 @@ namespace app {
         };
         colors.pressed = colors.hover;
       }
+      if (sharingControl)
+        colors.selected = Button::ButtonStateColors{
+            ColorSpec{.fixed = raised}, clearColorSpec(), ColorSpec{.fixed = shareFailed ? danger : accent}
+        };
       button->setCustomPalette(std::move(colors));
-      button->setSelected(stopped);
+      button->setSelected(stopped || sharingControl);
       button->setTooltip(captions[i]);
       button->setOnClick([this, hit] {
         activate(hit);
@@ -453,7 +474,12 @@ namespace app {
           *list, layout::Voice::memberAvatarX, avatarY, layout::Voice::memberAvatar,
           member.avatar.empty() && member.user == m_account.id ? m_account.avatar : member.avatar, name
       );
+      const auto stream = std::ranges::find_if(m_streamSnapshot.available, [&](const auto& record) {
+        return record.key.guild == m_guildId && record.key.channel == channel.id && record.key.owner == member.user;
+      });
       float right = width;
+      if (stream != m_streamSnapshot.available.end())
+        right -= layout::Sharing::liveWidth + Style::spaceXs;
       if (deafened) {
         right -= layout::Voice::memberStatus + Style::spaceXs;
         glyph(
@@ -482,6 +508,34 @@ namespace app {
       );
       m_hits.push_back({x, clippedTop, width, clippedBottom - clippedTop, Action::UserProfile, member.user});
       m_contextTargets.push_back({x, clippedTop, width, clippedBottom - clippedTop, Action::UserMenu, member.user});
+      if (stream != m_streamSnapshot.available.end()) {
+        const auto badge = layout::Sharing::liveBadge(width, localY);
+        const float badgeTop = std::max(top, top + badge.y),
+                    badgeBottom = std::min(bottom, top + badge.y + badge.height);
+        const layout::Frame liveHit{x + badge.x, badgeTop, badge.width, std::max(0.0F, badgeBottom - badgeTop)};
+        const bool liveOver = liveHit.contains(m_pointerX, m_pointerY);
+        if (liveHit.contains(m_pointerX, m_pointerY) && member.user != m_account.id)
+          hoverStreamPreview(stream->key.value(), liveHit);
+        rectangle(
+            *list, badge.x, badge.y, badge.width, badge.height,
+            lerpColor(
+                theme::sidebar, theme::danger, liveOver ? Style::textHighlightAlpha * 2 : Style::textHighlightAlpha
+            ),
+            Style::radiusSm
+        );
+        const auto liveMetrics =
+            m_window.target().renderer().measureText("LIVE", Style::fontSizeDetail, FontWeight::Bold);
+        label(
+            *list, badge.x + (badge.width - liveMetrics.width) / 2,
+            badge.y + (badge.height - (liveMetrics.bottom - liveMetrics.top)) / 2, badge.width - Style::spaceXs, "LIVE",
+            Style::fontSizeDetail, theme::danger, FontWeight::Bold
+        );
+        if (liveHit.height > 0)
+          m_hits.push_back(
+              {liveHit.x, liveHit.y, liveHit.width, liveHit.height, Action::ShareAction,
+               member.user == m_account.id ? "view:" + stream->key.value() : "watch:" + stream->key.value()}
+          );
+      }
     }
     root.addChild(std::move(list));
   }

@@ -60,5 +60,6 @@ While the player is active, **Space** toggles playback, **M** toggles mute,
 expanded view or closes the player. Background chat controls stay covered while
 a media viewer is open.
 
-Video attachment playback is separate from calls. [Voice chat](voice.md) is
-available; camera calls and screen sharing are not supported yet.
+Video attachment playback is separate from calls. [Voice chat](voice.md) and
+experimental [screen sharing](screen-sharing.md) are available. Camera calls are
+not supported.

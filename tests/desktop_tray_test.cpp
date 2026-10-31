@@ -283,6 +283,50 @@ int main(int argc, char** argv) {
       );
       auto* group = g_variant_get_child_value(result, 0);
       require(g_variant_n_children(group) == 4, "Group queries include the root and all actions");
+      tray.sharing(true);
+      waitFor(
+          [&] {
+            auto* reply = host.call(
+                "/MenuBar", "com.canonical.dbusmenu", "GetLayout",
+                g_variant_new("(ii@as)", 0, -1, g_variant_new_strv(nullptr, 0))
+            );
+            guint32 version = 0;
+            GVariant* tree = nullptr;
+            g_variant_get(reply, "(u@(ia{sv}av))", &version, &tree);
+            auto* items = g_variant_get_child_value(tree, 2);
+            const bool updated = version >= 2 && g_variant_n_children(items) == 4;
+            g_variant_unref(items);
+            g_variant_unref(tree);
+            g_variant_unref(reply);
+            return updated;
+          },
+          "An active share publishes the stop action with a new menu revision"
+      );
+      auto* stopped = host.call(
+          "/MenuBar", "com.canonical.dbusmenu", "Event",
+          g_variant_new("(isvu)", 4, "clicked", g_variant_new_int32(0), 0U)
+      );
+      g_variant_unref(stopped);
+      event(tray, app::TrayCommand::StopSharing);
+      tray.sharing(false);
+      waitFor(
+          [&] {
+            auto* reply = host.call(
+                "/MenuBar", "com.canonical.dbusmenu", "GetLayout",
+                g_variant_new("(ii@as)", 0, -1, g_variant_new_strv(nullptr, 0))
+            );
+            guint32 version = 0;
+            GVariant* tree = nullptr;
+            g_variant_get(reply, "(u@(ia{sv}av))", &version, &tree);
+            auto* items = g_variant_get_child_value(tree, 2);
+            const bool updated = version >= 3 && g_variant_n_children(items) == 3;
+            g_variant_unref(items);
+            g_variant_unref(tree);
+            g_variant_unref(reply);
+            return updated;
+          },
+          "Stopping a share removes its tray action"
+      );
       g_variant_unref(group);
       g_variant_unref(result);
       result = host.call(

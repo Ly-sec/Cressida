@@ -120,6 +120,8 @@ def scenario(binary, mode):
                     if mode != "downgrade":
                         package = expected(peer, 26)
                         assert len(package) > 16, "A real MLS key package is sent"
+                        speaking = expected(peer, 5)
+                        assert speaking["d"] == {"speaking": 1, "delay": 0, "ssrc": 123}, "Actual local activity is announced while encrypted media remains gated"
                         udp.setblocking(False)
                         try:
                             udp.recvfrom(8192)
@@ -157,8 +159,6 @@ def scenario(binary, mode):
                             finally:
                                 udp.settimeout(4)
                             send(peer, {"op": 22, "seq": 5, "d": {"transition_id": 9}})
-                        speaking = expected(peer, 5)
-                        assert speaking["d"] == {"speaking": 1, "delay": 0, "ssrc": 123}
                         if mode == "media-hints":
                             # Keys must be ready using main-session membership alone.
                             send(peer, {"op": 12, "seq": 6, "d": {"user_id": "4", "audio_ssrc": 124}})
@@ -167,6 +167,14 @@ def scenario(binary, mode):
                                 assert heartbeat["op"] == 3
                                 send(peer, {"op": 6, "d": {"t": heartbeat["d"]["t"]}})
                                 if heartbeat["d"]["seq_ack"] == 6:
+                                    break
+                        else:
+                            acknowledged = 5 if mode == "media-transition" else 4
+                            while True:
+                                heartbeat = receive(peer)
+                                assert heartbeat["op"] == 3
+                                send(peer, {"op": 6, "d": {"t": heartbeat["d"]["t"]}})
+                                if heartbeat["d"]["seq_ack"] == acknowledged:
                                     break
                         if mode == "media-activity":
                             tampered = bytearray.fromhex(negotiated["rtp"])
@@ -204,6 +212,7 @@ def scenario(binary, mode):
                 process.communicate()
 
 
-for selected_mode in ("cancel", "downgrade", "heartbeat", "oversized", "media", "media-transition", "media-hints", "media-creator", "media-activity"):
-    scenario(sys.argv[1], selected_mode)
-print("Private voice WebSocket and UDP setup scenarios passed")
+if __name__ == "__main__":
+    for selected_mode in ("cancel", "downgrade", "heartbeat", "oversized", "media", "media-transition", "media-hints", "media-creator", "media-activity"):
+        scenario(sys.argv[1], selected_mode)
+    print("Private voice WebSocket and UDP setup scenarios passed")

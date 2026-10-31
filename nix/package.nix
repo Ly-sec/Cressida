@@ -40,6 +40,7 @@
   opus,
   libsodium,
   libpulseaudio,
+  pipewire,
 }:
 stdenv.mkDerivation {
   pname = "cressida";
@@ -103,6 +104,7 @@ stdenv.mkDerivation {
     opus
     libsodium
     libpulseaudio
+    pipewire
     (curl.override { websocketSupport = true; })
     (callPackage ./stb.nix { })
   ];

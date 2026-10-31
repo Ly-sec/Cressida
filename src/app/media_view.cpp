@@ -254,6 +254,25 @@ namespace app {
     return m_pointerX >= x && m_pointerY >= y && m_pointerX < x + width && m_pointerY < y + height;
   }
   void ClientApplication::updateCursor() {
+    const auto preview = sharingPreviewFrame();
+    if (m_shareOpen || m_sharingPreviewDragging || (preview && preview->card.contains(m_pointerX, m_pointerY))) {
+      auto shape = m_sharingPreviewDragging ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRABBING
+          : m_shareOpen                     ? WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT
+                                            : WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRAB;
+      if (!m_sharingPreviewDragging)
+        for (const auto& hit :
+             (m_shareOpen && (m_sharingAdvanced || m_sharingAudioExpanded)) ? m_sharingMenuHits : m_shareHits)
+          if (hit.contains(m_pointerX, m_pointerY)) {
+            shape = WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER;
+            break;
+          }
+      if (m_shareOpen && (m_sharingAdvanced || m_sharingAudioExpanded))
+        for (const auto& hit : m_shareHits)
+          if ((hit.id == "advanced" || hit.id == "audio-expand") && hit.contains(m_pointerX, m_pointerY))
+            shape = WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_POINTER;
+      m_window.setCursorShape(shape);
+      return;
+    }
     std::uint32_t shape = WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT;
     if (m_railDrag && m_railDrag->active)
       shape = WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_GRABBING;

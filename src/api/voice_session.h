@@ -3,6 +3,7 @@
 #include "api/models.h"
 #include "voice/connection.h"
 
+#include <algorithm>
 #include <nlohmann/json.hpp>
 #include <optional>
 
@@ -41,8 +42,12 @@ namespace api {
         return Update::None;
       const auto text = [&](const char* field, std::size_t maximum) {
         const auto at = data.find(field);
-        return at != data.end() && at->is_string() && at->get_ref<const std::string&>().size() <= maximum
-            ? at->get<std::string>()
+        if (at == data.end() || !at->is_string())
+          return std::string{};
+        const auto& value = at->get_ref<const std::string&>();
+        return value.size() <= maximum
+                && std::ranges::none_of(value, [](unsigned char ch) { return ch < ' ' || ch == 127; })
+            ? value
             : std::string{};
       };
       const auto flag = [&](const char* field) {
@@ -68,6 +73,10 @@ namespace api {
         const auto session = text("session_id", maximumIdentityBytes);
         if (session.empty())
           return Update::None;
+        if (m_started && session != m_info.session) {
+          clear();
+          return Update::Ended;
+        }
         muted = flag("mute") || flag("suppress");
         deafened = flag("deaf");
         m_info.session = session;

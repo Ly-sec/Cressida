@@ -13,6 +13,7 @@ apk add --no-cache \
     libxkbcommon-dev md4c-dev mesa-dev mpv-dev nlohmann-json pango-dev \
     rlottie-dev tomlplusplus-dev wayland-dev wayland-protocols zstd-dev \
     opus-dev libsodium-dev pulseaudio-dev openssl-dev libqrencode-dev \
+    pipewire pipewire-dev \
     font-dejavu font-noto-emoji shared-mime-info xdg-utils \
     mesa-dri-gallium mesa-egl
 

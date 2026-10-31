@@ -571,7 +571,7 @@ namespace app {
         "chevron-right", muted
     );
     m_hits.push_back(
-        {chatLeft() + Style::spaceXl + x, m_messageViewportTop + y, cardWidth, 40, Action::OpenThread,
+        {conversationLeft() + Style::spaceXl + x, m_messageViewportTop + y, cardWidth, 40, Action::OpenThread,
          thread ? thread->id : message.id}
     );
     return 48;

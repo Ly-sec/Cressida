@@ -7,13 +7,17 @@ description:
 
 ## Tray menu
 
-When your desktop has a compatible tray host, Cressida provides three actions:
+When your desktop has a compatible tray host, Cressida provides these actions:
 
 | Action  | Behavior                                |
 | ------- | --------------------------------------- |
 | Open    | Show or focus the running window.       |
 | Restart | Restart the client without signing out. |
 | Close   | Exit the application.                   |
+
+While you are [sharing a screen](screen-sharing.md), the menu also provides
+**Stop Sharing**. Sharing continues when the main window is hidden; use that
+action to stop without reopening the window.
 
 Closing the window with a tray host available hides it and keeps the connection
 alive. Without a tray host, closing the window exits normally. If the tray host

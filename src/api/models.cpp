@@ -98,6 +98,8 @@ namespace api {
       guild.online = *online;
     if (rulesChannelId)
       guild.rulesChannelId = *rulesChannelId;
+    if (premiumTier)
+      guild.premiumTier = *premiumTier;
   }
   void GuildUpdate::merge(const GuildUpdate& update) {
     if (id != update.id)
@@ -114,6 +116,8 @@ namespace api {
       online = update.online;
     if (update.rulesChannelId)
       rulesChannelId = update.rulesChannelId;
+    if (update.premiumTier)
+      premiumTier = update.premiumTier;
   }
   std::vector<GuildUpdate> parseGuildUpdates(std::string_view event, const nlohmann::json& data) {
     std::vector<GuildUpdate> result;
@@ -125,6 +129,12 @@ namespace api {
         return;
       const auto properties = item.find("properties");
       const auto& source = properties != item.end() && properties->is_object() ? *properties : item;
+      const auto tier = source.find("premium_tier");
+      if (tier != source.end() && tier->is_number_integer()) {
+        const auto value = tier->template get<std::int64_t>();
+        if (value >= 0 && value <= 3)
+          update.premiumTier = static_cast<int>(value);
+      }
       const auto& rulesSource = source.contains("rules_channel_id") ? source : item;
       const auto rules = rulesSource.find("rules_channel_id");
       if (rules != rulesSource.end()) {
@@ -429,7 +439,8 @@ namespace api {
             "stickers/",
             "soundboard-sounds/",
             "new-member-actions/",
-            "resource-channels/"})
+            "resource-channels/",
+            "previews/"})
         if (path.starts_with(prefix))
           return std::string(value);
     }

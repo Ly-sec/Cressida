@@ -118,6 +118,38 @@ encrypted group keys before transmission. A device or network error needs an
 explicit rejoin after you correct the problem. Automatic call resume is not
 implemented. See [Voice chat](voice.md) for the supported call types.
 
+## Screen sharing does not start
+
+Join a voice conversation first. In a server, confirm that you have permission
+to share video in the voice channel. The screen sharing button opens your
+desktop's source chooser first. Choose a source and wait for the picker with its
+preview before selecting **Go live**.
+
+If the desktop chooser does not open, check that session D-Bus and your
+compositor's ScreenCast portal backend are available. A portal backend that only
+provides file selection is insufficient. If the chooser opens but no preview
+arrives, check that PipeWire is running and try another source. If sharing works
+but the cursor is missing, your desktop may not support including it in captured
+frames. Cressida shows a warning and can continue sharing without the cursor.
+
+A visible preview confirms local capture, not a connection to other viewers.
+Check the stream's connection status and any error. **Starting screen share…**
+means setup is still pending. After a failure, reopen the sharing settings and
+choose **Try again** for an explicit new attempt. Do not infer publication from
+the preview or viewer count alone.
+
+For missing application audio, start playback in that application, choose
+**Refresh Audio Sources** and check the selection under **Audio Sources**.
+**None** sends no application audio. PulseAudio or PipeWire's compatible Pulse
+service must be running. Your microphone mute and push-to-talk settings do not
+control shared application audio. Deafening silences streams you are watching.
+
+A missing hover thumbnail does not mean a stream is offline. Its owner may hide
+previews, your image display preference may disable them, or a preview may not
+be available yet. Select **Watch** to request the stream itself.
+
+See [Screen sharing](screen-sharing.md) for quality settings and current limits.
+
 ## A source build fails
 
 Use the [build dependency reference](building.md). In particular:

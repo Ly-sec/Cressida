@@ -22,6 +22,7 @@
 #include "xdg-activation-v1-client-protocol.h"
 #include "xdg-decoration-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
+#include "xdg-foreign-v2-client-protocol.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -62,6 +63,11 @@ namespace app {
     wl_compositor* compositor = nullptr;
     xdg_wm_base* shell = nullptr;
     xdg_activation_v1* activation = nullptr;
+    zxdg_exporter_v2* exporter=nullptr;
+    zxdg_exported_v2* exported=nullptr;
+    std::string exportedHandle;
+    std::vector<std::function<void(std::string)>> exportCallbacks;
+    Timer exportTimer;
     WindowActivation activationState;
     std::uint64_t toplevelGeneration = 0;
     wl_surface* surface = nullptr;
@@ -170,6 +176,9 @@ namespace app {
       });
     }
     ~Impl() {
+      exportTimer.stop();
+      if (exported) zxdg_exported_v2_destroy(exported);
+      if (exporter) zxdg_exporter_v2_destroy(exporter);
       textInput.setStateChanged({});
       textInput.cleanup();
       if (textInputManager)
@@ -768,6 +777,8 @@ namespace app {
               } else if (std::strcmp(interface, xdg_activation_v1_interface.name) == 0 && !self.activation) {
                 self.activation =
                     static_cast<xdg_activation_v1*>(wl_registry_bind(registry, name, &xdg_activation_v1_interface, 1));
+              } else if (std::strcmp(interface,zxdg_exporter_v2_interface.name)==0 && !self.exporter) {
+                self.exporter=static_cast<zxdg_exporter_v2*>(wl_registry_bind(registry,name,&zxdg_exporter_v2_interface,1));
               } else if (std::strcmp(interface, wp_viewporter_interface.name) == 0 && !self.viewporter) {
                 self.viewporter =
                     static_cast<wp_viewporter*>(wl_registry_bind(registry, name, &wp_viewporter_interface, 1));
@@ -951,7 +962,8 @@ namespace app {
 
   void Window::run(
       int wakeFd, std::function<void()> tick, int frameLimit, int assetFd, int videoFd, int themeFd, int pickerFd,
-      int audioFd, int notificationFd, int trayFd, int iconFd, int instanceFd, int voiceFd, int authFd
+      int audioFd, int notificationFd, int trayFd, int iconFd, int instanceFd, int voiceFd, int authFd,
+      int shareFd,int captureFd,int shareAudioFd
   ) {
     int frames = 0;
     while (m->running) {
@@ -1027,6 +1039,10 @@ namespace app {
       descriptors.push_back({instanceFd, POLLIN, 0});
       descriptors.push_back({voiceFd, POLLIN, 0});
       descriptors.push_back({authFd, POLLIN, 0});
+      descriptors.push_back({shareFd,POLLIN,0});
+      descriptors.push_back({captureFd,POLLIN,0});
+      descriptors.push_back({shareAudioFd,POLLIN,0});
+      if (auxiliaryFds) for (int fd : auxiliaryFds()) if (fd>=0) descriptors.push_back({fd,POLLIN,0});
       const int ready = ::poll(descriptors.data(), descriptors.size(), timeout);
       if (ready > 0 && (descriptors[0].revents & POLLIN)) {
         if (wl_display_read_events(m->display) < 0)
@@ -1078,6 +1094,22 @@ namespace app {
     ::close(descriptors[1]);
     wl_display_flush(m->display);
   }
+  int Window::eventFd() const { return m->display ? wl_display_get_fd(m->display) : -1; }
+  bool Window::dispatch() {
+    if (!m->display || !m->running) return false;
+    while (wl_display_prepare_read(m->display)!=0)
+      if (wl_display_dispatch_pending(m->display)<0) { m->running=false; return false; }
+    pollfd descriptor{eventFd(),POLLIN,0};
+    if (::poll(&descriptor,1,0)>0 && (descriptor.revents&POLLIN)) {
+      if (wl_display_read_events(m->display)<0) { m->running=false; return false; }
+    } else wl_display_cancel_read(m->display);
+    if (wl_display_dispatch_pending(m->display)<0) { m->running=false; return false; }
+    if (m->visible && m->configured && m->dirty && !m->frameCallback && draw) {
+      m->dirty=false; m->requestFrame(); draw(); m->activationState.presented();
+    }
+    if (wl_display_flush(m->display)<0 && errno!=EAGAIN) m->running=false;
+    return m->running;
+  }
 
   void Window::copy(std::string bytes, std::string mime) {
     if (!m->dataDevice || !m->dataManager || !m->inputSerial || bytes.empty())
@@ -1122,6 +1154,30 @@ namespace app {
   void Window::minimize() {
     if (m->toplevel && m->capabilities.minimize())
       xdg_toplevel_set_minimized(m->toplevel);
+  }
+  void Window::portalParent(std::function<void(std::string)> ready) {
+    if (!ready) return;
+    if (!m->exporter || !m->toplevel) { ready({}); return; }
+    if (!m->exportedHandle.empty()) { ready("wayland:"+m->exportedHandle); return; }
+    constexpr std::size_t maximumExportRequests=8;
+    if (m->exportCallbacks.size()>=maximumExportRequests) { ready({}); return; }
+    m->exportCallbacks.push_back(std::move(ready));
+    if (m->exported) return;
+    m->exported=zxdg_exporter_v2_export_toplevel(m->exporter,m->surface);
+    static const zxdg_exported_v2_listener listener{.handle=[](void* data,zxdg_exported_v2*,const char* handle) {
+      auto& self=*static_cast<Impl*>(data); self.exportTimer.stop();
+      constexpr std::size_t maximumHandleBytes=4096;
+      if (handle && std::strlen(handle)<=maximumHandleBytes) self.exportedHandle=handle;
+      auto callbacks=std::exchange(self.exportCallbacks,{});
+      for (auto& callback : callbacks) callback(self.exportedHandle.empty() ? "" : "wayland:"+self.exportedHandle);
+    }};
+    zxdg_exported_v2_add_listener(m->exported,&listener,m.get());
+    constexpr auto exportDeadline=std::chrono::seconds{5};
+    m->exportTimer.start(exportDeadline,[this] {
+      if (m->exported) { zxdg_exported_v2_destroy(m->exported); m->exported=nullptr; }
+      auto callbacks=std::exchange(m->exportCallbacks,{}); for (auto& callback : callbacks) callback({});
+    });
+    wl_display_flush(m->display);
   }
   void Window::toggleMaximized() {
     if (!m->toplevel || !m->capabilities.maximize())
@@ -1194,6 +1250,9 @@ namespace app {
     kLog.debug("hide requested visible={}", m->visible);
     if (!m->visible)
       return;
+    m->exportTimer.stop();
+    if (m->exported) { zxdg_exported_v2_destroy(m->exported); m->exported=nullptr; }
+    m->exportedHandle.clear(); m->exportCallbacks.clear();
     m->visible = false;
     m->keyboardBlur(m->surface);
     m->configured = false;

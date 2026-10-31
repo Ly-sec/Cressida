@@ -98,6 +98,15 @@ def expected_voice(peer, guild, channel, muted, deafened):
     return received_at
 
 
+def expected_stream(peer, opcode, data):
+    while True:
+        value = receive(peer)
+        if value["op"] in (1, 3):
+            continue
+        assert value == {"op": opcode, "d": data}, value
+        return
+
+
 def quiet(peer, duration):
     deadline = time.monotonic() + duration
     while time.monotonic() < deadline:
@@ -130,16 +139,26 @@ def main():
             with upgrade(listener, "synthetic-voice-gateway-token") as peer:
                 send(peer, 0, {"session_id": "synthetic-voice-first-session"}, "READY", 1)
                 joined = expected_voice(peer, "1", "10", True, False)
-                send(peer, 0, {}, "VOICE_BURST", 2)
+                send(peer, 0, {}, "STREAM_TEST_START", 2)
+                expected_stream(peer, 18, {"type": "guild", "guild_id": "1", "channel_id": "10", "preferred_region": None})
+                send(peer, 0, {}, "STREAM_TEST_WATCH", 3)
+                expected_stream(peer, 20, {"stream_key": "guild:1:10:501"})
+                send(peer, 0, {}, "STREAM_TEST_PAUSE", 4)
+                expected_stream(peer, 22, {"stream_key": "guild:1:10:500", "paused": True})
+                send(peer, 0, {}, "STREAM_TEST_PING", 5)
+                expected_stream(peer, 21, {"stream_key": "guild:1:10:500"})
+                send(peer, 0, {}, "STREAM_TEST_STOP", 6)
+                expected_stream(peer, 19, {"stream_key": "guild:1:10:500"})
+                send(peer, 0, {}, "VOICE_BURST", 7)
                 switched = expected_voice(peer, "2", "20", False, True)
                 assert switched - joined >= 0.20, "Rapid voice changes must honor the 250ms send cadence"
-                send(peer, 0, {}, "VOICE_LEAVE", 3)
+                send(peer, 0, {}, "VOICE_LEAVE", 8)
                 left = expected_voice(peer, "2", None, False, False)
                 assert left - switched >= 0.20, "Leaving voice shares the bounded command cadence"
-                send(peer, 0, {}, "VOICE_DM", 4)
+                send(peer, 0, {}, "VOICE_DM", 9)
                 direct = expected_voice(peer, None, "30", True, True)
                 assert direct - left >= 0.20, "DM transitions share the voice send cadence"
-                send(peer, 0, {}, "VOICE_RESET", 5)
+                send(peer, 0, {}, "VOICE_RESET", 10)
                 closed(peer)
             with upgrade(listener, "synthetic-voice-gateway-next-token") as peer:
                 send(peer, 0, {"session_id": "synthetic-voice-next-session"}, "READY", 1)

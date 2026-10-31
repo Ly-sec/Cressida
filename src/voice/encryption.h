@@ -1,5 +1,7 @@
 #pragma once
 
+#include "voice/media.h"
+
 #include <cstdint>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -30,8 +32,10 @@ namespace voice {
     void addUser(std::string user);
     void removeUser(std::string_view user);
     std::vector<EncryptionMessage> takeMessages();
-    std::vector<std::uint8_t> encrypt(std::uint32_t ssrc, std::span<const std::uint8_t> opus);
-    std::vector<std::uint8_t> decrypt(std::string_view user, std::span<const std::uint8_t> frame);
+    std::vector<std::uint8_t>
+    encrypt(std::uint32_t ssrc, std::span<const std::uint8_t> media, MediaCodec codec = MediaCodec::Opus);
+    std::vector<std::uint8_t>
+    decrypt(std::string_view user, std::span<const std::uint8_t> frame, MediaCodec codec = MediaCodec::Opus);
     void tick();
     bool ready() const;
     std::string error() const;

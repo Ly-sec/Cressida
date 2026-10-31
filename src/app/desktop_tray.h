@@ -5,7 +5,7 @@
 #include <string>
 
 namespace app {
-  enum class TrayCommand { Availability, Open, Restart, Close };
+  enum class TrayCommand { Availability, Open, Restart, Close, StopSharing };
   struct TrayEvent {
     TrayCommand command = TrayCommand::Availability;
     bool available = false;
@@ -19,6 +19,7 @@ namespace app {
     DesktopTray(const DesktopTray&) = delete;
     DesktopTray& operator=(const DesktopTray&) = delete;
     void start(std::string iconPath);
+    void sharing(bool active);
     int eventFd() const;
     std::optional<TrayEvent> poll();
 

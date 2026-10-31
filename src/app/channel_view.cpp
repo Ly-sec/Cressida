@@ -442,7 +442,7 @@ namespace app {
     for (const auto& run : description.runs) {
       auto style = run.style;
       style.linkHovered = messageLinkHovered(
-          links, runIndex++, m_pointerX - chatLeft() - Style::spaceXl - x,
+          links, runIndex++, m_pointerX - conversationLeft() - Style::spaceXl - x,
           m_pointerY - m_messageViewportTop - y - layout::ChannelIntro::descriptionTop
       );
       if (run.y + run.height > topicHeight)
@@ -467,7 +467,7 @@ namespace app {
     for (const auto& area : links)
       if (!description.runs[area.first].style.spoiler && area.y + area.height <= topicHeight)
         m_hits.push_back(
-            {chatLeft() + Style::spaceXl + x + area.x,
+            {conversationLeft() + Style::spaceXl + x + area.x,
              m_messageViewportTop + y + layout::ChannelIntro::descriptionTop + area.y, area.width, area.height,
              Action::OpenUrl, area.url}
         );

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <bitset>
 #include <chrono>
 #include <cstdint>
 #include <map>
@@ -19,6 +20,7 @@ namespace voice::protocol {
   inline constexpr std::size_t nonceSuffixBytes = 4;
   inline constexpr std::size_t rtpHeaderBytes = 12;
   inline constexpr std::size_t discoveryBytes = 74;
+  inline constexpr std::size_t maximumMediaReplayPackets = 4096;
   inline constexpr std::string_view transportMode = "aead_xchacha20_poly1305_rtpsize";
   inline constexpr std::array<std::uint8_t, 3> silence{0xf8, 0xff, 0xfe};
   bool validId(std::string_view value);
@@ -66,6 +68,8 @@ namespace voice::protocol {
     std::uint32_t ssrc = 0, timestamp = 0;
     std::uint16_t sequence = 0;
     std::vector<std::uint8_t> payload;
+    std::uint8_t payloadType = 120;
+    bool marker = false;
   };
   class RtpCipher {
   public:
@@ -74,18 +78,25 @@ namespace voice::protocol {
     RtpCipher(const RtpCipher&) = delete;
     RtpCipher& operator=(const RtpCipher&) = delete;
     bool setKey(std::span<const std::uint8_t> key);
+    void payloadTypes(std::span<const std::uint8_t> types);
     void clear();
     std::vector<std::uint8_t> seal(const Packet& packet);
     std::optional<Packet> open(std::span<const std::uint8_t> packet);
+    std::vector<std::uint8_t> sealControl(std::span<const std::uint8_t> packet);
+    std::vector<std::uint8_t> openControl(std::span<const std::uint8_t> packet);
 
   private:
     struct Replay {
       std::uint32_t latest = 0;
-      std::uint64_t seen = 0;
+      std::bitset<maximumMediaReplayPackets> seen;
     };
     std::array<std::uint8_t, keyBytes> m_key{};
     std::map<std::uint32_t, Replay> m_replay;
+    std::array<bool, 128> m_payloadTypes{};
+    bool replayAllowed(std::uint32_t ssrc, std::uint32_t counter) const;
+    void accepted(std::uint32_t ssrc, std::uint32_t counter);
     std::uint64_t m_counter = 0;
     bool m_initialized = false;
+    std::size_t m_replayBits = 64;
   };
 } // namespace voice::protocol

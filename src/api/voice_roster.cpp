@@ -21,7 +21,7 @@ namespace api {
     constexpr std::size_t maximumAvatarHashBytes = 128;
     constexpr std::uint16_t nameField = 1U << 0;
     constexpr std::uint16_t avatarField = 1U << 1;
-    constexpr std::uint16_t channelField = 1U << 2;
+    constexpr std::uint16_t channelField = voiceMemberChannelField;
     struct Flag {
       const char* key;
       std::uint16_t field;
@@ -31,7 +31,7 @@ namespace api {
         Flag{"mute", 1U << 3, &VoiceMember::muted},          Flag{"deaf", 1U << 4, &VoiceMember::deafened},
         Flag{"self_mute", 1U << 5, &VoiceMember::selfMuted}, Flag{"self_deaf", 1U << 6, &VoiceMember::selfDeafened},
         Flag{"suppress", 1U << 7, &VoiceMember::suppressed}, Flag{"self_video", 1U << 8, &VoiceMember::video},
-        Flag{"self_stream", 1U << 9, &VoiceMember::stream}
+        Flag{"self_stream", voiceMemberStreamField, &VoiceMember::stream}
     };
     struct PublicProfile {
       std::string name, avatar, fallbackName;

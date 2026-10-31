@@ -180,6 +180,7 @@ namespace voice::protocol {
   RtpCipher::RtpCipher() {
     if (sodium_init() < 0)
       throw std::runtime_error("Voice transport cryptography is unavailable");
+    m_payloadTypes[120] = true;
   }
   RtpCipher::~RtpCipher() { clear(); }
   void RtpCipher::clear() {
@@ -189,6 +190,8 @@ namespace voice::protocol {
     m_replay.clear();
   }
   bool RtpCipher::setKey(std::span<const std::uint8_t> key) {
+    if (m_initialized && key.size() == m_key.size() && sodium_memcmp(key.data(), m_key.data(), m_key.size()) == 0)
+      return true;
     clear();
     if (key.size() != m_key.size())
       return false;
@@ -196,16 +199,52 @@ namespace voice::protocol {
     m_initialized = true;
     return true;
   }
+  void RtpCipher::payloadTypes(std::span<const std::uint8_t> types) {
+    if (m_initialized)
+      return;
+    m_payloadTypes.fill(false);
+    for (auto type : types)
+      if (type < m_payloadTypes.size() && (type < 64 || type > 95))
+        m_payloadTypes[type] = true;
+    m_replayBits =
+        std::ranges::any_of(types, [](auto type) { return type != 120; }) ? maximumMediaReplayPackets : replayBits;
+  }
+  bool RtpCipher::replayAllowed(std::uint32_t ssrc, std::uint32_t counter) const {
+    if (!ssrc)
+      return false;
+    const auto prior = m_replay.find(ssrc);
+    if (prior == m_replay.end())
+      return m_replay.size() < maximumParticipants;
+    if (counter > prior->second.latest)
+      return true;
+    const auto age = prior->second.latest - counter;
+    return age < m_replayBits && !prior->second.seen.test(age);
+  }
+  void RtpCipher::accepted(std::uint32_t ssrc, std::uint32_t counter) {
+    auto& replay = m_replay[ssrc];
+    if (counter > replay.latest) {
+      const auto gap = counter - replay.latest;
+      if (gap >= m_replayBits)
+        replay.seen.reset();
+      else
+        replay.seen <<= gap;
+      replay.seen.set(0);
+      replay.latest = counter;
+    } else
+      replay.seen.set(replay.latest - counter);
+  }
   std::vector<std::uint8_t> RtpCipher::seal(const Packet& packet) {
     if (!m_initialized
         || !packet.ssrc
+        || packet.payloadType >= m_payloadTypes.size()
+        || !m_payloadTypes[packet.payloadType]
         || packet.payload.empty()
         || packet.payload.size() > maximumDatagramBytes - rtpHeaderBytes - authenticationBytes - nonceSuffixBytes
         || m_counter > std::numeric_limits<std::uint32_t>::max())
       return {};
     std::vector<std::uint8_t> result(rtpHeaderBytes + packet.payload.size() + authenticationBytes + nonceSuffixBytes);
     result[0] = 0x80;
-    result[1] = 120;
+    result[1] = packet.payloadType | (packet.marker ? 0x80 : 0);
     write16(result, 2, packet.sequence);
     write32(result, 4, packet.timestamp);
     write32(result, 8, packet.ssrc);
@@ -226,7 +265,7 @@ namespace voice::protocol {
         || packet.size() < rtpHeaderBytes + authenticationBytes + nonceSuffixBytes
         || packet.size() > maximumDatagramBytes
         || (packet[0] >> 6) != 2
-        || (packet[1] & 0x7f) != 120)
+        || !m_payloadTypes[packet[1] & 0x7f])
       return {};
     std::size_t authenticated = rtpHeaderBytes + (packet[0] & 0x0f) * rtpCsrcBytes;
     const bool extension = (packet[0] & 0x10) != 0;
@@ -235,18 +274,13 @@ namespace voice::protocol {
     if (authenticated > packet.size() - authenticationBytes - nonceSuffixBytes)
       return {};
     const auto ssrc = read32(packet, 8), counter = read32(packet, packet.size() - nonceSuffixBytes);
-    if (!ssrc)
-      return {};
-    const auto prior = m_replay.find(ssrc);
-    if (prior != m_replay.end() && counter <= prior->second.latest) {
-      const auto age = prior->second.latest - counter;
-      if (age >= replayBits || (prior->second.seen & (std::uint64_t{1} << age)))
-        return {};
-    } else if (prior == m_replay.end() && m_replay.size() >= maximumParticipants)
+    if (!replayAllowed(ssrc, counter))
       return {};
     std::array<std::uint8_t, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES> nonce{};
     std::ranges::copy(packet.last(nonceSuffixBytes), nonce.begin());
     Packet result{ssrc, read32(packet, 4), read16(packet, 2), {}};
+    result.payloadType = packet[1] & 0x7f;
+    result.marker = (packet[1] & 0x80) != 0;
     result.payload.resize(packet.size() - authenticated - authenticationBytes - nonceSuffixBytes);
     unsigned long long written = 0;
     if (crypto_aead_xchacha20poly1305_ietf_decrypt(
@@ -269,13 +303,61 @@ namespace voice::protocol {
     }
     if (result.payload.empty())
       return {};
-    auto& replay = m_replay[ssrc];
-    if (counter > replay.latest) {
-      const auto gap = counter - replay.latest;
-      replay.seen = gap >= replayBits ? 1 : (replay.seen << gap) | 1;
-      replay.latest = counter;
-    } else
-      replay.seen |= std::uint64_t{1} << (replay.latest - counter);
+    accepted(ssrc, counter);
+    return result;
+  }
+  std::vector<std::uint8_t> RtpCipher::sealControl(std::span<const std::uint8_t> packet) {
+    constexpr std::size_t header = 8;
+    if (!m_initialized
+        || packet.size() < header
+        || packet.size() % 4
+        || packet.size() > maximumDatagramBytes - authenticationBytes - nonceSuffixBytes
+        || packet[0] >> 6 != 2
+        || packet[1] < 200
+        || packet[1] > 206
+        || !read32(packet, 4)
+        || m_counter > std::numeric_limits<std::uint32_t>::max())
+      return {};
+    std::vector<std::uint8_t> result(packet.begin(), packet.end());
+    result.resize(packet.size() + authenticationBytes + nonceSuffixBytes);
+    std::array<std::uint8_t, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES> nonce{};
+    write32(nonce, 0, static_cast<std::uint32_t>(m_counter++));
+    unsigned long long written = 0;
+    if (crypto_aead_xchacha20poly1305_ietf_encrypt(
+            result.data() + header, &written, packet.data() + header, packet.size() - header, result.data(), header,
+            nullptr, nonce.data(), m_key.data()
+        )
+        != 0)
+      return {};
+    std::ranges::copy(std::span{nonce}.first(nonceSuffixBytes), result.end() - nonceSuffixBytes);
+    return result;
+  }
+  std::vector<std::uint8_t> RtpCipher::openControl(std::span<const std::uint8_t> packet) {
+    constexpr std::size_t header = 8;
+    if (!m_initialized
+        || packet.size() < header + authenticationBytes + nonceSuffixBytes
+        || packet.size() > maximumDatagramBytes
+        || packet[0] >> 6 != 2
+        || packet[1] < 200
+        || packet[1] > 206)
+      return {};
+    const auto ssrc = read32(packet, 4), counter = read32(packet, packet.size() - nonceSuffixBytes);
+    if (!replayAllowed(ssrc, counter))
+      return {};
+    std::array<std::uint8_t, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES> nonce{};
+    std::ranges::copy(packet.last(nonceSuffixBytes), nonce.begin());
+    std::vector<std::uint8_t> result(packet.begin(), packet.begin() + header);
+    result.resize(packet.size() - authenticationBytes - nonceSuffixBytes);
+    unsigned long long written = 0;
+    if (crypto_aead_xchacha20poly1305_ietf_decrypt(
+            result.data() + header, &written, nullptr, packet.data() + header,
+            packet.size() - header - nonceSuffixBytes, packet.data(), header, nonce.data(), m_key.data()
+        )
+        != 0)
+      return {};
+    if (header + written != result.size())
+      return {};
+    accepted(ssrc, counter);
     return result;
   }
 } // namespace voice::protocol

@@ -59,6 +59,7 @@ namespace api {
     // Absent means a partial snapshot did not provide the setting; an empty
     // value explicitly means this server has no rules channel.
     std::optional<std::string> rulesChannelId;
+    std::optional<int> premiumTier;
   };
 
   enum class GuildBadge { None, Community, Partnered, Verified };
@@ -69,6 +70,7 @@ namespace api {
     std::optional<std::vector<std::string>> features;
     std::optional<std::optional<int>> members, online;
     std::optional<std::string> rulesChannelId;
+    std::optional<int> premiumTier;
     void apply(Guild& guild) const;
     void merge(const GuildUpdate& update);
   };

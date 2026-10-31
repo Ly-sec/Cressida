@@ -242,21 +242,23 @@ namespace voice {
     m_impl->outgoingBytes = 0;
     return std::exchange(m_impl->outgoing, {});
   }
-  std::vector<std::uint8_t> Encryption::encrypt(std::uint32_t ssrc, std::span<const std::uint8_t> opus) {
+  std::vector<std::uint8_t>
+  Encryption::encrypt(std::uint32_t ssrc, std::span<const std::uint8_t> media, MediaCodec codec) {
     if (!ssrc || !ready())
       return {};
     try {
-      return m_impl->sender.encrypt(opus);
+      return m_impl->sender.encrypt(media, codec);
     } catch (const std::exception&) {
       m_impl->fail("Voice audio encryption failed.");
       return {};
     }
   }
-  std::vector<std::uint8_t> Encryption::decrypt(std::string_view user, std::span<const std::uint8_t> frame) {
+  std::vector<std::uint8_t>
+  Encryption::decrypt(std::string_view user, std::span<const std::uint8_t> frame, MediaCodec codec) {
     const auto at = m_impl->receivers.find(user);
     if (!ready() || at == m_impl->receivers.end())
       return {};
-    return at->second.decrypt(frame);
+    return at->second.decrypt(frame, codec);
   }
   void Encryption::tick() {
     for (auto& [user, receiver] : m_impl->receivers)

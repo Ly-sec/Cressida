@@ -32,6 +32,14 @@ Voice device choices, input/output volume, activation mode and activity
 threshold are also saved per account. Active calls, mute/deafen state,
 microphone audio and voice-session encryption keys are not saved.
 
+[Screen sharing](screen-sharing.md) quality, content preference, cursor,
+hardware encoding and application audio selections are saved per account.
+Captured screens, video or audio frames, portal permissions, stream credentials
+and active publications or watches are not saved or restored. The **Hide stream
+preview** override applies to the current stream and is not saved. When previews
+are allowed, thumbnail snapshots are uploaded after publication starts; see
+[stream preview privacy](screen-sharing.md#stream-preview-privacy).
+
 Saved login credentials belong in the desktop keyring. Signing out removes the
 saved login. Closing or restarting the client does not sign out.
 

@@ -50,34 +50,73 @@ namespace voice::dave {
     }
   } // namespace
 
-  Bytes seal(std::span<const std::uint8_t> plaintext, const Secret& key, std::uint32_t nonce) {
-    if (plaintext.empty() || plaintext.size() > maximumMediaBytes || key.size() != keyBytes)
+  Bytes seal(
+      std::span<const std::uint8_t> plaintext, const Secret& key, std::uint32_t nonce, const Ranges& ranges,
+      std::size_t maximum
+  ) {
+    if (plaintext.empty() || plaintext.size() > maximum || maximum > maximumVideoFrameBytes || key.size() != keyBytes)
       return {};
+    Secret input;
+    Bytes additional;
+    std::size_t at = 0;
+    for (const auto& [offset, length] : ranges) {
+      if (offset < at || offset > plaintext.size() || !length || length > plaintext.size() - offset)
+        return {};
+      input.as_vec().insert(input.end(), plaintext.begin() + at, plaintext.begin() + offset);
+      additional.insert(additional.end(), plaintext.begin() + offset, plaintext.begin() + offset + length);
+      at = offset + length;
+    }
+    input.as_vec().insert(input.end(), plaintext.begin() + at, plaintext.end());
     const auto iv = nonceBuffer(nonce);
     Context context(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
-    Bytes result(plaintext.size() + tagBytes);
+    Bytes ciphertext(input.size() + EVP_MAX_BLOCK_LENGTH);
+    std::array<std::uint8_t, tagBytes> tag{};
     int written = 0, final = 0;
     if (!context
         || EVP_EncryptInit_ex(context.get(), EVP_aes_128_gcm(), nullptr, key.data(), iv.data()) != 1
-        || EVP_EncryptUpdate(
-               context.get(), result.data(), &written, plaintext.data(), static_cast<int>(plaintext.size())
-           ) != 1
-        || EVP_EncryptFinal_ex(context.get(), result.data() + written, &final) != 1
-        || written + final != static_cast<int>(plaintext.size())
-        || EVP_CIPHER_CTX_ctrl(context.get(), EVP_CTRL_GCM_GET_TAG, tagBytes, result.data() + plaintext.size()) != 1)
+        || (!additional.empty()
+            && EVP_EncryptUpdate(
+                   context.get(), nullptr, &written, additional.data(), static_cast<int>(additional.size())
+               ) != 1)
+        || EVP_EncryptUpdate(context.get(), ciphertext.data(), &written, input.data(), static_cast<int>(input.size()))
+            != 1
+        || EVP_EncryptFinal_ex(context.get(), ciphertext.data() + written, &final) != 1
+        || written + final != static_cast<int>(input.size())
+        || EVP_CIPHER_CTX_ctrl(context.get(), EVP_CTRL_GCM_GET_TAG, tagBytes, tag.data()) != 1)
       return {};
+    ciphertext.resize(input.size());
+    Bytes result;
+    result.reserve(plaintext.size() + std::numeric_limits<std::uint8_t>::max());
+    at = 0;
+    std::size_t encrypted = 0;
+    for (const auto& [offset, length] : ranges) {
+      const auto count = offset - at;
+      result.insert(result.end(), ciphertext.begin() + encrypted, ciphertext.begin() + encrypted + count);
+      result.insert(result.end(), plaintext.begin() + offset, plaintext.begin() + offset + length);
+      encrypted += count;
+      at = offset + length;
+    }
+    result.insert(result.end(), ciphertext.begin() + encrypted, ciphertext.end());
+    result.insert(result.end(), tag.begin(), tag.end());
     writeLeb(result, nonce);
+    for (const auto& [offset, length] : ranges) {
+      writeLeb(result, static_cast<std::uint32_t>(offset));
+      writeLeb(result, static_cast<std::uint32_t>(length));
+    }
     const auto footer = result.size() - plaintext.size() + suffixBytes;
+    if (footer > std::numeric_limits<std::uint8_t>::max())
+      return {};
     result.insert(result.end(), {static_cast<std::uint8_t>(footer), markerByte, markerByte});
-    if (result.size() > maximumMediaBytes)
+    if (result.size() > maximum)
       return {};
     return result;
   }
 
-  std::optional<Frame> parse(std::span<const std::uint8_t> bytes) {
+  std::optional<Frame> parse(std::span<const std::uint8_t> bytes, std::size_t maximum) {
     constexpr auto minimumFooter = tagBytes + suffixBytes + 1;
     if (bytes.size() <= minimumFooter
-        || bytes.size() > maximumMediaBytes
+        || bytes.size() > maximum
+        || maximum > maximumVideoFrameBytes
         || bytes[bytes.size() - 1] != markerByte
         || bytes[bytes.size() - 2] != markerByte)
       return {};
@@ -107,8 +146,25 @@ namespace voice::dave {
     return frame;
   }
 
-  Bytes open(const Frame& frame, const Secret& key) {
-    if (key.size() != keyBytes || frame.ciphertext.size() + frame.authenticated.size() > maximumMediaBytes)
+  Bytes open(const Frame& frame, const Secret& key, std::size_t maximum) {
+    if (key.size() != keyBytes
+        || frame.ciphertext.size() > maximum
+        || frame.authenticated.size() > maximum - frame.ciphertext.size()
+        || maximum > maximumVideoFrameBytes)
+      return {};
+    const auto total = frame.ciphertext.size() + frame.authenticated.size();
+    std::size_t end = 0, authenticatedBytes = 0;
+    for (const auto& [offset, length] : frame.ranges) {
+      if (!length
+          || offset < end
+          || offset > total
+          || length > total - offset
+          || length > frame.authenticated.size() - authenticatedBytes)
+        return {};
+      end = offset + length;
+      authenticatedBytes += length;
+    }
+    if (!total || authenticatedBytes != frame.authenticated.size())
       return {};
     const auto iv = nonceBuffer(frame.nonce);
     Context context(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
@@ -163,14 +219,38 @@ namespace voice::dave {
     m_domain = {};
     m_counter = 0;
   }
-  Bytes Sender::encrypt(std::span<const std::uint8_t> opus) {
+  Bytes Sender::encrypt(std::span<const std::uint8_t> media, MediaCodec codec) {
     constexpr auto maximumCounter =
         (static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()) << generationShift);
-    if (!m_ratchet || opus.empty() || opus.size() > maximumMediaBytes || m_counter >= maximumCounter)
+    const auto maximum = codec == MediaCodec::Opus ? maximumMediaBytes : maximumVideoFrameBytes;
+    if (!m_ratchet || media.empty() || media.size() > maximum || m_counter >= maximumCounter)
       return {};
-    const auto generation = static_cast<std::uint32_t>(++m_counter >> generationShift);
-    auto key = m_ratchet->get(generation).key;
-    auto result = seal(opus, key, static_cast<std::uint32_t>(m_counter));
+    const auto prepared = prepareMedia(media, codec);
+    if (!prepared)
+      return {};
+    Bytes result;
+    constexpr unsigned maximumHeaderRetries = 10;
+    std::uint32_t generation = 0;
+    for (unsigned attempt = 0; attempt < maximumHeaderRetries && m_counter < maximumCounter; ++attempt) {
+      generation = static_cast<std::uint32_t>(++m_counter >> generationShift);
+      auto key = m_ratchet->get(generation).key;
+      result = seal(prepared->bytes, key, static_cast<std::uint32_t>(m_counter), prepared->ranges, maximum);
+      if (codec != MediaCodec::H264 || result.empty())
+        break;
+      bool valid = true;
+      for (std::size_t i = 0; i + 2 < result.size(); ++i)
+        if (result[i] == 0 && result[i + 1] == 0 && result[i + 2] == 1)
+          valid &= i + 2 < prepared->bytes.size()
+              && prepared->bytes[i] == 0
+              && prepared->bytes[i + 1] == 0
+              && prepared->bytes[i + 2] == 1
+              && std::ranges::any_of(prepared->ranges, [&](const auto& range) {
+                     return i >= range.first && i + 2 < range.first + range.second;
+                   });
+      if (valid)
+        break;
+      result.clear();
+    }
     // Sending never needs keys for a previous generation.
     for (auto at = m_ratchet->cache.begin(); at != m_ratchet->cache.end() && at->first < generation;)
       at = m_ratchet->cache.erase(at);
@@ -207,9 +287,10 @@ namespace voice::dave {
       }
     }
   }
-  Bytes Receiver::decrypt(std::span<const std::uint8_t> bytes) {
+  Bytes Receiver::decrypt(std::span<const std::uint8_t> bytes, MediaCodec codec) {
     expire();
-    const auto frame = parse(bytes);
+    const auto maximum = codec == MediaCodec::Opus ? maximumMediaBytes : maximumVideoFrameBytes;
+    const auto frame = parse(bytes, maximum);
     if (!frame)
       return {};
     for (auto& domain : m_domains) {
@@ -237,7 +318,7 @@ namespace voice::dave {
         // Unauthenticated input cannot advance or erase the accepted key schedule.
         auto candidate = domain.ratchet;
         const auto key = candidate.get(static_cast<std::uint32_t>(generation)).key;
-        auto result = open(*frame, key);
+        auto result = open(*frame, key, maximum);
         if (result.empty())
           continue;
         domain.ratchet = std::move(candidate);

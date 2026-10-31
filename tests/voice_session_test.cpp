@@ -157,6 +157,21 @@ int main() {
       );
     }
 
+    api::VoiceSession otherDevice;
+    begin(otherDevice);
+    complete(otherDevice);
+    (void)otherDevice.take();
+    auto replacedState = state();
+    replacedState["session_id"] = "different-private-session";
+    require(
+        otherDevice.receive("VOICE_STATE_UPDATE", replacedState) == Update::Ended && !otherDevice.active(),
+        "Another device's session cannot silently replace the active transport identity"
+    );
+    require(
+        otherDevice.receive("VOICE_SERVER_UPDATE", server()) == Update::None,
+        "Server credentials cannot restore a voice intention ended by session replacement"
+    );
+
     api::VoiceSession migrating;
     begin(migrating);
     complete(migrating);
@@ -199,7 +214,8 @@ int main() {
       );
     }
     for (const auto* field : {"session_id", "user_id", "guild_id", "channel_id"}) {
-      for (const Json& bad : {Json(), Json(7), Json::array(), Json::object(), Json(std::string(129, 'x'))}) {
+      for (const Json& bad :
+           {Json(), Json(7), Json::array(), Json::object(), Json(std::string(129, 'x')), Json("bad\nsession")}) {
         api::VoiceSession invalid;
         begin(invalid);
         auto malformed = state();
@@ -215,7 +231,8 @@ int main() {
       }
     }
     for (const auto* field : {"token", "endpoint", "guild_id"}) {
-      for (const Json& bad : {Json(7), Json::array(), Json::object(), Json(""), Json(std::string(4097, 'x'))}) {
+      for (const Json& bad :
+           {Json(7), Json::array(), Json::object(), Json(""), Json(std::string(4097, 'x')), Json("bad\ncredential")}) {
         api::VoiceSession invalid;
         begin(invalid);
         auto malformed = server();

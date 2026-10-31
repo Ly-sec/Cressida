@@ -43,7 +43,7 @@ namespace app {
         }
         if (root) {
           const bool disabled = item.disabled || pending || (item.style != 5 && message.applicationId.empty());
-          const float px = chatLeft() + Style::spaceXl + x + bx, py = m_messageViewportTop + y + rowY;
+          const float px = conversationLeft() + Style::spaceXl + x + bx, py = m_messageViewportTop + y + rowY;
           const bool over = !disabled && hovered(px, py, bw, 32);
           auto color = item.style == 1 ? accent
               : item.style == 3        ? rgbHex(0x248046)
@@ -114,8 +114,8 @@ namespace app {
             dismissWidth + Style::spaceXxs, "Dismiss message", Style::fontSizeMini, accent
         );
         m_hits.push_back(
-            {chatLeft() + Style::spaceXl + x + Style::spaceRelaxed + captionWidth, m_messageViewportTop + y + rowY,
-             dismissWidth + Style::spaceXxs, 25, Action::DismissEphemeral, message.id}
+            {conversationLeft() + Style::spaceXl + x + Style::spaceRelaxed + captionWidth,
+             m_messageViewportTop + y + rowY, dismissWidth + Style::spaceXxs, 25, Action::DismissEphemeral, message.id}
         );
       }
       rowY += Style::spaceWide;

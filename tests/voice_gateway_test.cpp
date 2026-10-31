@@ -53,8 +53,42 @@ int main(int argc, char** argv) {
                     "Stale and future sessions cannot choose a voice target"
                 );
                 require(active->setVoice(1, "1", "10", true, false), "The current session can explicitly join voice");
+              } else if (type == "STREAM_TEST_START") {
+                require(
+                    !active->stream(0, {api::StreamCommandKind::Create, {"1", "10", "500"}})
+                        && !active->stream(1, {api::StreamCommandKind::Create, {"1", "11", "500"}}),
+                    "Stream commands reject stale generations and other voice targets"
+                );
+                require(
+                    active->stream(1, {api::StreamCommandKind::Create, {"1", "10", "500"}}),
+                    "An explicit stream uses the established main voice target"
+                );
+              } else if (type == "STREAM_TEST_WATCH") {
+                require(
+                    active->stream(1, {api::StreamCommandKind::Watch, {"1", "10", "501"}}),
+                    "Watching another stream has its own main Gateway command"
+                );
+              } else if (type == "STREAM_TEST_PAUSE") {
+                require(
+                    active->stream(1, {api::StreamCommandKind::Pause, {"1", "10", "500"}, true}),
+                    "Pausing queues an explicit stream intention"
+                );
+              } else if (type == "STREAM_TEST_PING") {
+                require(
+                    active->stream(1, {api::StreamCommandKind::Ping, {"1", "10", "500"}}),
+                    "The main Gateway accepts bounded stream liveness checks"
+                );
+              } else if (type == "STREAM_TEST_STOP") {
+                require(
+                    active->stream(1, {api::StreamCommandKind::Delete, {"1", "10", "500"}}),
+                    "Stopping publication uses the same validated stream target"
+                );
               } else if (type == "VOICE_BURST") {
                 require(session == 1, "Rapid voice changes retain the authenticated session");
+                require(
+                    active->stream(1, {api::StreamCommandKind::Watch, {"1", "10", "501"}}),
+                    "Changing voice channels may retire a queued stream watch"
+                );
                 for (unsigned update = 0; update < 64; ++update)
                   require(
                       active->setVoice(1, "1", std::to_string(100 + update), update % 2, update % 3 == 0),
@@ -72,6 +106,10 @@ int main(int argc, char** argv) {
                 require(
                     active->setVoice(1, "1", "998", false, false),
                     "The old session can have a pending target before reset"
+                );
+                require(
+                    active->stream(1, {api::StreamCommandKind::Watch, {"1", "998", "501"}}),
+                    "A stream command can be pending when the account resets"
                 );
                 generation = 2;
                 active->reset(1);

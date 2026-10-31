@@ -2,6 +2,7 @@
 #include "app/layout_metrics.h"
 #include "app/window_controls.h"
 #include "voice/audio.h"
+#include "voice/video_codec.h"
 
 #include <filesystem>
 #include <map>
@@ -44,6 +45,8 @@ namespace app {
     bool randomizeMediaFilenames = false;
     bool twelveHourClock = false;
     voice::AudioSettings voice;
+    voice::ShareSettings sharing;
+    bool sharingCursor=true;
   };
   struct LastChannel {
     std::string guild, channel;

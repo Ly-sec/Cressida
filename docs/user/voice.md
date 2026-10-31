@@ -23,12 +23,13 @@ When you are alone, the sidebar shows **Voice connected** and **No other
 participants**. Your microphone can show local activity after joining. Audio is
 transmitted only when the encrypted group is ready for another participant.
 
-Use the sidebar controls to mute your microphone, deafen yourself, open voice
-settings or disconnect. Mute and deafen stay highlighted while active. The phone
-button at the upper right disconnects the call. Hover over the connection status
-to see the full channel and server name. Deafening stops both microphone
-transmission and received call audio. Changing the selected text conversation
-does not leave your call. You can also change microphone mute using the
+Use the sidebar controls to mute your microphone, deafen yourself,
+[share your screen](screen-sharing.md), open voice settings or disconnect. Mute
+and deafen stay highlighted while active. The phone button at the upper right
+disconnects the call. Hover over the connection status to see the full channel
+and server name. Deafening stops both microphone transmission and received call
+audio. Changing the selected text conversation does not leave your call. You can
+also change microphone mute using the
 [voice control commands](command-line.md#voice-controls).
 
 ## Choose devices and volume
@@ -90,7 +91,8 @@ Cressida does not automatically resume the call.
 Playback retains up to 32 speaker streams at a time. Streams idle for five
 seconds are released, so very large conversations may not play every speaker.
 
-Camera calls, screen sharing, Stage channels, echo cancellation and noise
-suppression are not available. Use headphones to reduce feedback. See
+Screen sharing is experimental; see its [guide and limits](screen-sharing.md).
+Camera calls, Stage channels, echo cancellation and noise suppression are not
+available. Use headphones to reduce feedback. See
 [Troubleshooting](troubleshooting.md#voice-does-not-connect-or-has-no-audio) for
 audio setup problems.

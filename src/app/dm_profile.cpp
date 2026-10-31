@@ -22,6 +22,8 @@ namespace app {
     return recipient == channel->recipients.end() ? nullptr : &*recipient;
   }
   float ClientApplication::memberPaneWidth() const {
+    if (voiceStageVisible())
+      return 0;
     const float available = m_window.width() - chatLeft();
     if (!m_connected
         || (m_dmMode && !m_dmPage.empty())

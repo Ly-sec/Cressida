@@ -14,6 +14,7 @@ namespace api::request_diagnostics {
   // opaque path segments, invitation codes, identities or query values.
   inline constexpr auto routes = std::to_array<std::string_view>(
       {"/users/@me",
+       "/streams/:key/preview",
        "/users/@me/channels",
        "/users/@me/guilds",
        "/users/@me/guilds/:id",
@@ -207,6 +208,7 @@ namespace api::request_diagnostics {
          "channel-details",
          "channel-page",
          "inbox",
+         "stream-preview",
          "threads",
          "stickers",
          "sticker-packs",

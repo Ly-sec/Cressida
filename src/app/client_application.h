@@ -42,6 +42,7 @@
 #include "app/window_icons.h"
 #include "auth/browser_login.h"
 #include "auth/qr_login.h"
+#include "capture/screen.h"
 #include "core/text_clipboard.h"
 #include "core/timer_manager.h"
 #include "media/video_player.h"
@@ -62,6 +63,7 @@
 
 namespace app {
   class SingleInstance;
+  class StreamPopout;
 
   class ClientApplication : private SelectPopupContext {
   public:
@@ -91,11 +93,13 @@ namespace app {
     static constexpr int imageMenuReplayFrames = 13;
     static constexpr int trayReplayFrames = 4;
     static constexpr int voiceReplayFrames = 15;
+    static constexpr int sharingReplayFrames = 33;
     static constexpr int imeReplayFrames = 14;
     static constexpr int slashCommandReplayFrames = 26;
     enum class Action {
       Settings,
       VoiceAction,
+      ShareAction,
       DmPage,
       DmAction,
       GuildMenu,
@@ -852,6 +856,30 @@ namespace app {
     void drawVoiceSettings(UserSettingsForm& form);
     void drawVoiceBar(Node& root, float windowHeight);
     void voiceAction(const std::string& action);
+    void sharingAction(const std::string& action);
+    void sharingTick();
+    void prepareSharingDemo(const std::string& view);
+    void demoSharingStep();
+    void clearSharing();
+    bool sharingClick(float x, float y);
+    bool sharingMotion(float x, float y);
+    bool sharingRelease();
+    std::optional<layout::Sharing::SelfPreview> sharingPreviewFrame() const;
+    bool sharingKey(const Key& key);
+    void drawSharing(Node& root, float width, float height);
+    bool voiceStageVisible() const;
+    float conversationLeft() const;
+    void drawVoiceStage(Node& root, const layout::Frame& frame);
+    void hoverStreamPreview(const std::string& key, const layout::Frame& anchor);
+    void drawStreamPreviewTooltip(Node& root, float width, float height);
+    void streamPreviewResult(const api::Event& event);
+    void drawStreamFrame(
+        Node& root, layout::Frame frame, const std::string& key, std::shared_ptr<voice::VideoPipeline> video
+    );
+    void sharingButton(
+        Node& root, layout::Frame frame, const std::string& text, const std::string& action, bool selected = false,
+        bool primary = false, bool enabled = true
+    );
     std::expected<std::string, std::string> applyVoiceCommand(VoiceCommand command);
     void configureVoice();
     void voiceTick();
@@ -971,6 +999,51 @@ namespace app {
     Timer m_voiceJoinTimer;
     bool m_voiceMuted = false, m_voiceDeafened = false, m_voicePtt = false;
     std::uint32_t m_voicePttKey = 0;
+    capture::Screen m_screen;
+    api::StreamSnapshot m_streamSnapshot;
+    bool m_shareOpen = false, m_voiceStageOpen = false, m_sharingAudioExpanded = false, m_sharingPreviewHidden = false;
+    bool m_shareAwaitingSource = false, m_sharingPublicationRequested = false, m_sharingAdvanced = false;
+    bool m_sharingPreviewOverride = false;
+    std::uint64_t m_shareSourceRequest = 0, m_shareSourceBaseline = 0;
+    layout::Frame m_sharingPreviewBounds{};
+    bool m_sharingPreviewDragging = false, m_sharingPointerDown = false;
+    float m_sharingPreviewHorizontal = 1, m_sharingPreviewVertical = 1;
+    float m_sharingPreviewGrabX = 0, m_sharingPreviewGrabY = 0;
+    layout::Frame m_voiceStageBounds{};
+    struct StreamPreviewCache {
+      std::uint64_t request = 0;
+      std::string url, error;
+      std::chrono::steady_clock::time_point checked{};
+      bool pending = false;
+      std::shared_ptr<std::atomic_bool> revoked;
+    };
+    std::map<std::string, StreamPreviewCache> m_streamPreviewCache;
+    std::uint64_t m_streamPreviewRequest = 0;
+    std::string m_streamPreviewHovered;
+    layout::Frame m_streamPreviewAnchor{};
+    std::string m_streamFocus, m_sharingStatus, m_pendingStreamWatch;
+    float m_shareScroll = 0, m_shareMaxScroll = 0;
+    std::size_t m_shareKeyboard = 0;
+    std::size_t m_streamPage = 0;
+    std::set<std::string> m_visibleStreamFrames;
+    std::vector<Hit> m_shareHits;
+    std::vector<Hit> m_sharingMenuHits;
+    std::vector<std::string> m_sharingMenuActions;
+    layout::Frame m_sharingMenuBounds{};
+    float m_sharingMenuScroll = 0, m_sharingMenuMaxScroll = 0;
+    std::size_t m_sharingMenuKeyboard = 0;
+    struct StreamTexture {
+      TextureHandle texture;
+      std::uint64_t revision = 0;
+    };
+    std::map<std::string, StreamTexture> m_streamTextures;
+    std::map<std::string, float> m_streamVolumes;
+    std::unique_ptr<StreamPopout> m_streamPopout;
+    capture::ScreenState m_lastCaptureState;
+    std::uint64_t m_lastSharingMediaRevision = 0, m_lastSharedAudioRevision = 0;
+    capture::ScreenState m_sharingDemoSource;
+    float m_sharingDemoPickerExtent = 0;
+    voice::AudioState m_sharingDemoAudio;
     DesktopTray m_tray;
     bool m_trayAvailable = false, m_restartRequested = false;
     Timer m_trayStartupTimer;

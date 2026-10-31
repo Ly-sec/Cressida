@@ -13,6 +13,7 @@ namespace api {
   inline constexpr std::size_t maximumVoiceMembers = 4096;
   inline constexpr std::size_t maximumGuildVoiceMembers = 1024;
   inline constexpr std::uint16_t allVoiceMemberFields = 0x3ff;
+  inline constexpr std::uint16_t voiceMemberChannelField=1U<<2,voiceMemberStreamField=1U<<9;
   struct VoiceMember {
     std::string guild, channel, user, name, avatar;
     bool muted = false, deafened = false, selfMuted = false, selfDeafened = false;

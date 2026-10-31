@@ -286,6 +286,18 @@ namespace app {
           settings.pushToTalk = field->get<bool>();
         settings = voice::sanitizeAudioSettings(std::move(settings));
       }
+      if (const auto at=value.find("sharing"); at!=value.end() && at->is_object()) {
+        auto& settings=result.sharing;
+        if (at->contains("resolution") && (*at)["resolution"].is_number_integer()) settings.resolution=(*at)["resolution"].get<int>();
+        if (at->contains("frame_rate") && (*at)["frame_rate"].is_number_integer()) settings.frameRate=(*at)["frame_rate"].get<int>();
+        if (at->contains("clarity") && (*at)["clarity"].is_boolean()) settings.content=(*at)["clarity"].get<bool>() ? voice::ContentPreference::Clarity : voice::ContentPreference::Smoothness;
+        if (at->contains("hardware") && (*at)["hardware"].is_boolean()) settings.hardware=(*at)["hardware"].get<bool>();
+        if (at->contains("audio_volume") && (*at)["audio_volume"].is_number()) settings.audioVolume=(*at)["audio_volume"].get<float>();
+        if (at->contains("audio_sources") && (*at)["audio_sources"].is_array() && (*at)["audio_sources"].size()<=32)
+          for (const auto& source : (*at)["audio_sources"]) if (source.is_string()) settings.audioSources.push_back(source.get<std::string>());
+        if (at->contains("cursor") && (*at)["cursor"].is_boolean()) result.sharingCursor=(*at)["cursor"].get<bool>();
+        settings=voice::sanitizeShareSettings(std::move(settings));
+      }
       result.logDeletedMessages = value.value("log_deleted_messages", false);
       result.logEditHistory = value.value("log_edit_history", false);
       result.roleColors = value.value("role_colors", true);
@@ -445,6 +457,9 @@ namespace app {
             {"output_volume", preferences.voice.outputVolume},
             {"threshold", preferences.voice.threshold},
             {"push_to_talk", preferences.voice.pushToTalk}}},
+          {"sharing",{{"resolution",preferences.sharing.resolution},{"frame_rate",preferences.sharing.frameRate},
+            {"clarity",preferences.sharing.content==voice::ContentPreference::Clarity},{"hardware",preferences.sharing.hardware},
+            {"audio_volume",preferences.sharing.audioVolume},{"audio_sources",preferences.sharing.audioSources},{"cursor",preferences.sharingCursor}}},
           {"log_deleted_messages", preferences.logDeletedMessages},
           {"log_edit_history", preferences.logEditHistory},
           {"role_colors", preferences.roleColors},

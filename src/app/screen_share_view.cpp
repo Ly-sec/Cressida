@@ -150,6 +150,14 @@ namespace app {
     const bool sharing = std::ranges::any_of(snapshot.active, [](const auto& stream) {
       return stream.publishing && stream.connection.phase != voice::Phase::Failed;
     });
+    if (wasSharing && std::ranges::none_of(snapshot.active, [](const auto& stream) { return stream.publishing; })) {
+      if (m_sharingPublicationRequested)
+        m_status = "Screen sharing ended.";
+      m_sharingPublicationRequested = false;
+      m_shareOpen = m_shareAwaitingSource = false;
+      ++m_shareSourceRequest;
+      m_sharingPreviewBounds = {};
+    }
     if (wasSharing != sharing)
       m_tray.sharing(sharing);
     if (wasSharing && !sharing && !m_shareOpen)
@@ -362,9 +370,14 @@ namespace app {
       m_sharingStatus.clear();
       m_shareScroll = 0;
     } else if (action == "stop") {
-      if (m_demo)
+      if (m_demo) {
         std::erase_if(m_streamSnapshot.active, [](const auto& stream) { return stream.publishing; });
-      else
+        std::erase_if(m_streamSnapshot.available, [&](const auto& stream) {
+          return stream.key.owner == m_account.id
+              && stream.key.guild == m_voiceGuild
+              && stream.key.channel == m_voiceState.channel;
+        });
+      } else
         manager.stop();
       m_screen.stop();
       if (m_demo) {

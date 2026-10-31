@@ -146,6 +146,30 @@ int main() {
         session.receive("STREAM_SERVER_UPDATE", server) == StreamSession::Update::Ready, "Fresh fenced setup settles"
     );
     StreamDirectory directory;
+    const auto ended = parseStreamUpdate("STREAM_DELETE", {{"stream_key", guild.value()}, {"reason", "stream_ended"}});
+    const auto stopped =
+        parseStreamUpdate("STREAM_DELETE", {{"stream_key", guild.value()}, {"reason", "user_requested"}});
+    require(
+        ended
+            && ended->deletion == StreamUpdate::Deletion::Ended
+            && stopped
+            && stopped->deletion == StreamUpdate::Deletion::UserRequested,
+        "Stream endings and explicit watch stops retain distinct typed reasons"
+    );
+    for (const auto& reason : {"stream_full", "unauthorized", "safety_guild_rate_limited"})
+      require(
+          parseStreamUpdate("STREAM_DELETE", {{"stream_key", guild.value()}, {"reason", reason}})->deletion
+              == StreamUpdate::Deletion::WatchFailed,
+          "A watch failure is distinct from the publisher ending its stream"
+      );
+    for (const Json& reason : {Json(nullptr), Json(7), Json(""), Json(std::string(4096, 'x'))}) {
+      const Json invalid{{"stream_key", guild.value()}, {"reason", reason}};
+      require(!parseStreamUpdate("STREAM_DELETE", invalid), "Malformed deletion reasons are rejected");
+      require(
+          session.receive("STREAM_DELETE", invalid) == StreamSession::Update::None && session.active(),
+          "Malformed termination metadata cannot end an active session"
+      );
+    }
     directory.apply(*parseStreamUpdate("STREAM_CREATE", created));
     directory.apply(*parseStreamUpdate("STREAM_UPDATE", {{"stream_key", guild.value()}, {"paused", true}}));
     require(

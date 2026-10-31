@@ -94,6 +94,9 @@ reopen the picker, or **Stop sharing** to end publication and release screen
 access. A replacement source takes over after its first valid frame arrives;
 cancelling its chooser keeps the previous source.
 
+Ending a publication removes its **LIVE** badge and watch actions. Stopping a
+watch leaves the publisher's **LIVE** badge visible while they continue sharing.
+
 The compact preview shows setup, live, paused and failed states separately. Drag
 its title or video to move it within the conversation. Its buttons remain
 clickable, and hovering or scrolling over the preview does not affect chat

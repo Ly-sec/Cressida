@@ -8,7 +8,7 @@
 
 namespace api {
   namespace {
-    constexpr std::size_t maximumStreamRegionBytes = 64, maximumStreamTokenBytes = 4096;
+    constexpr std::size_t maximumStreamRegionBytes = 64, maximumStreamTokenBytes = 4096, maximumStreamReasonBytes = 128;
     std::string text(const nlohmann::json& data, const char* key, std::size_t maximum) {
       const auto at = data.find(key);
       if (at == data.end() || !at->is_string())
@@ -113,8 +113,18 @@ namespace api {
                                         : StreamUpdate::Kind::Update,
         .stream = {.key = *key}
     };
-    if (update.kind == StreamUpdate::Kind::Delete)
+    if (update.kind == StreamUpdate::Kind::Delete) {
+      if (data.contains("reason")) {
+        const auto reason = text(data, "reason", maximumStreamReasonBytes);
+        if (reason.empty())
+          return {};
+        if (reason == "user_requested")
+          update.deletion = StreamUpdate::Deletion::UserRequested;
+        else if (reason == "stream_full" || reason == "unauthorized" || reason == "safety_guild_rate_limited")
+          update.deletion = StreamUpdate::Deletion::WatchFailed;
+      }
       return update;
+    }
     if (const auto at = data.find("viewer_ids"); at != data.end()) {
       if (!at->is_array() || at->size() > maximumStreamViewers)
         return {};
@@ -202,6 +212,8 @@ namespace api {
     if (!active() || !data.is_object() || text(data, "stream_key", maximumStreamKeyBytes) != m_key.value())
       return Update::None;
     if (type == "STREAM_DELETE") {
+      if (!parseStreamUpdate(type, data))
+        return Update::None;
       clear();
       return Update::Ended;
     }

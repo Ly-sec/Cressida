@@ -353,6 +353,16 @@ namespace app {
       require(publishing() == m_streamSnapshot.active.end(), "Tray stop ends the publication");
       break;
     case 29:
+      require(
+          std::ranges::none_of(
+              m_hits,
+              [&](const auto& hit) {
+                return hit.action == Action::ShareAction
+                    && hit.id == "view:guild:" + m_voiceGuild + ":" + m_voiceState.channel + ":" + m_account.id;
+              }
+          ),
+          "Stopping publication removes the participant's live badge"
+      );
       m_window.key({.symbol = XKB_KEY_Escape});
       require(
           !m_shareOpen && !m_voiceStageOpen && m_drafts["101"] == "Keep this draft while sharing",

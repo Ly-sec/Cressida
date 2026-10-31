@@ -60,6 +60,7 @@ namespace api {
     StreamDirectory directory;
     VoiceRoster rosterValue;
     std::map<std::string, std::unique_ptr<Runtime>> active;
+    std::map<std::string, Clock::time_point> stoppedWatches;
     std::set<std::string> used;
     voice::ShareSettings settings;
     voice::AudioSettings audioSettings;
@@ -127,24 +128,50 @@ namespace api {
           cancel.preview->store(true);
         }
     }
+    void endDiscovery(const StreamRecord& record) {
+      directory.apply({.kind = StreamUpdate::Kind::Delete, .stream = record});
+      for (const auto& member : rosterValue.members(record.key.guild, record.key.channel))
+        if (member.user == record.key.owner) {
+          rosterValue.apply(
+              {.members = {
+                   {.guild = record.key.guild,
+                    .user = record.key.owner,
+                    .stream = false,
+                    .present = voiceMemberStreamField}
+               }}
+          );
+          break;
+        }
+    }
     void retire(const std::string& key, bool notify) {
       const auto it = active.find(key);
       if (it == active.end())
         return;
+      it->second->revoked->store(true);
       it->second->previewRevoked->store(true);
       it->second->view.video->clear();
       it->second->connection->disconnect();
       if (it->second->view.publishing)
-        directory.apply({.kind = StreamUpdate::Kind::Delete, .stream = it->second->view.stream});
+        endDiscovery(it->second->view.stream);
+      else if (notify) {
+        if (stoppedWatches.size() >= maximumStreams && !stoppedWatches.contains(key))
+          stoppedWatches.erase(std::ranges::min_element(stoppedWatches, {}, [](const auto& item) {
+            return item.second;
+          }));
+        stoppedWatches[key] = Clock::now() + streamSetupDeadline;
+      }
       if (notify)
         send(parentValue.generation, {StreamCommandKind::Delete, it->second->view.stream.key});
       active.erase(it);
     }
     void reset(bool clearDirectory = false) {
       for (auto& [key, runtime] : active) {
+        runtime->revoked->store(true);
         runtime->previewRevoked->store(true);
         runtime->view.video->sending(false);
         runtime->connection->disconnect();
+        if (runtime->view.publishing)
+          endDiscovery(runtime->view.stream);
       }
       active.clear();
       parentValue = {};
@@ -153,6 +180,7 @@ namespace api {
       if (clearDirectory) {
         directory.clear();
         used.clear();
+        stoppedWatches.clear();
         accountGeneration = 0;
         rosterValue.clear();
       }
@@ -243,17 +271,30 @@ namespace api {
       if (generation != accountGeneration)
         return;
       if (const auto update = parseStreamUpdate(type, data)) {
-        bool stillLive = false;
-        if (update->kind == StreamUpdate::Kind::Delete)
-          for (const auto& member : rosterValue.members(update->stream.key.guild, update->stream.key.channel))
-            if (member.user == update->stream.key.owner && member.stream)
-              stillLive = true;
-        if (!stillLive)
-          directory.apply(*update);
         const auto value = update->stream.key.value();
+        const auto runtime = active.find(value);
+        const auto stopped = stoppedWatches.find(value);
+        const bool stopAcknowledgement = update->kind == StreamUpdate::Kind::Delete
+            && update->deletion == StreamUpdate::Deletion::UserRequested
+            && stopped != stoppedWatches.end()
+            && stopped->second > Clock::now();
+        const bool watching = runtime != active.end() && !runtime->second->view.publishing;
+        const bool preserveDiscovery = update->kind == StreamUpdate::Kind::Delete
+            && update->deletion != StreamUpdate::Deletion::Ended
+            && update->stream.key.owner != parentValue.self
+            && (watching || stopAcknowledgement)
+            && directory.find(value).has_value();
+        if (update->kind == StreamUpdate::Kind::Delete) {
+          if (!preserveDiscovery)
+            endDiscovery(update->stream);
+          if (update->deletion != StreamUpdate::Deletion::WatchFailed)
+            stoppedWatches.erase(value);
+        } else
+          directory.apply(*update);
         if (auto it = active.find(value); it != active.end()) {
           if (update->kind == StreamUpdate::Kind::Delete) {
-            retire(value, false);
+            if (!stopAcknowledgement || !preserveDiscovery)
+              retire(value, false);
             publish();
             return;
           }
@@ -284,7 +325,7 @@ namespace api {
         runtime.view.connection.error = "The stream request expired before it could be sent. Try again explicitly.";
         send(parentValue.generation, {StreamCommandKind::Delete, runtime.view.stream.key});
         if (runtime.view.publishing)
-          directory.apply({.kind = StreamUpdate::Kind::Delete, .stream = runtime.view.stream});
+          endDiscovery(runtime.view.stream);
         publish(runtime.view.connection.error);
         return;
       }
@@ -339,11 +380,12 @@ namespace api {
             at->second->view.video->sending(false);
             at->second->session.clear();
             if (at->second->view.publishing)
-              directory.apply({.kind = StreamUpdate::Kind::Delete, .stream = at->second->view.stream});
+              endDiscovery(at->second->view.stream);
             send(parentValue.generation, {StreamCommandKind::Delete, at->second->view.stream.key});
           }
         }
         const auto now = Clock::now();
+        std::erase_if(stoppedWatches, [now](const auto& item) { return item.second <= now; });
         std::vector<std::string> expired;
         for (auto& [key, runtime] : active) {
           if (runtime->session.expired(now)) {

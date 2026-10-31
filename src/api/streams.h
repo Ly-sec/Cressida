@@ -41,8 +41,10 @@ namespace api {
   };
   struct StreamUpdate {
     enum class Kind { Create, Update, Delete } kind;
+    enum class Deletion { Ended, UserRequested, WatchFailed };
     StreamRecord stream;
     bool viewersPresent = false, pausedPresent = false, regionPresent = false;
+    Deletion deletion = Deletion::Ended;
   };
   std::optional<StreamUpdate> parseStreamUpdate(std::string_view type, const nlohmann::json& data);
   class StreamDirectory {

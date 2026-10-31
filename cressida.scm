@@ -57,7 +57,7 @@
       #~(modify-phases %standard-phases
           (add-after 'unpack 'use-system-wuffs
             (lambda _
-              (delete-file-recursively "third_party")
+              (delete-file-recursively "third_party/wuffs/")
               ;; so meson wouldn't complain
               (substitute* "meson.build"
                 (("'src', 'third_party/wuffs'")

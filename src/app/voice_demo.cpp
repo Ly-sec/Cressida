@@ -64,6 +64,10 @@ namespace app {
     };
     openSettings();
     selectSettingsPage("voice");
+    if (view.starts_with("voice-menu")) {
+      activate({0, 0, 0, 0, Action::CloseSettings, {}});
+      openVoiceMenu(!view.starts_with("voice-menu-output"));
+    }
   }
   void ClientApplication::demoVoiceStep() {
     const auto require = [](bool condition, const char* message) {
@@ -125,7 +129,10 @@ namespace app {
       require(isSelectDropdownOpen(), "The native voice Select opens its retained dropdown");
       m_window.key({.symbol = XKB_KEY_End});
       m_window.key({.symbol = XKB_KEY_Return});
-      require(!isSelectDropdownOpen() && m_settingsOpen, "Choosing a voice option closes only its dropdown");
+      require(
+          !isSelectDropdownOpen() && (m_settingsOpen || (m_contextOpen && m_voiceMenuInput)),
+          "Choosing a voice option closes only its dropdown"
+      );
     };
     const auto ptt = [&] { m_window.key({.symbol = XKB_KEY_space, .control = true, .shift = true}); };
     const auto command = [&](VoiceCommand value) {
@@ -415,8 +422,101 @@ namespace app {
           !voiceBarVisible() && m_voiceRoster.count(m_guildId, std::string(voiceDemoChannel)) == 0,
           "Leaving a solo channel removes its local participant and connected state"
       );
-      std::clog << "Offline voice settings, native controls, call actions and focus lifecycle passed\n";
       break;
+    case 15: {
+      const float height = m_window.height() + layout::Window::titlebarHeight - m_window.titlebarHeight();
+      const auto account = layout::accountFrame(height, chatLeft());
+      for (const auto& frame : account.voice)
+        require(
+            frame.x >= account.x + account.presenceWidth
+                && frame.y >= account.y
+                && frame.x + frame.width <= account.settingsX
+                && frame.y + frame.height <= account.y + account.height,
+            "Permanent voice controls fit beside the account identity and settings"
+        );
+      clickWidget("account-voice:account-mute");
+      require(m_voiceMuted && !voiceBarVisible(), "The permanent microphone control works outside a call");
+      clickWidget("account-voice:account-deafen");
+      require(m_voiceDeafened && !voiceBarVisible(), "The permanent deafen control works outside a call");
+      clickWidget("account-voice:account-deafen");
+      clickWidget("account-voice:account-mute");
+      clickWidget("account-voice:input-menu");
+      require(m_contextOpen && m_voiceMenuInput == true, "The input caret opens its native settings card");
+      break;
+    }
+    case 16:
+      require(!m_voiceAudioState.running && !m_voiceAudioState.testing, "Opening the input card never starts capture");
+      clickWidget("popup:voice-device");
+      break;
+    case 17:
+      chooseLast();
+      require(
+          m_preferences.voice.inputDevice == "demo-mic-two" && m_contextOpen,
+          "The input device chooser preserves its parent settings card"
+      );
+      break;
+    case 18: {
+      const auto output = m_preferences.voice.outputVolume;
+      clickWidget("popup:voice-volume", .75F);
+      require(
+          m_preferences.voice.inputVolume > 1 && m_preferences.voice.outputVolume == output,
+          "The input card's native slider changes only microphone gain"
+      );
+      clickWidget("popup:voice-mode");
+      break;
+    }
+    case 19:
+      require(isSelectDropdownOpen(), "Input mode opens a bounded native chooser");
+      m_window.key({.symbol = XKB_KEY_Home});
+      m_window.key({.symbol = XKB_KEY_Return});
+      require(!m_preferences.voice.pushToTalk && m_contextOpen, "The input card selects actual voice activity mode");
+      m_window.key({.symbol = XKB_KEY_Escape});
+      require(!m_contextOpen && !m_voiceMenuInput, "Escape dismisses the input card");
+      clickWidget("account-voice:output-menu");
+      break;
+    case 20:
+      require(m_contextOpen && m_voiceMenuInput == false, "The output caret opens a separate settings card");
+      clickWidget("popup:voice-device");
+      break;
+    case 21:
+      chooseLast();
+      require(
+          m_preferences.voice.outputDevice == "demo-output-two" && m_contextOpen,
+          "The output card chooses a playback device without closing the card"
+      );
+      break;
+    case 22: {
+      const auto input = m_preferences.voice.inputVolume;
+      clickWidget("popup:voice-volume", .25F);
+      require(
+          m_preferences.voice.outputVolume < 1 && m_preferences.voice.inputVolume == input,
+          "The output card's native slider changes only playback gain"
+      );
+      clickWidget("popup:voice-settings");
+      require(
+          !m_contextOpen && m_settingsOpen && m_settingsPage == "voice",
+          "The card's Voice Settings link opens the existing native settings page"
+      );
+      break;
+    }
+    case 23: {
+      const auto volume = m_preferences.voice.outputVolume;
+      const auto stale = m_widgets.find("popup:voice-volume");
+      require(
+          stale != m_widgets.end() && !stale->second->parent(),
+          "Closing a voice card detaches its retained native slider"
+      );
+      static_cast<Slider*>(stale->second)->setValue(0);
+      require(
+          m_preferences.voice.outputVolume == volume, "A retired voice card cannot change current audio preferences"
+      );
+      require(
+          !m_voiceMuted && !m_voiceDeafened && !m_voiceAudioState.running && !m_voiceAudioState.testing,
+          "Quick controls retain independent runtime flags without touching desktop audio"
+      );
+      std::clog << "Offline permanent voice controls, device and volume cards, calls and focus lifecycle passed\n";
+      break;
+    }
     default:
       require(false, "The voice replay has a fixed bounded frame count");
     }

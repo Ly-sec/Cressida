@@ -92,7 +92,7 @@ namespace app {
     static constexpr int mediaGalleryReplayFrames = 13;
     static constexpr int imageMenuReplayFrames = 13;
     static constexpr int trayReplayFrames = 4;
-    static constexpr int voiceReplayFrames = 15;
+    static constexpr int voiceReplayFrames = 24;
     static constexpr int sharingReplayFrames = 33;
     static constexpr int imeReplayFrames = 14;
     static constexpr int slashCommandReplayFrames = 26;
@@ -855,6 +855,10 @@ namespace app {
     void selectSettingsPage(const std::string& page);
     void drawVoiceSettings(UserSettingsForm& form);
     void drawVoiceBar(Node& root, float windowHeight);
+    void drawAccountVoiceControls(Node& root, const layout::AccountFrame& account);
+    void openVoiceMenu(bool input);
+    void drawVoiceMenu(Node& root, float width, float height);
+    bool voiceMenuKey(const Key& key);
     void voiceAction(const std::string& action);
     void sharingAction(const std::string& action);
     void sharingTick();
@@ -998,6 +1002,11 @@ namespace app {
     voice::AudioState m_voiceAudioState;
     Timer m_voiceJoinTimer;
     bool m_voiceMuted = false, m_voiceDeafened = false, m_voicePtt = false;
+    std::optional<bool> m_voiceMenuInput;
+    std::string m_voiceMenuAccount;
+    std::uint64_t m_voiceMenuSession = 0;
+    Node* m_voiceMenuRoot = nullptr;
+    bool m_voiceMenuVolumeDirty = false;
     std::uint32_t m_voicePttKey = 0;
     capture::Screen m_screen;
     api::StreamSnapshot m_streamSnapshot;

@@ -1,9 +1,13 @@
 #include "app/client_application.h"
 #include "app/theme.h"
 #include "app/user_settings_form.h"
+#include "core/input/key_modifiers.h"
 #include "render/scene/input_area.h"
+#include "ui/controls/select.h"
+#include "ui/controls/slider.h"
 
 #include <algorithm>
+#include <cmath>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
 namespace app {
@@ -56,6 +60,10 @@ namespace app {
     const auto state = audio->state();
     if (state.revision == m_voiceAudioState.revision)
       return;
+    if (m_selectRequest
+        && m_selectOwner == "popup:voice-device"
+        && (state.inputs != m_voiceAudioState.inputs || state.outputs != m_voiceAudioState.outputs))
+      closeSelectDropdown();
     m_voiceAudioState = state;
     if (!state.error.empty()
         && (m_voiceState.phase == voice::Phase::Connected
@@ -69,7 +77,12 @@ namespace app {
     m_window.invalidate();
   }
   void ClientApplication::voiceAction(const std::string& action) {
-    if (action == "share") {
+    if (action == "account-mute" || action == "account-deafen") {
+      voiceAction(action == "account-mute" ? "mute" : "deafen");
+      return;
+    } else if (action == "input-menu" || action == "output-menu") {
+      openVoiceMenu(action == "input-menu");
+    } else if (action == "share") {
       sharingAction("open");
     } else if (action == "settings") {
       openSettings();
@@ -419,6 +432,286 @@ namespace app {
         m_tooltipY = control.y;
       }
     }
+  }
+  void ClientApplication::drawAccountVoiceControls(Node& root, const layout::AccountFrame& account) {
+    const std::array<std::string, 4> actions{"account-mute", "input-menu", "account-deafen", "output-menu"};
+    const std::array<std::string, 4> icons{
+        m_voiceMuted || m_voiceDeafened ? "microphone-off" : "microphone",
+        m_contextOpen && m_voiceMenuInput == true ? "chevron-up" : "chevron-down",
+        m_voiceDeafened ? "headphones-off" : "headphones",
+        m_contextOpen && m_voiceMenuInput == false ? "chevron-up" : "chevron-down"
+    };
+    const std::array<std::string, 4> captions{
+        m_voiceMuted ? "Unmute microphone" : "Mute microphone", "Input device and volume",
+        m_voiceDeafened ? "Undeafen" : "Deafen", "Output device and volume"
+    };
+    for (std::size_t i = 0; i < actions.size(); ++i) {
+      const auto& frame = account.voice[i];
+      const auto id = "account-voice:" + actions[i];
+      std::unique_ptr<Node> saved;
+      if (auto found = m_detachedInputs.find(id); found != m_detachedInputs.end()) {
+        saved = std::move(found->second);
+        m_detachedInputs.erase(found);
+      }
+      auto button = saved ? std::unique_ptr<Button>(static_cast<Button*>(saved.release())) : std::make_unique<Button>();
+      m_widgets[id] = button.get();
+      button->setPosition(frame.x, frame.y);
+      button->setFrameSize(frame.width, frame.height);
+      button->setControlHeight(frame.height);
+      button->setPadding(0);
+      button->setRadius(Style::scaledRadiusMd());
+      button->setGlyph(icons[i]);
+      button->setGlyphSize(i % 2 ? Style::glyphSizeTiny : Style::glyphSizeLarge);
+      button->setVariant(ButtonVariant::Ghost);
+      auto colors = Button::defaultPalette(ButtonVariant::Ghost);
+      colors.selected = Button::ButtonStateColors{
+          ColorSpec{.fixed = theme::panel}, clearColorSpec(), ColorSpec{.fixed = theme::danger}
+      };
+      button->setCustomPalette(std::move(colors));
+      button->setSelected((i == 0 && (m_voiceMuted || m_voiceDeafened)) || (i == 2 && m_voiceDeafened));
+      button->setTooltip(captions[i]);
+      const Hit hit{frame.x, frame.y, frame.width, frame.height, Action::VoiceAction, actions[i]};
+      button->setOnClick([this, hit] { activate(hit); });
+      root.addChild(std::move(button));
+      m_hits.push_back(hit);
+      if (hovered(frame.x, frame.y, frame.width, frame.height)) {
+        m_tooltip = captions[i];
+        m_tooltipX = frame.x + frame.width / 2;
+        m_tooltipY = frame.y;
+      }
+    }
+  }
+  void ClientApplication::openVoiceMenu(bool input) {
+    const bool dismiss = m_contextOpen && m_voiceMenuInput == input;
+    closeContext();
+    closeSelectDropdown();
+    if (dismiss || m_account.id.empty())
+      return;
+    closeInbox();
+    closeSearchMenu(true);
+    closeCompletion();
+    closeGifPicker();
+    closeEmojiPicker();
+    m_presenceMenu = false;
+    releasePushToTalk();
+    m_controlInput.cancelPointerCapture();
+    m_controlInput.setFocus(nullptr);
+    m_focusedInput.clear();
+    m_voiceMenuInput = input;
+    m_voiceMenuAccount = m_account.id;
+    m_voiceMenuSession = m_session;
+    m_voiceMenuVolumeDirty = false;
+    m_contextMessage.clear();
+    m_contextEntries.clear();
+    m_contextScroll = 0;
+    m_contextOpen = true;
+    if (!m_demo)
+      m_client.voiceAudio()->refreshDevices();
+    m_window.invalidate();
+  }
+  void ClientApplication::drawVoiceMenu(Node& root, float width, float height) {
+    if (!m_voiceMenuInput || m_voiceMenuAccount != m_account.id || m_voiceMenuSession != m_session) {
+      closeContext();
+      return;
+    }
+    const bool input = *m_voiceMenuInput;
+    const auto account = layout::accountFrame(height, chatLeft());
+    const auto frame =
+        layout::VoiceMenu::frame(account.voice[input ? 1 : 3], width, height, input, !m_voiceAudioState.error.empty());
+    m_contextBounds = {frame.panel.x, frame.panel.y, frame.panel.width, frame.panel.height};
+    m_contextFullHeight = frame.contentHeight;
+    m_scrolling.limit(m_contextScroll, std::max(0.0F, frame.contentHeight - frame.viewport.height));
+    rectangle(
+        root, frame.panel.x, frame.panel.y, frame.panel.width, frame.panel.height, theme::raised, Style::surfaceRadius
+    );
+    rectangle(
+        root, frame.panel.x + Style::borderWidth, frame.panel.y + Style::borderWidth,
+        frame.panel.width - Style::borderWidth * 2, frame.panel.height - Style::borderWidth * 2, theme::sidebar,
+        Style::surfaceRadius
+    );
+    auto viewport = std::make_unique<Node>();
+    viewport->setPosition(frame.viewport.x, frame.viewport.y);
+    viewport->setSize(frame.viewport.width, frame.viewport.height);
+    viewport->setClipChildren(true);
+    m_voiceMenuRoot = viewport.get();
+    auto content = std::make_unique<Node>();
+    content->setPosition(0, -m_contextScroll);
+    content->setSize(frame.viewport.width, frame.contentHeight);
+    auto& menu = *content;
+    const auto current = [this, input, account = m_account.id, session = m_session] {
+      return m_contextOpen && m_voiceMenuInput == input && m_account.id == account && m_session == session;
+    };
+    const auto retained = [&](const std::string& id) {
+      std::unique_ptr<Node> saved;
+      if (auto found = m_detachedInputs.find(id); found != m_detachedInputs.end()) {
+        saved = std::move(found->second);
+        m_detachedInputs.erase(found);
+      }
+      return saved;
+    };
+    const auto caption = [&](layout::Frame at, const std::string& text) {
+      label(menu, at.x, at.y, at.width, text, Style::fontSizeBody, theme::foreground);
+    };
+    const auto select = [&](const std::string& id, layout::Frame at, std::vector<std::string> names,
+                            std::size_t selected, std::function<void(std::size_t)> changed) {
+      auto saved = retained(id);
+      auto control =
+          saved ? std::unique_ptr<Select>(static_cast<Select*>(saved.release())) : std::make_unique<Select>();
+      m_widgets[id] = control.get();
+      control->setPosition(at.x, at.y);
+      control->setFrameSize(at.width, at.height);
+      control->setControlHeight(at.height);
+      control->setFontSize(Style::fontSizeCaption);
+      control->setOnSelectionChanged({});
+      control->setOptions(std::move(names));
+      control->setSelectedIndexSilently(selected);
+      control->setOnSelectionChanged([current, changed = std::move(changed)](std::size_t index, std::string_view) {
+        if (current())
+          changed(index);
+      });
+      menu.addChild(std::move(control));
+    };
+    caption(frame.deviceLabel, input ? "Input Device" : "Output Device");
+    const auto& devices = input ? m_voiceAudioState.inputs : m_voiceAudioState.outputs;
+    const auto& chosen = input ? m_preferences.voice.inputDevice : m_preferences.voice.outputDevice;
+    std::vector<std::string> names{"System default"}, ids{""};
+    for (const auto& device : devices)
+      if (!device.id.empty() && std::ranges::find(ids, device.id) == ids.end()) {
+        names.push_back(device.name);
+        ids.push_back(device.id);
+      }
+    if (std::ranges::find(ids, chosen) == ids.end()) {
+      ids.push_back(chosen);
+      names.push_back("Unavailable saved device");
+    }
+    const auto selected = std::ranges::find(ids, chosen) - ids.begin();
+    select("popup:voice-device", frame.device, std::move(names), selected, [this, input, ids](std::size_t index) {
+      if (index >= ids.size())
+        return;
+      (input ? m_preferences.voice.inputDevice : m_preferences.voice.outputDevice) = ids[index];
+      savePreferences();
+    });
+    if (input) {
+      caption(frame.modeLabel, "Input Mode");
+      select(
+          "popup:voice-mode", frame.mode, {"Voice activity", "Push to talk"}, m_preferences.voice.pushToTalk ? 1 : 0,
+          [this](std::size_t index) {
+            releasePushToTalk();
+            m_preferences.voice.pushToTalk = index == 1;
+            savePreferences();
+          }
+      );
+    }
+    const float volume = (input ? m_preferences.voice.inputVolume : m_preferences.voice.outputVolume) * percentage;
+    caption(
+        frame.volumeLabel,
+        std::string(input ? "Input Volume" : "Output Volume")
+            + " · "
+            + std::to_string(static_cast<int>(std::round(volume)))
+            + "%"
+    );
+    for (const auto separator : frame.separators)
+      rectangle(menu, separator.x, separator.y, separator.width, separator.height, theme::raised);
+    auto saved = retained("popup:voice-volume");
+    auto slider = saved ? std::unique_ptr<Slider>(static_cast<Slider*>(saved.release())) : std::make_unique<Slider>();
+    m_widgets["popup:voice-volume"] = slider.get();
+    slider->setPosition(frame.volume.x, frame.volume.y);
+    slider->setFrameSize(frame.volume.width, frame.volume.height);
+    slider->setControlHeight(frame.volume.height);
+    slider->setOnValueChanged({});
+    slider->setRange(0, voice::maximumAudioVolume * percentage);
+    slider->setStep(1);
+    slider->setValue(volume);
+    slider->setWheelAdjustEnabled(false);
+    slider->setOnValueChanged([this, current, input](double value) {
+      if (!current())
+        return;
+      (input ? m_preferences.voice.inputVolume : m_preferences.voice.outputVolume) = value / percentage;
+      m_voiceMenuVolumeDirty = true;
+      configureVoice();
+      m_window.invalidate();
+    });
+    slider->setOnDragEnd([this, current] {
+      if (current() && m_voiceMenuVolumeDirty) {
+        m_voiceMenuVolumeDirty = false;
+        savePreferences();
+      }
+    });
+    menu.addChild(std::move(slider));
+    saved = retained("popup:voice-settings");
+    auto settings = saved ? std::unique_ptr<Button>(static_cast<Button*>(saved.release())) : std::make_unique<Button>();
+    m_widgets["popup:voice-settings"] = settings.get();
+    settings->setPosition(frame.settings.x, frame.settings.y);
+    settings->setFrameSize(frame.settings.width, frame.settings.height);
+    settings->setControlHeight(frame.settings.height);
+    settings->setVariant(ButtonVariant::Ghost);
+    settings->setContentAlign(ButtonContentAlign::Start);
+    settings->setGlyph("settings");
+    settings->setText("Voice Settings");
+    settings->setOnClick([this, current] {
+      if (current()) {
+        closeContext();
+        voiceAction("settings");
+      }
+    });
+    menu.addChild(std::move(settings));
+    if (!m_voiceAudioState.error.empty())
+      label(
+          menu, Style::spaceMd, frame.settings.y + frame.settings.height + Style::spaceSm, frame.settings.width,
+          m_voiceAudioState.error, Style::fontSizeCaption, theme::danger, FontWeight::Normal, 2
+      );
+    viewport->addChild(std::move(content));
+    root.addChild(std::move(viewport));
+    if (frame.contentHeight > frame.viewport.height)
+      settingsScrollbar(
+          root, "popup:voice-scrollbar",
+          {frame.scrollbar.x, frame.scrollbar.y, frame.scrollbar.width, frame.scrollbar.height, Action::None, {}},
+          frame.contentHeight - frame.viewport.height + frame.scrollbar.height, m_contextScroll
+      );
+  }
+  bool ClientApplication::voiceMenuKey(const Key& key) {
+    if (!m_contextOpen || !m_voiceMenuInput)
+      return false;
+    if (key.control && (key.symbol == XKB_KEY_q || key.symbol == XKB_KEY_Q))
+      return false;
+    if (key.symbol == XKB_KEY_Escape)
+      closeContext();
+    else if (m_voiceMenuRoot) {
+      if (key.symbol == XKB_KEY_Tab)
+        (void)m_controlInput.cycleTabFocusInSubtree(m_voiceMenuRoot, key.shift);
+      else {
+        bool owned = false;
+        for (auto* node = static_cast<Node*>(m_controlInput.focusedArea()); node; node = node->parent())
+          owned |= node == m_voiceMenuRoot;
+        if (!owned)
+          m_controlInput.setFocus(m_controlInput.firstTabFocusUnder(m_voiceMenuRoot));
+        m_controlInput.keyEvent(
+            key.symbol, 0,
+            (key.control ? KeyMod::Ctrl : 0)
+                | (key.shift ? KeyMod::Shift : 0)
+                | (key.alt ? KeyMod::Alt : 0)
+                | (key.super ? KeyMod::Super : 0),
+            true
+        );
+      }
+      if (auto* focused = static_cast<Node*>(m_controlInput.focusedArea())) {
+        bool owned = false;
+        for (auto* node = focused; node; node = node->parent())
+          owned |= node == m_voiceMenuRoot;
+        if (owned) {
+          float x = 0, y = 0, left = 0, top = 0;
+          Node::mapToScene(focused, 0, 0, x, y);
+          Node::mapToScene(m_voiceMenuRoot, 0, 0, left, top);
+          if (y < top)
+            m_contextScroll += y - top;
+          else if (y + focused->height() > top + m_voiceMenuRoot->height())
+            m_contextScroll += y + focused->height() - top - m_voiceMenuRoot->height();
+          m_scrolling.limit(m_contextScroll, std::max(0.0F, m_contextFullHeight - m_voiceMenuRoot->height()));
+        }
+      }
+    }
+    m_window.invalidate();
+    return true;
   }
   std::size_t ClientApplication::voiceMemberCount(const api::Channel& channel) const {
     return !m_dmMode && channel.type == 2 ? m_voiceRoster.count(m_guildId, channel.id) : 0;

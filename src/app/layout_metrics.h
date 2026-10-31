@@ -712,6 +712,7 @@ namespace app::layout {
   };
   struct AccountFrame {
     float x, y, width, height, avatarX, avatarY, nameX, nameWidth, settingsX, settingsY, presenceWidth;
+    std::array<Frame, 4> voice;
   };
   inline AccountFrame accountFrame(float windowHeight, float sidebarRight) {
     const float x = Floating::inset, y = windowHeight - Sidebar::accountReserve;
@@ -719,6 +720,9 @@ namespace app::layout {
     const float avatarX = x + Style::spaceSm;
     const float nameX = avatarX + Avatar::account + Style::spaceSm;
     const float settingsX = x + width - Style::spaceXs - Sidebar::accountSettingsSize;
+    const float toggle = Style::controlHeightSm, menu = Style::glyphSizeMedium;
+    const float controlsX = settingsX - Style::spaceXs * 2 - (toggle + menu) * 2;
+    const float controlsY = y + Sidebar::accountOffset(toggle);
     return {
         x,
         y,
@@ -727,10 +731,13 @@ namespace app::layout {
         avatarX,
         y + Sidebar::accountOffset(Avatar::account),
         nameX,
-        std::max(0.0F, settingsX - Style::spaceSm - nameX),
+        std::max(0.0F, controlsX - Style::spaceSm - nameX),
         settingsX,
         y + Sidebar::accountOffset(Sidebar::accountSettingsSize),
-        settingsX - x
+        controlsX - x,
+        {Frame{controlsX, controlsY, toggle, toggle}, Frame{controlsX + toggle, controlsY, menu, toggle},
+         Frame{controlsX + toggle + menu + Style::spaceXs, controlsY, toggle, toggle},
+         Frame{controlsX + toggle * 2 + menu + Style::spaceXs, controlsY, menu, toggle}}
     };
   }
   struct Voice {
@@ -773,6 +780,54 @@ namespace app::layout {
       const auto icon = connectionIcon(bar), disconnect = controls(bar).back();
       const float x = icon.x + icon.width + Style::spaceSm;
       return {x, icon.y, std::max(0.0F, disconnect.x - Style::spaceXs - x), icon.height};
+    }
+  };
+  struct VoiceMenu {
+    Frame panel, viewport, scrollbar, deviceLabel, device, modeLabel, mode, volumeLabel, volume, settings;
+    std::array<Frame, 2> separators;
+    float contentHeight = 0;
+    static VoiceMenu frame(Frame anchor, float windowWidth, float windowHeight, bool input, bool error) {
+      VoiceMenu result;
+      const float inset = Style::spaceMd, label = Style::fontSizeBody + Style::spaceSm;
+      const float width = std::min(Style::profileCardWidth, std::max(0.0F, windowWidth - Style::spaceLg * 2));
+      const float inner = std::max(0.0F, width - inset * 2);
+      float y = inset;
+      result.deviceLabel = {inset, y, inner, label};
+      y += label;
+      result.device = {inset, y, inner, Style::controlHeightSm};
+      y += Style::controlHeightSm + Style::spaceMd;
+      if (input) {
+        result.modeLabel = {inset, y, inner, label};
+        y += label;
+        result.mode = {inset, y, inner, Style::controlHeightSm};
+        y += Style::controlHeightSm + Style::spaceMd;
+      }
+      result.separators[0] = {inset, y, inner, Style::borderWidth};
+      y += Style::borderWidth + Style::spaceMd;
+      result.volumeLabel = {inset, y, inner, label};
+      y += label;
+      result.volume = {inset, y, inner, Style::controlHeightSm};
+      y += Style::controlHeightSm + Style::spaceMd;
+      result.separators[1] = {inset, y, inner, Style::borderWidth};
+      y += Style::borderWidth + Style::spaceSm;
+      result.settings = {inset, y, inner, Style::controlHeight};
+      y += Style::controlHeight + inset;
+      if (error)
+        y += Style::fontSizeCaption * 2 + Style::spaceSm;
+      result.contentHeight = y;
+      const float top = Window::titlebarHeight + Style::spaceSm;
+      const float height = std::min(y, std::max(0.0F, windowHeight - top - Style::spaceSm));
+      const float left = std::clamp(
+          anchor.x + anchor.width - width, Style::spaceSm,
+          std::max(Style::spaceSm, windowWidth - width - Style::spaceSm)
+      );
+      const float above =
+          std::clamp(anchor.y - Style::spaceSm - height, top, std::max(top, windowHeight - height - Style::spaceSm));
+      result.panel = result.viewport = {left, above, width, height};
+      result.scrollbar = {
+          left + width - Style::scrollbarWidth, above + inset, Style::scrollbarWidth, std::max(0.0F, height - inset * 2)
+      };
+      return result;
     }
   };
   struct Sharing {

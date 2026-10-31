@@ -171,6 +171,8 @@ namespace app {
   }
   void ClientApplication::windowFocusChanged(bool focused) {
     if (!focused) {
+      if (m_voiceMenuInput)
+        closeContext();
       sharingRelease();
       releasePushToTalk();
       finishRailDrag(true);

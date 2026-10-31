@@ -284,6 +284,9 @@ test('qr_code', qr_code_test)
 login_layout_test = executable('login_layout_test', 'tests/login_layout_test.cpp',
   include_directories: include_directories('src'))
 test('login_layout', login_layout_test)
+voice_controls_layout_test = executable('voice_controls_layout_test', 'tests/voice_controls_layout_test.cpp',
+  include_directories: include_directories('src'))
+test('voice_controls_layout', voice_controls_layout_test)
 sharing_layout_test = executable('sharing_layout_test', 'tests/sharing_layout_test.cpp',
   include_directories: include_directories('src'))
 test('sharing_layout', sharing_layout_test)

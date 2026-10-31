@@ -1136,6 +1136,9 @@ namespace app {
       m_window.invalidate();
     };
     m_window.contextClick = [this](float x, float y) {
+      if (m_voiceMenuInput
+          && m_contextBounds.contains(x, y + layout::Window::titlebarHeight - m_window.titlebarHeight()))
+        return;
       if (m_shareOpen)
         return;
       if (const auto preview = sharingPreviewFrame();
@@ -3304,7 +3307,7 @@ namespace app {
             view.starts_with("sharing-cycle") || view.starts_with("sharing-picker") || view.starts_with("sharing-stage")
         ) {
           prepareSharingDemo(view);
-        } else if (view.starts_with("voice-cycle")) {
+        } else if (view.starts_with("voice-cycle") || view.starts_with("voice-menu")) {
           prepareVoiceDemo(view);
         } else if (view.starts_with("ime-cycle")) {
           prepareImeDemo(view);
@@ -3821,10 +3824,14 @@ namespace app {
 
     const auto pointer = std::pair{m_pointerX, m_pointerY};
     const bool mediaViewer = !m_viewImage.empty() || m_videoExpanded;
+    const bool voiceMenuCovered = m_contextOpen
+        && m_voiceMenuInput
+        && (m_contextBounds.contains(m_pointerX, m_pointerY)
+            || (m_selectRequest && m_selectBounds.contains(m_pointerX, m_pointerY)));
     const auto preview = sharingPreviewFrame();
     const bool sharingCovered =
         m_shareOpen || m_sharingPreviewDragging || (preview && preview->card.contains(m_pointerX, m_pointerY));
-    if (mediaViewer || sharingCovered) {
+    if (mediaViewer || sharingCovered || voiceMenuCovered) {
       if (sharingCovered)
         m_controlInput.pointerLeave();
       // Covered surfaces still paint; the visible overlay owns the pointer.
@@ -4201,14 +4208,14 @@ namespace app {
         );
       floatingPanel(
           root, {account.x, account.y, account.width, account.height},
-          hovered(account.x, account.y, account.width, account.height) ? panel : background
+          hovered(account.x, account.y, account.presenceWidth, account.height) ? panel : background
       );
       drawNameplate(
           root, {account.x, account.y, account.width, account.height}, m_account.id, "", NameplatePlacement::Account
       );
       avatar(
           root, account.avatarX, account.avatarY, layout::Avatar::account, m_account.avatar, m_account.name,
-          m_account.id, "", layout::Frame{account.x, account.y, account.width, account.height}
+          m_account.id, "", layout::Frame{account.x, account.y, account.presenceWidth, account.height}
       );
       rectangle(
           root, account.avatarX + layout::Avatar::account - layout::Sidebar::accountStatusSize + Style::borderWidth,
@@ -4237,6 +4244,7 @@ namespace app {
           Style::fontSizeDetail, muted
       );
       m_hits.push_back({account.x, account.y, account.presenceWidth, account.height, Action::TogglePresence, {}});
+      drawAccountVoiceControls(root, account);
       iconButton(
           root,
           {account.settingsX,
@@ -6014,6 +6022,11 @@ namespace app {
       drawInboxButton(root, w);
       drawInbox(root, w, h);
       drawDialog(root, w, h);
+      if (voiceMenuCovered) {
+        m_pointerX = pointer.first;
+        m_pointerY = pointer.second;
+        m_tooltip.clear();
+      }
       drawContext(root, w, h);
       drawGuildTooltip(root, w, h);
       drawSelectDropdown(root, w, h);
@@ -6026,7 +6039,7 @@ namespace app {
       drawStreamPreviewTooltip(root, w, h);
       drawTooltip(root, w, h);
     }
-    if (sharingCovered) {
+    if (sharingCovered || voiceMenuCovered) {
       m_pointerX = pointer.first;
       m_pointerY = pointer.second;
     }

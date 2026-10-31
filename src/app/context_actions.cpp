@@ -64,6 +64,17 @@ namespace app {
         && !m_revealedBlocked.contains(message.id);
   }
   void ClientApplication::closeContext() {
+    if (m_voiceMenuInput) {
+      if (m_selectOwner.starts_with("popup:voice-"))
+        closeSelectDropdown();
+      if (m_voiceMenuVolumeDirty && m_voiceMenuAccount == m_account.id && m_voiceMenuSession == m_session)
+        savePreferences();
+      m_voiceMenuVolumeDirty = false;
+      m_controlInput.cancelPointerCapture();
+      m_controlInput.setFocus(nullptr);
+      m_voiceMenuInput.reset();
+      m_voiceMenuRoot = nullptr;
+    }
     m_contextOpen = false;
     m_imageContext.clear();
     m_scrolling.stop(m_contextScroll);
@@ -75,6 +86,8 @@ namespace app {
     m_window.invalidate();
   }
   void ClientApplication::openContext(float x, float y) {
+    if (m_voiceMenuInput)
+      closeContext();
     if (m_completionQuery && m_completionBounds.contains(x, y))
       return;
     m_scrolling.stopAll();
@@ -327,6 +340,10 @@ namespace app {
   void ClientApplication::drawContext(Node& root, float w, float h) {
     if (!m_contextOpen)
       return;
+    if (m_voiceMenuInput) {
+      drawVoiceMenu(root, w, h);
+      return;
+    }
     std::unique_ptr<Node> node;
     if (const auto stored = m_detachedInputs.find("popup:context"); stored != m_detachedInputs.end()) {
       node = std::move(stored->second);
@@ -595,6 +612,19 @@ namespace app {
       return true;
     }
     if (m_contextOpen) {
+      if (m_voiceMenuInput && !m_contextBounds.contains(x, y))
+        for (const auto& hit : m_hits)
+          if (hit.action == Action::VoiceAction
+              && (hit.id == "account-mute"
+                  || hit.id == "account-deafen"
+                  || hit.id == "input-menu"
+                  || hit.id == "output-menu")
+              && hit.contains(x, y)) {
+            const auto action = hit.id;
+            closeContext();
+            voiceAction(action);
+            return true;
+          }
       if (m_reactionSubmenu && m_reactionSubmenuBounds.contains(x, y)) {
         m_reactionSubmenuFocus = true;
         m_controlInput.pointerButton(
@@ -650,6 +680,8 @@ namespace app {
     return false;
   }
   bool ClientApplication::overlayKey(const Key& key) {
+    if (voiceMenuKey(key))
+      return true;
     if (channelInviteKey(key))
       return true;
     if (m_contextOpen) {

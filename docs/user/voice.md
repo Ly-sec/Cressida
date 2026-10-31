@@ -34,6 +34,14 @@ also change microphone mute using the
 
 ## Choose devices and volume
 
+The microphone and headphone buttons beside your account name mute and deafen
+even before you join a call. Each has a separate arrow: the microphone arrow
+opens input controls, and the headphone arrow opens output controls. These menus
+offer device selection, an independent volume slider and a **Voice Settings**
+link. The input menu also lets you switch between **Voice activity** and **Push
+to talk**. Press **Escape** or click outside a menu to close it. Opening either
+menu refreshes device choices without starting microphone capture.
+
 Open settings and choose **Voice & Video**. Select an **Input device** for your
 microphone and an **Output device** for received voices. **System default** uses
 the audio service's default device. **Refresh devices** updates the choices

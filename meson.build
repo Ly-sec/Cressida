@@ -4,6 +4,14 @@ project('cressida', ['c', 'cpp'],
   default_options: ['cpp_std=c++23', 'cpp_extensions=false', 'warning_level=1'],
 )
 
+test_option = get_option('tests')
+build_tests = test_option.enabled() or (test_option.auto() and
+  (get_option('voice_crypto_only') or get_option('buildtype') not in ['release', 'minsize']))
+if not build_tests and (get_option('voice_crypto_only') or get_option('dave_reference').enabled())
+  error('The requested encryption test fixture requires -Dtests=enabled.')
+endif
+summary('Offline tests', build_tests)
+
 # This portable fixture needs only system crypto and JSON, without desktop dependencies.
 if get_option('voice_crypto_only')
   subdir('third_party/mlspp')
@@ -157,8 +165,6 @@ rpc_library = static_library('cressida-rpc', 'src/rpc/activity.cpp', 'src/rpc/se
   include_directories: include_directories('src'), dependencies: [dependency('nlohmann_json'), dependency('threads')])
 rpc_dep = declare_dependency(link_with: rpc_library, include_directories: include_directories('src'),
   dependencies: [dependency('nlohmann_json'), dependency('threads')])
-rpc_test = executable('rpc_test', 'tests/rpc_test.cpp', dependencies: rpc_dep)
-test('rpc', rpc_test, timeout: 20)
 
 backend = static_library('cressida-backend', 'src/api/application_commands.cpp', 'src/api/command_uploads.cpp', 'src/api/voice.cpp', 'src/api/streams.cpp', 'src/api/stream_previews.cpp', 'src/api/stream_manager.cpp', 'src/api/voice_roster.cpp', 'src/api/models.cpp', 'src/api/embed_components.cpp', 'src/api/client.cpp', 'src/api/rest_restrictions.cpp',
   'src/api/guild_settings.cpp', 'src/api/server_preferences.cpp', 'src/api/settings.cpp', 'src/api/user_settings.cpp', 'src/api/gifs.cpp', 'src/api/emoji.cpp', 'src/api/stickers.cpp', 'src/api/read_state.cpp', 'src/api/role_styles.cpp', 'src/api/profile.cpp', 'src/api/cosmetics.cpp', 'src/api/threads.cpp', 'src/api/channel_features.cpp', 'src/api/message_search.cpp', 'src/api/inbox.cpp', 'src/api/user_directory.cpp', 'src/api/actions.cpp', 'src/api/assets.cpp', 'src/api/gateway.cpp', 'src/api/uploads.cpp', 'src/api/video_source.cpp',
@@ -236,6 +242,23 @@ install_data('third_party/mlspp/LICENSE', 'third_party/mlspp/PROVENANCE.md',
 install_data('LICENSE', 'third_party/wuffs/LICENSE-APACHE', 'third_party/wuffs/LICENSE-MIT',
   install_dir: get_option('datadir') / 'licenses/cressida',
 )
+
+install_data('assets/cressida.desktop', install_dir: get_option('datadir') / 'applications')
+install_data('assets/cressida-logo.svg', rename: 'cressida.svg',
+  install_dir: get_option('datadir') / 'icons/hicolor/scalable/apps')
+# These tools are optional; importing this module adds no GTK/GNOME UI dependency.
+# Meson skips the cache refreshes for DESTDIR/package staging.
+import('gnome').post_install(
+  gtk_update_icon_cache: find_program('gtk-update-icon-cache', required: false).found(),
+  update_desktop_database: find_program('update-desktop-database', required: false).found(),
+)
+
+if not build_tests
+  subdir_done()
+endif
+
+rpc_test = executable('rpc_test', 'tests/rpc_test.cpp', dependencies: rpc_dep)
+test('rpc', rpc_test, timeout: 20)
 
 log_test = executable('log_test', 'tests/log_test.cpp', dependencies: log_dep)
 test('log', log_test)
@@ -329,15 +352,6 @@ test('theme_catalog', theme_test, args: [meson.current_source_dir() / 'assets/th
 theme_runtime_test = executable('theme_runtime_test', 'tests/theme_runtime_test.cpp', dependencies: theme_dep)
 test('theme_runtime', theme_runtime_test, args: [meson.current_source_dir() / 'assets/themes'], timeout: 20)
 
-install_data('assets/cressida.desktop', install_dir: get_option('datadir') / 'applications')
-install_data('assets/cressida-logo.svg', rename: 'cressida.svg',
-  install_dir: get_option('datadir') / 'icons/hicolor/scalable/apps')
-# These tools are optional; importing this module adds no GTK/GNOME UI dependency.
-# Meson skips the cache refreshes for DESTDIR/package staging.
-import('gnome').post_install(
-  gtk_update_icon_cache: find_program('gtk-update-icon-cache', required: false).found(),
-  update_desktop_database: find_program('update-desktop-database', required: false).found(),
-)
 editor_test = executable('text_edit_test', 'tests/text_edit_test.cpp', dependencies: render_dep)
 test('text_edit', editor_test)
 

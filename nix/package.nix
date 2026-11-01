@@ -41,6 +41,7 @@
   libsodium,
   libpulseaudio,
   pipewire,
+  doCheck ? false,
 }:
 stdenv.mkDerivation {
   pname = "cressida";
@@ -75,7 +76,6 @@ stdenv.mkDerivation {
     makeWrapper
     xdg-utils
     python3
-    dbus
   ];
   buildInputs = [
     wayland
@@ -109,12 +109,16 @@ stdenv.mkDerivation {
     (callPackage ./stb.nix { })
   ];
 
-  doCheck = true;
+  inherit doCheck;
+  nativeCheckInputs = [ dbus ];
   # GIO's byte-based MIME detection needs a database even in a clean sandbox.
   preCheck = ''
     export XDG_DATA_DIRS="${shared-mime-info}/share''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
   '';
-  mesonFlags = [ "-Demoji_font=${noto-fonts-color-emoji}/share/fonts/noto/NotoColorEmoji.ttf" ];
+  mesonFlags = [
+    (lib.mesonEnable "tests" doCheck)
+    "-Demoji_font=${noto-fonts-color-emoji}/share/fonts/noto/NotoColorEmoji.ttf"
+  ];
   postFixup = ''
     wrapProgram "$out/bin/cressida" \
       --prefix XDG_DATA_DIRS : "${shared-mime-info}/share"

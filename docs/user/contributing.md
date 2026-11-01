@@ -34,7 +34,8 @@ ShellCheck and Python 3.11 or newer. For memory-sensitive C++ changes, use
 not run.
 
 With the supplied Nix environment, `just check` builds and tests the locked
-package.
+check package. Normal Nix installations omit tests. `just test release`
+explicitly enables tests in a local release build.
 
 ## Check UI changes
 

@@ -31,7 +31,7 @@
       });
 
       checks = forAllSystems (system: {
-        client = self.packages.${system}.default;
+        client = self.packages.${system}.default.override { doCheck = true; };
       });
 
       apps = forAllSystems (system: {

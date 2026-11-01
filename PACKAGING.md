@@ -169,7 +169,7 @@ manifest available. Removing shared directories is left to the user/package mana
 From an extracted release archive or source checkout with dependencies installed:
 
 ```sh
-meson setup build-release --prefix=/usr --buildtype=release -Dcpp_std=c++23
+meson setup build-release --prefix=/usr --buildtype=release -Dcpp_std=c++23 -Dtests=enabled
 meson compile -C build-release -j 4
 meson test -C build-release --print-errorlogs
 DESTDIR="$PWD/pkg" meson install -C build-release --no-rebuild
@@ -185,8 +185,10 @@ see [Meson's installation reference](https://mesonbuild.com/Installing.html#dest
 Use your distribution's normal prefix, libdir, compiler and linker flags. Avoid
 CPU-specific flags such as `-march=native` in general-purpose binary packages.
 No particular linker is required. `just` is a convenience wrapper, not a package
-build dependency. There is currently no option to omit compiling test targets
-from the default all-target build.
+build dependency. Meson's `tests` feature defaults to `auto`, which omits tests
+for release and minsize builds. Use `-Dtests=enabled` for package validation as
+above, or `-Dtests=disabled` and skip the test command for a package-only build.
+Normal Nix packages disable tests; `checks.<system>.client` enables and runs them.
 
 For an unpackaged development build:
 

@@ -22,6 +22,9 @@ The examples below assume your modules receive `inputs` through `specialArgs`
 for NixOS or `extraSpecialArgs` for standalone Home Manager. Keep Cressida's own
 Nixpkgs input pinned as supplied for its build dependencies.
 
+Normal Nix package builds omit test targets and do not run the test suite. CI
+and `nix flake check` use a separate build with tests enabled.
+
 ## Install the package
 
 ### NixOS

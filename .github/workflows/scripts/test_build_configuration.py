@@ -94,6 +94,26 @@ class ReleaseConfigurationTests(unittest.TestCase):
         self.assertFalse((self.root / "build-check-debug").exists())
         self.assertFalse((self.build / "test-only").exists())
 
+    def test_explicit_release_test_enables_and_runs_a_disabled_suite(self):
+        (self.root / "justfile").write_bytes((ROOT / "justfile").read_bytes())
+        (self.root / "meson.options").write_text(
+            "option('tests', type: 'feature', value: 'disabled')\n"
+        )
+        with (self.root / "meson.build").open("a") as output:
+            output.write(
+                "if get_option('tests').enabled()\n"
+                "  probe = executable('explicit-check', 'main.cpp', link_with: archive)\n"
+                "  test('explicit-check', probe)\n"
+                "endif\n"
+            )
+        output = self.run_command(
+            "just", "--justfile", str(ROOT / "justfile"), "--working-directory", str(self.root),
+            "--set", "build-prefix", "build-check", "test", "release", "explicit-check",
+        )
+        self.assertTrue((self.build / "explicit-check").is_file())
+        self.assertIn("1/1", output)
+        self.assertIn("explicit-check", output)
+
     def test_install_accepts_explicit_prefix_with_spaces(self):
         prefix = self.root / "user prefix"
         self.install("release", str(prefix))

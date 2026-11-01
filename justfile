@@ -90,6 +90,10 @@ smoke m=mode:
 test m=mode *args: (_ensure-configured m)
     #!/usr/bin/env bash
     set -euo pipefail
+    if [[ "$1" == release && "${AR:-ar}" == ar ]]; then
+        unset AR
+    fi
+    meson configure "{{build-prefix}}-$1" -Dtests=enabled
     exec just _with-sanitizers "$1" meson test -C "{{build-prefix}}-$1" --print-errorlogs "${@:2}"
 
 # Install a release build; an optional prefix overrides the configured destination.

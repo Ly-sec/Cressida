@@ -114,6 +114,11 @@ commands. For a release install, follow [Installation](installation.md).
 
 ## Run tests
 
+Meson's `tests` option defaults to `auto`: release and minsize builds omit test
+targets; other build types include them. Use `-Dtests=enabled` or
+`-Dtests=disabled` to choose explicitly. `just test` enables tests before
+running them, including with `just test release`.
+
 Test fixtures additionally need Python 3, `readelf`, the `ffmpeg` executable,
 `dbus-daemon` and Wayland server headers/library. Graphics tests need a usable
 EGL context. Local sockets must be permitted.
@@ -125,6 +130,7 @@ audio tests use their own server and synthetic applications. These fixtures
 never capture your desktop or microphone.
 
 ```sh
+meson configure build-debug -Dtests=enabled
 meson compile -C build-debug -j 4
 meson test -C build-debug --print-errorlogs
 ```

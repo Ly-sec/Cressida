@@ -12,7 +12,7 @@ Nix or `just`.
 ## Stage an installation
 
 ```sh
-meson setup build-release --prefix=/usr --buildtype=release -Dcpp_std=c++23
+meson setup build-release --prefix=/usr --buildtype=release -Dcpp_std=c++23 -Dtests=enabled
 meson compile -C build-release -j 4
 meson test -C build-release --print-errorlogs
 DESTDIR="$PWD/pkg" meson install -C build-release --no-rebuild
@@ -21,6 +21,11 @@ DESTDIR="$PWD/pkg" meson install -C build-release --no-rebuild
 Use the distribution's usual prefix, libdir and compiler flags. Avoid
 `-march=native` for general-purpose packages. LTO builds need a matching
 compiler-aware archiver, such as `gcc-ar` or `llvm-ar`.
+
+Release and minsize builds omit tests by default. The example explicitly enables
+them for package validation. Use `-Dtests=disabled` and omit the test command
+for a package build without test targets. Ordinary Nix installations use this
+mode; the flake's CI check package enables and runs tests separately.
 
 ## Installed files
 

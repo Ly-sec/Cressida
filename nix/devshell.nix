@@ -5,6 +5,7 @@
   pkg-config,
   wayland-scanner,
   python3,
+  dbus,
   gdb,
   just,
   nixfmt,
@@ -28,6 +29,7 @@ mkShell {
     pkg-config
     wayland-scanner
     python3
+    dbus
     gdb
     just
     nixfmt

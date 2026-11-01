@@ -83,10 +83,11 @@ namespace app {
     static constexpr int dmProfileReplayFrames = 13;
     static constexpr int cosmeticsReplayFrames = 13;
     static constexpr int composerReplyReplayFrames = 10;
+    static constexpr int composerEditReplayFrames = 23;
     static constexpr int embedReplayFrames = 23;
     static constexpr int botMessagesReplayFrames = 8;
     static constexpr int timestampReplayFrames = 25;
-    static constexpr int reactionBrowserReplayFrames = 16;
+    static constexpr int reactionBrowserReplayFrames = 23;
     static constexpr int sidebarActivityReplayFrames = 13;
     static constexpr int loginReplayFrames = 18;
     static constexpr int startupReplayFrames = 14;
@@ -876,6 +877,34 @@ namespace app {
     bool selectDropdownKey(const Key&);
     void selectDropdownChoose(std::size_t);
     void selectDropdownReveal();
+    struct InputEditTarget {
+      std::string id, channel, value;
+      std::uint64_t session = 0, editor = 0;
+      std::int32_t anchor = 0, cursor = 0;
+    };
+    std::optional<InputEditTarget> captureInputEdit(const std::string& id) const;
+    bool inputEditValid(const InputEditTarget& target) const;
+    bool openInputContext(float x, float y);
+    bool inputMenuEntry(int id);
+    void openInputFormatting(float center);
+    void applyComposerFormat(const InputEditTarget& target, std::size_t index);
+    bool composerEditKey(const Key& key);
+    void drawComposerFormatting(Node& root, float width, float height);
+    void beginInputPaste(const std::string& id, bool images, bool captureSelection = false, bool plainText = false);
+    void openComposerLink(const InputEditTarget& target);
+    void drawComposerLink(Node& root, float width, float height);
+    void submitComposerLink();
+    struct ComposerLink {
+      InputEditTarget target;
+      std::string label, url;
+    };
+    std::optional<ComposerLink> m_composerLink;
+    bool m_pasteAsPlainText = false;
+    void prepareComposerEditDemo();
+    void demoComposerEditStep();
+    std::optional<InputEditTarget> m_inputEditMenu, m_composerFormatTarget, m_pasteEditTarget;
+    layout::Frame m_composerFormatBounds{};
+    static constexpr int inputMenuBase = 300000;
     void focusControl(const std::string& id);
     void pasteControl(const std::string& id, std::string text);
     void drawPresenceMenu(Node& root, float h);
@@ -1374,11 +1403,9 @@ namespace app {
     std::uint64_t m_reactorSerial = 0;
     std::string m_hoverReactionKey;
     Timer m_reactorHoverTimer;
-    bool m_reactionHoveredThisFrame = false;
     std::optional<api::Reaction> m_reactionTooltip;
     Hit m_reactionHoverChip{};
     layout::Frame m_reactionTooltipBounds{};
-    Timer m_reactorLeaveTimer;
     struct ReactionBrowser {
       std::string channel, message, emoji;
       bool burst = false, changed = false;

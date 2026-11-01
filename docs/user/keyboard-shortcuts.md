@@ -13,15 +13,20 @@ When no control has focus in a chat, pressing a key focuses the composer. Your
 first character is included in the draft. Shortcuts, Tab navigation and Escape
 keep their usual actions, and open overlays or editors take priority.
 
-| Shortcut        | Action                                             |
-| --------------- | -------------------------------------------------- |
-| Enter           | Send the message.                                  |
-| Shift+Enter     | Insert a new line.                                 |
-| Ctrl+V          | Paste text or an available clipboard image.        |
-| Ctrl+A          | Select text in the active input.                   |
-| Ctrl+C / Ctrl+X | Copy or cut selected input text.                   |
-| Ctrl+Z          | Undo an edit in the input.                         |
-| Escape          | Cancel a reply, after dismissing any open overlay. |
+| Shortcut                 | Action                                                          |
+| ------------------------ | --------------------------------------------------------------- |
+| Enter                    | Send the message.                                               |
+| Shift+Enter              | Insert a new line.                                              |
+| Ctrl+Shift+V             | Paste plain text without creating a link.                       |
+| Ctrl+K                   | Insert a link with separate text and address fields.            |
+| Ctrl+V                   | Paste text or an available clipboard image.                     |
+| Ctrl+A                   | Select text in the active input.                                |
+| Ctrl+C / Ctrl+X          | Copy or cut selected input text.                                |
+| Ctrl+Z                   | Undo an edit in the input.                                      |
+| Ctrl+Shift+Z / Ctrl+Y    | Redo an input edit.                                             |
+| Ctrl+B / Ctrl+I / Ctrl+U | Toggle bold, italic or underline on selected draft/editor text. |
+| Shift+F10 / Menu         | Open the input editing menu.                                    |
+| Escape                   | Cancel a reply, after dismissing any open overlay.              |
 
 ## Suggestions and controls
 
@@ -70,6 +75,9 @@ See [Search messages](chat.md#search-messages) for filters and examples.
 | Up / Down           | Scroll the inbox.                              |
 | Page Up / Page Down | Scroll a page.                                 |
 | Escape              | Cancel reminder choices, then close the inbox. |
+
+With text selected in the composer or inline editor, **Ctrl+I** applies italic
+formatting. Otherwise it opens the inbox.
 
 See [Inbox](inbox.md) for unread conversations, mentions, bookmarks and
 reminders.

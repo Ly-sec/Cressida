@@ -21,7 +21,6 @@ namespace app {
     constexpr std::size_t reactorHoverNames = 3;
     constexpr auto reactorReuse = std::chrono::seconds(30);
     constexpr auto reactorHoverDelay = std::chrono::milliseconds(200);
-    constexpr auto reactorLeaveDelay = std::chrono::milliseconds(250);
     constexpr auto reactorRetryDelay = std::chrono::milliseconds(1000);
     constexpr auto reactorRefreshDelay = std::chrono::milliseconds(250);
     int normalReactions(const api::Reaction& reaction) { return std::max(0, reaction.count - reaction.burstCount); }
@@ -92,7 +91,6 @@ namespace app {
     m_chatTextClick.reset();
     m_fieldFocused = false;
     m_reactorHoverTimer.stop();
-    m_reactorLeaveTimer.stop();
     m_hoverReactionKey.clear();
     m_reactionTooltip.reset();
     m_reactionTooltipBounds = {};
@@ -260,10 +258,10 @@ namespace app {
         || chip.y < m_messageViewportTop
         || chip.y + chip.height > m_messageViewportBottom
         || (!chip.contains(m_pointerX, m_pointerY)
-            && !m_reactionTooltipBounds.contains(m_pointerX, m_pointerY)
-            && !m_reactorLeaveTimer.active()))
+            && !layout::reactionTooltipContainsPointer(
+                {chip.x, chip.y, chip.width, chip.height}, m_reactionTooltipBounds, m_pointerX, m_pointerY
+            )))
       return;
-    m_reactionHoveredThisFrame = true;
     m_reactionHoverChip = chip;
     m_reactionTooltip = reaction;
     api::Interaction action{
@@ -332,16 +330,14 @@ namespace app {
 
   void ClientApplication::updateReactionHover() {
     const auto clear = [this] {
+      if (m_reactionTooltip || !m_hoverReactionKey.empty())
+        m_tooltip.clear();
       m_hoverReactionKey.clear();
       m_reactorHoverTimer.stop();
-      m_reactorLeaveTimer.stop();
       m_reactionTooltip.reset();
       m_reactionTooltipBounds = {};
+      m_reactionHoverChip = {};
     };
-    if (m_reactionHoveredThisFrame) {
-      m_reactorLeaveTimer.stop();
-      return;
-    }
     if (m_hoverReactionKey.empty()
         || !m_reactionTooltip
         || !m_dialogKind.empty()
@@ -349,6 +345,10 @@ namespace app {
         || settingsVisible()
         || m_inboxOpen
         || m_shareOpen
+        || m_emojiMenu
+        || m_gifMenu
+        || m_presenceMenu
+        || m_videoExpanded
         || !m_viewImage.empty()) {
       clear();
       return;
@@ -358,7 +358,15 @@ namespace app {
     });
     const auto split = m_reactionHoverChip.id.find('\n');
     const auto message = std::ranges::find(m_messages, m_reactionHoverChip.id.substr(0, split), &api::Message::id);
-    if (chip == m_hits.end() || message == m_messages.end() || message->deleted || blockedMessage(*message)) {
+    if (chip == m_hits.end()
+        || message == m_messages.end()
+        || message->deleted
+        || blockedMessage(*message)
+        || chip->y < m_messageViewportTop
+        || chip->y + chip->height > m_messageViewportBottom
+        || !layout::reactionTooltipContainsPointer(
+            {chip->x, chip->y, chip->width, chip->height}, m_reactionTooltipBounds, m_pointerX, m_pointerY
+        )) {
       clear();
       return;
     }
@@ -369,19 +377,7 @@ namespace app {
       clear();
       return;
     }
-    if (m_reactionTooltipBounds.contains(m_pointerX, m_pointerY))
-      m_reactorLeaveTimer.stop();
-    else if (!m_reactorLeaveTimer.active())
-      m_reactorLeaveTimer.start(reactorLeaveDelay, [this] {
-        m_hoverReactionKey.clear();
-        m_reactorHoverTimer.stop();
-        m_reactionTooltip.reset();
-        m_reactionTooltipBounds = {};
-        m_window.invalidate();
-      });
     hoverReaction(*message, *reaction, *chip);
-    if (!m_reactionHoveredThisFrame)
-      clear();
   }
 
   void ClientApplication::drawReactionEmoji(Node& root, const api::Reaction& reaction, const layout::Frame& frame) {
@@ -432,6 +428,9 @@ namespace app {
     root.addChild(std::move(card));
     rectangle(*content, 0, 0, w, h, theme::raised, Style::radiusMd);
     m_hits.push_back({x, y, w, h, Action::None, {}});
+    const auto bridge = layout::reactionTooltipBridge(anchor, frames.card);
+    if (bridge.width > 0 && bridge.height > 0)
+      m_hits.push_back({bridge.x, bridge.y, bridge.width, bridge.height, Action::None, {}});
     drawReactionEmoji(
         *content, reaction, {frames.icon.x - x, frames.icon.y - y, frames.icon.width, frames.icon.height}
     );
@@ -865,7 +864,63 @@ namespace app {
           m_reactionTooltipBounds.y + layout::Reactions::tooltipPadding + Style::spaceXxs
       );
       break;
-    case 2: {
+    case 2:
+      require(
+          m_reactionTooltip && m_reactionTooltip->id == "123456789", "The tooltip text retains the original reaction"
+      );
+      move(Style::spaceSm, layout::Window::titlebarHeight + Style::spaceSm);
+      break;
+    case 3:
+      require(
+          !m_reactionTooltip && m_hoverReactionKey.empty() && m_reactionTooltipBounds.width == 0,
+          "Leaving the tooltip dismisses it on the next frame without a close timer"
+      );
+      require(
+          std::ranges::none_of(m_hits, [](const auto& hit) { return hit.action == Action::ViewReactions; }),
+          "Dismissal removes the clickable tooltip immediately"
+      );
+      break;
+    case 4: {
+      require(!m_reactionTooltip, "Unrelated repaints cannot restore a dismissed reaction card");
+      const auto chip = std::ranges::find_if(m_hits, [](const auto& hit) {
+        return hit.action == Action::ToggleReaction && hit.id == "9601\nowl:123456789";
+      });
+      require(chip != m_hits.end(), "The reaction badge remains available after dismissal");
+      move(chip->x + chip->width / 2, chip->y + chip->height / 2);
+      break;
+    }
+    case 5:
+      require(m_reactionTooltip.has_value(), "Re-entering the badge opens its reaction card");
+      m_window.pointerLeft();
+      break;
+    case 6:
+      require(!m_reactionTooltip, "Leaving the window also dismisses the reaction card");
+      {
+        const auto chip = std::ranges::find_if(m_hits, [](const auto& hit) {
+          return hit.action == Action::ToggleReaction && hit.id == "9601\nowl:123456789";
+        });
+        require(chip != m_hits.end(), "The reaction badge is still mounted");
+        move(chip->x + chip->width / 2, chip->y + chip->height / 2);
+      }
+      break;
+    case 7: {
+      require(m_reactionTooltip.has_value(), "Returning from outside the window restores ordinary hover");
+      const auto bridge = layout::reactionTooltipBridge(
+          {m_reactionHoverChip.x, m_reactionHoverChip.y, m_reactionHoverChip.width, m_reactionHoverChip.height},
+          m_reactionTooltipBounds
+      );
+      require(bridge.width > 0 && bridge.height > 0, "The tooltip has a narrow travel path from its badge");
+      move(bridge.x + bridge.width / 2, bridge.y + bridge.height / 2);
+      break;
+    }
+    case 8:
+      require(m_reactionTooltip.has_value(), "Crossing the gap to the card keeps its link accessible without a delay");
+      move(
+          m_reactionTooltipBounds.x + layout::Reactions::tooltipPadding,
+          m_reactionTooltipBounds.y + layout::Reactions::tooltipPadding
+      );
+      break;
+    case 9: {
       require(
           m_reactionTooltip && m_reactionTooltip->id == "123456789",
           "Moving onto tooltip text cannot substitute another reaction"
@@ -879,7 +934,7 @@ namespace app {
       m_window.released();
       break;
     }
-    case 3: {
+    case 10: {
       require(
           m_dialogKind == "reactions" && m_reactionBrowser.emoji == "owl:123456789",
           "Clicking the count selects that emoji in the browser"
@@ -913,11 +968,11 @@ namespace app {
       m_reactionBrowser.peopleScroll = api::reactorPageSize * layout::Reactions::rowHeight;
       break;
     }
-    case 4:
+    case 11:
       require(reactionBrowserQuery().reactionAfter == "1099", "Scrolling to the end uses the last page's user cursor");
       response(0, "Synthetic later-page failure");
       break;
-    case 5:
+    case 12:
       require(
           m_reactionBrowser.loaded == 100 && m_reactionRetryTimer.active(),
           "Later-page failure keeps the preceding people and schedules automatic retry"
@@ -958,15 +1013,15 @@ namespace app {
       m_scrolling.stop(m_reactionBrowser.peopleScroll);
       m_reactionBrowser.peopleScroll = 0;
       break;
-    case 6:
+    case 13:
       require(m_widgets.at("reactions:user:1000")->parent(), "Scrolling back retains the earlier people");
       clickWidget("emoji:❤️");
       break;
-    case 7:
+    case 14:
       require(!m_reactionBrowser.burst, "Mixed reaction types initially show ordinary reactions");
       response(0, "Synthetic read failure");
       break;
-    case 8: {
+    case 15: {
       require(m_reactionRetryTimer.active(), "A failed read schedules automatic retry");
       m_reactionRetryTimer.stop();
       m_reactorPages.at(interactionKey(reactionBrowserQuery())).touched -= std::chrono::minutes(1);
@@ -990,23 +1045,23 @@ namespace app {
       response(0);
       break;
     }
-    case 9:
+    case 16:
       require(
           m_reactorPages.at(interactionKey(reactionBrowserQuery())).loaded,
           "Empty results settle independently of errors"
       );
       clickWidget("super");
       break;
-    case 10:
+    case 17:
       require(m_reactionBrowser.burst, "Super reactions have their own read identity");
       response(2);
       break;
-    case 11:
+    case 18:
       m_window.key({.symbol = XKB_KEY_Tab});
       require(m_controlInput.focusedArea(), "Keyboard focus remains in the browser controls");
       clickWidget("user:2200");
       break;
-    case 12:
+    case 19:
       require(m_dialogKind == "profile", "Clicking a person opens their native profile");
       closeDialog();
       m_contextMessage = "9601";
@@ -1014,7 +1069,7 @@ namespace app {
       contextAction(Action::ViewReactions);
       require(m_dialogKind == "reactions", "The message menu opens the same reactions browser");
       break;
-    case 13: {
+    case 20: {
       requestReactors(reactionBrowserQuery(), true);
       auto late = reactionBrowserQuery();
       late.revision = m_reactorPages.at(interactionKey(late)).revision;
@@ -1029,14 +1084,14 @@ namespace app {
       invalidateReactors(m_channelId, "9601");
       break;
     }
-    case 14:
+    case 21:
       require(
           reactionBrowserMessage() && reactionBrowserMessage()->reactions.empty(),
           "Removing every emoji leaves a settled empty browser"
       );
       m_window.key({.symbol = XKB_KEY_Escape});
       break;
-    case 15:
+    case 22:
       require(
           m_dialogKind.empty()
               && !m_reactionRefreshTimer.active()

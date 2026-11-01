@@ -111,7 +111,6 @@ namespace app {
     m_animationTimer.stop();
     m_gifSearchTimer.stop();
     m_reactorHoverTimer.stop();
-    m_reactorLeaveTimer.stop();
     m_reactionRefreshTimer.stop();
     m_chatSelectionScrollTimer.stop();
     // Destroy tracked input areas while their dispatcher and callback state live.
@@ -179,7 +178,6 @@ namespace app {
   }
   void ClientApplication::windowFocusChanged(bool focused) {
     if (!focused) {
-      m_reactorLeaveTimer.stop();
       m_reactorHoverTimer.stop();
       m_hoverReactionKey.clear();
       m_reactionTooltip.reset();
@@ -187,7 +185,7 @@ namespace app {
       m_chatTextClick.reset();
       m_dragMessage = false;
       m_chatSelectionScrollTimer.stop();
-      if (m_voiceMenuInput)
+      if (m_voiceMenuInput || m_inputEditMenu)
         closeContext();
       sharingRelease();
       releasePushToTalk();
@@ -603,15 +601,7 @@ namespace app {
       field->setOnKeyEvent([this, id](std::uint32_t key, std::uint32_t modifiers) {
         if (((modifiers & KeyMod::Ctrl) && (key == XKB_KEY_v || key == XKB_KEY_V))
             || ((modifiers & KeyMod::Shift) && key == XKB_KEY_Insert)) {
-          m_pasteInput = id;
-          m_pasteServerScope = serverSettingsScope();
-          m_pasteDialogGeneration = m_dialogGeneration;
-          m_pasteMessageEditGeneration = m_messageEdit ? m_messageEdit->generation : 0;
-          m_pasteSlashGeneration = m_slashGeneration;
-          m_pasteConnected = m_connected;
-          m_pasteSession = m_session;
-          m_pasteChannel = m_channelId;
-          m_window.paste(id == "composer" && !(modifiers & KeyMod::Shift));
+          beginInputPaste(id, id == "composer" && !(modifiers & KeyMod::Shift), false, modifiers & KeyMod::Shift);
           return true;
         }
         return false;
@@ -622,6 +612,9 @@ namespace app {
             m_drafts[m_channelId] = text;
             m_edit.end(text);
           }
+        } else if (id.starts_with("composer-link:") && m_composerLink) {
+          (id == "composer-link:label" ? m_composerLink->label : m_composerLink->url) = text;
+          m_dialogError.clear();
         } else if (id == "dm-create-search") {
           if (m_dialogKind == "dm-create" && text.size() <= 256) {
             m_dmCreateSearch = text;
@@ -725,7 +718,9 @@ namespace app {
         m_window.invalidate();
       });
       field->setOnSubmit([this, id](const std::string&) {
-        if (id == "composer")
+        if (id.starts_with("composer-link:"))
+          submitComposerLink();
+        else if (id == "composer")
           send();
         else if (id.starts_with("slash-field:") || id == "slash-options")
           submitSlashCommand();
@@ -794,7 +789,11 @@ namespace app {
     input.setPlaceholder(placeholder);
     input.setFrameVisible(id != "composer");
     input.setEnabled(
-        (m_dialogKind.empty() || id == "dialog" || id.starts_with("server-menu:") || id == "dm-create-search")
+        (m_dialogKind.empty()
+         || id == "dialog"
+         || id.starts_with("server-menu:")
+         || id == "dm-create-search"
+         || (m_dialogKind == "composer-link" && id.starts_with("composer-link:")))
         && (!m_serverSettings.open || id.starts_with("server-settings:"))
         && (id == "dm-create-search"   ? !m_dialogPending
                 : id == "dialog"       ? !m_dialogPending
@@ -809,6 +808,7 @@ namespace app {
                     || m_demoOverlay.starts_with("startup-transition")
                     || m_demoOverlay.starts_with("ime-cycle")
                     || m_demoOverlay.starts_with("reply-cycle")
+                    || m_demoOverlay.starts_with("composer-edit-cycle")
                     || m_demoOverlay.starts_with("chat-links-cycle")
                     || m_demoOverlay.starts_with("autocomplete")
                                    : !m_savingProfile)

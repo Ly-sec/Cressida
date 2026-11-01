@@ -17,6 +17,59 @@ namespace app::layout {
     float x, y, width, height;
     bool contains(float px, float py) const { return px >= x && py >= y && px < x + width && py < y + height; }
   };
+  struct ComposerFormatting {
+    static constexpr float padding = Style::spaceXs;
+    static constexpr float gap = Style::spaceXxs;
+    static constexpr float cell = Style::controlHeightSm;
+    static constexpr float height = cell + padding * 2;
+    static constexpr float glyph = Style::glyphSizeSmall;
+    static constexpr float margin = Style::spaceSm;
+  };
+  inline Frame composerFormattingFrame(float width, float height, float anchorX, float fieldY, std::size_t count) {
+    using F = ComposerFormatting;
+    const float available = std::max(0.0F, width - F::margin * 2);
+    const float barWidth = std::min(available, count * F::cell + (count - 1) * F::gap + F::padding * 2);
+    return {
+        std::clamp(anchorX - barWidth / 2, F::margin, std::max(F::margin, width - F::margin - barWidth)),
+        std::clamp(
+            fieldY - F::height - F::margin, Style::windowTitlebarHeight + F::margin,
+            std::max(Style::windowTitlebarHeight + F::margin, height - F::height - F::margin)
+        ),
+        barWidth, F::height
+    };
+  }
+  struct ComposerLink {
+    static constexpr float maximumWidth = Style::profileCardWidth + Style::spaceSection * 4;
+    static constexpr float padding = Style::spaceXl;
+    static constexpr float heading = Style::fontSizeHeading + Style::spaceLg;
+    static constexpr float fieldLabel = Style::fontSizeCaption + Style::spaceSm;
+    static constexpr float fieldStep = fieldLabel + Style::controlHeight + Style::spaceLg;
+    static constexpr float errorHeight = Style::fontSizeDescription * 2 + Style::spaceSm;
+    static constexpr float height = padding * 2 + heading + fieldStep * 2 + errorHeight + Style::controlHeightSm;
+  };
+  struct ComposerLinkFrames {
+    Frame dialog, close, label, url, error, cancel, insert;
+  };
+  inline ComposerLinkFrames composerLinkFrames(float width, float height) {
+    using L = ComposerLink;
+    const float w = std::max(0.0F, std::min(L::maximumWidth, width - L::padding * 2));
+    const float x = (width - w) / 2;
+    const float y = std::max(Style::windowTitlebarHeight + Style::spaceSm, (height - L::height) / 2);
+    const float content = std::max(0.0F, w - L::padding * 2);
+    const float first = y + L::padding + L::heading + L::fieldLabel;
+    const float footer = y + L::height - L::padding - Style::controlHeightSm;
+    const float half = (content - Style::spaceSm) / 2;
+    return {
+        {x, y, w, L::height},
+        {x + w - L::padding - Style::controlHeightSm, y + L::padding / 2, Style::controlHeightSm,
+         Style::controlHeightSm},
+        {x + L::padding, first, content, Style::controlHeight},
+        {x + L::padding, first + L::fieldStep, content, Style::controlHeight},
+        {x + L::padding, footer - L::errorHeight, content, L::errorHeight},
+        {x + L::padding, footer, half, Style::controlHeightSm},
+        {x + L::padding + half + Style::spaceSm, footer, half, Style::controlHeightSm}
+    };
+  }
   struct MediaGallery {
     static constexpr float maximumWidth = Style::mediaGalleryMaximumWidth;
     static constexpr float maximumHeight = Style::mediaGalleryMaximumHeight;
@@ -351,6 +404,22 @@ namespace app::layout {
         {textX, y + R::tooltipPadding, textWidth, textHeight},
         {textX, y + R::tooltipPadding + textHeight + R::tooltipGap, textWidth, R::tooltipLinkHeight}
     };
+  }
+  inline Frame reactionTooltipBridge(const Frame& badge, const Frame& card) {
+    if (card.width <= 0 || card.height <= 0)
+      return {};
+    const float left = std::max(badge.x, card.x);
+    const float right = std::min(badge.x + badge.width, card.x + card.width);
+    if (right <= left)
+      return {};
+    if (card.y + card.height <= badge.y)
+      return {left, card.y + card.height, right - left, badge.y - card.y - card.height};
+    if (badge.y + badge.height <= card.y)
+      return {left, badge.y + badge.height, right - left, card.y - badge.y - badge.height};
+    return {};
+  }
+  inline bool reactionTooltipContainsPointer(const Frame& badge, const Frame& card, float x, float y) {
+    return badge.contains(x, y) || card.contains(x, y) || reactionTooltipBridge(badge, card).contains(x, y);
   }
   struct ReactionBrowserFrames {
     Frame dialog, close, emojis, people, normal, super;

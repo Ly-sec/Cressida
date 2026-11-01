@@ -27,7 +27,7 @@
     "items": [
       {
         "slug": "docs/chat",
-        "label": "Chat, reactions, copying and mentions"
+        "label": "Chat, formatting, reactions and mentions"
       },
       {
         "slug": "docs/inbox"

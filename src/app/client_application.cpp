@@ -2,6 +2,7 @@
 
 #include "api/uploads.h"
 #include "app/automod_message.h"
+#include "app/composer_format.h"
 #include "app/member_list_layout.h"
 #include "app/message_group.h"
 #include "app/message_layout.h"
@@ -368,8 +369,11 @@ namespace app {
         if (step > 0) {
           const auto& message = m_messages[step == 1 ? 1 : 2];
           const auto& formatted = m_messageLayouts.at(message.id).layout;
+          // Header selection targets also belong to this message; inspect its body row.
           const auto selected = std::ranges::find_if(m_hits, [&](const auto& hit) {
-            return hit.action == Action::SelectMessage && hit.id == message.id;
+            return hit.action == Action::SelectMessage
+                && hit.id == message.id
+                && hit.x == chatLeft() + layout::Chat::inset + layout::Chat::authorGutter;
           });
           require(selected != m_hits.end(), "The continuation retains its complete row hit region");
           float highlightTop = 0, highlightBottom = 0, inkTop = 0, inkBottom = 0, timeCenter = 0;
@@ -409,9 +413,9 @@ namespace app {
               self(self, *child, x, y);
           };
           inspect(inspect, *m_scene, 0, 0);
-          require(
-              hasHighlight && hasInk && hasTime, "Hover paints the actual continuation background, text and timestamp"
-          );
+          require(hasHighlight, "Hover paints the continuation background");
+          require(hasInk, "Hover paints the continuation text");
+          require(hasTime, "Hover paints the continuation timestamp");
           const float center = (highlightTop + highlightBottom) / 2;
           const float tolerance = Style::borderWidth / Style::spaceXs;
           require(
@@ -621,6 +625,10 @@ namespace app {
           && m_demoOverlay.starts_with("sidebar-activity-cycle")
           && m_demoInteractionStep < sidebarActivityReplayFrames)
         demoSidebarActivityStep();
+      if (m_demo
+          && m_demoOverlay.starts_with("composer-edit-cycle")
+          && m_demoInteractionStep < composerEditReplayFrames)
+        demoComposerEditStep();
       if (m_demo && m_demoOverlay.starts_with("markdown-cycle") && m_demoInteractionStep < markdownReplayFrames)
         demoMarkdownStep();
       if (m_demo
@@ -1288,6 +1296,8 @@ namespace app {
             showReactions(id.substr(0, split), split == std::string::npos ? "" : id.substr(split + 1));
             return;
           }
+      if (openInputContext(x, y))
+        return;
       openContext(x, y);
     };
     m_window.key = [this](const Key& key) { onKey(key); };
@@ -1348,6 +1358,10 @@ namespace app {
       saveSelection();
     };
     m_window.pasted = [this](std::string bytes, std::string mime) {
+      if (const auto target = std::exchange(m_pasteEditTarget, {}); target && !inputEditValid(*target)) {
+        m_pasteInput.clear();
+        return;
+      }
       if (m_pasteServerScope != serverSettingsScope())
         return;
       if (m_pasteConnected != m_connected || m_pasteSession != m_session || m_pasteChannel != m_channelId)
@@ -1363,13 +1377,25 @@ namespace app {
              || id == "channel-topic"
              || id == "channel-access-filter"
              || id.starts_with("application-field:")
-             || id.starts_with("user-account:"))
+             || id.starts_with("user-account:")
+             || id.starts_with("composer-link:"))
             && m_pasteDialogGeneration != m_dialogGeneration)
           return;
         if ((id.starts_with("slash-field:") || id == "slash-options")
             && (!m_slashCommand || m_pasteSlashGeneration != m_slashGeneration || m_slashPending))
           return;
         if (id == m_focusedInput && mime.starts_with("text/plain")) {
+          if (!m_pasteAsPlainText && (id == "composer" || id == "message-edit") && composerWebUrl(bytes)) {
+            if (const auto target = captureInputEdit(id); target && target->anchor != target->cursor) {
+              const auto begin = std::min(target->anchor, target->cursor);
+              const auto name = target->value.substr(begin, std::max(target->anchor, target->cursor) - begin);
+              if (const auto link = linkComposer(target->value, target->anchor, target->cursor, name, bytes)) {
+                m_inputs.at(id)->applyEdit(link->text, link->anchor, link->cursor);
+                m_window.invalidate();
+                return;
+              }
+            }
+          }
           pasteControl(id, std::move(bytes));
           return;
         }
@@ -1445,6 +1471,8 @@ namespace app {
               << '\n';
       };
 
+      if (m_composerFormatBounds.contains(m_pointerX, m_pointerY))
+        return;
       if (m_shareOpen) {
         if (m_sharingAdvanced || m_sharingAudioExpanded) {
           if (m_sharingMenuBounds.contains(m_pointerX, m_pointerY))
@@ -1559,7 +1587,15 @@ namespace app {
         m_window.invalidate();
         return;
       }
-      if (m_reactionTooltip && !m_hoverReactionKey.empty() && m_reactionTooltipBounds.contains(m_pointerX, m_pointerY))
+      if (m_reactionTooltip
+          && !m_hoverReactionKey.empty()
+          && (m_reactionTooltipBounds.contains(m_pointerX, m_pointerY)
+              || layout::reactionTooltipBridge(
+                     {m_reactionHoverChip.x, m_reactionHoverChip.y, m_reactionHoverChip.width,
+                      m_reactionHoverChip.height},
+                     m_reactionTooltipBounds
+              )
+                     .contains(m_pointerX, m_pointerY)))
         return;
       if (m_dialogKind == "sidebar-create"
           && m_dialogAction
@@ -1735,6 +1771,8 @@ namespace app {
                    : m_demo && view && std::string_view(view).starts_with("embed-cycle")   ? embedReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("bot-messages-cycle")
                    ? botMessagesReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("composer-edit-cycle")
+                   ? composerEditReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("reaction-browser-cycle")
                    ? reactionBrowserReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("timestamps-cycle") ? timestampReplayFrames
@@ -1902,6 +1940,8 @@ namespace app {
       throw std::runtime_error("Bot identity and message deletion replay did not complete");
     if (m_demoOverlay.starts_with("timestamps-cycle") && m_demoInteractionStep != timestampReplayFrames)
       throw std::runtime_error("Message timestamp replay did not complete");
+    if (m_demoOverlay.starts_with("composer-edit-cycle") && m_demoInteractionStep != composerEditReplayFrames)
+      throw std::runtime_error("Composer editing replay did not complete");
     if (m_demoOverlay.starts_with("sidebar-activity-cycle") && m_demoInteractionStep != sidebarActivityReplayFrames)
       throw std::runtime_error("Sidebar activity replay did not complete");
     if (m_demoOverlay.starts_with("reaction-browser-cycle") && m_demoInteractionStep != reactionBrowserReplayFrames)
@@ -1996,6 +2036,14 @@ namespace app {
           if (view.ends_with("narrow"))
             m_window.setUiScale(1.5F);
           prepareBotMessagesDemo();
+        }
+        if (view.starts_with("composer-edit-cycle")) {
+          m_demoOverlay = view;
+          if (view.ends_with("light"))
+            m_preferences.theme = "light";
+          if (view.ends_with("narrow"))
+            m_window.setUiScale(1.5F);
+          prepareComposerEditDemo();
         }
         if (view.starts_with("sidebar-activity-cycle")) {
           m_demoOverlay = view;
@@ -4000,7 +4048,6 @@ namespace app {
       closeEmojiPicker();
     m_gifTargets.clear();
     m_stickerTargets.clear();
-    m_reactionHoveredThisFrame = false;
     m_reactionBrowserRoot = nullptr;
     m_contextTargets.clear();
     m_messageTops.clear();
@@ -4032,7 +4079,13 @@ namespace app {
     const bool reactionCovered = m_dialogKind == "reactions"
         || (m_reactionTooltip
             && !m_hoverReactionKey.empty()
-            && m_reactionTooltipBounds.contains(m_pointerX, m_pointerY));
+            && (m_reactionTooltipBounds.contains(m_pointerX, m_pointerY)
+                || layout::reactionTooltipBridge(
+                       {m_reactionHoverChip.x, m_reactionHoverChip.y, m_reactionHoverChip.width,
+                        m_reactionHoverChip.height},
+                       m_reactionTooltipBounds
+                )
+                       .contains(m_pointerX, m_pointerY)));
     const bool voiceMenuCovered = m_contextOpen
         && m_voiceMenuInput
         && (m_contextBounds.contains(m_pointerX, m_pointerY)
@@ -4040,7 +4093,8 @@ namespace app {
     const auto preview = sharingPreviewFrame();
     const bool sharingCovered =
         m_shareOpen || m_sharingPreviewDragging || (preview && preview->card.contains(m_pointerX, m_pointerY));
-    if (mediaViewer || sharingCovered || voiceMenuCovered || reactionCovered) {
+    const bool formattingCovered = m_composerFormatBounds.contains(m_pointerX, m_pointerY);
+    if (mediaViewer || sharingCovered || voiceMenuCovered || reactionCovered || formattingCovered) {
       if (sharingCovered)
         m_controlInput.pointerLeave();
       // Covered surfaces still paint; the visible overlay owns the pointer.
@@ -6385,6 +6439,12 @@ namespace app {
         m_pointerY = pointer.second;
         m_tooltip.clear();
       }
+      if (formattingCovered) {
+        m_pointerX = pointer.first;
+        m_pointerY = pointer.second;
+        m_tooltip.clear();
+      }
+      drawComposerFormatting(root, w, h);
       drawContext(root, w, h);
       drawGuildTooltip(root, w, h);
       drawSelectDropdown(root, w, h);
@@ -6397,7 +6457,7 @@ namespace app {
       drawStreamPreviewTooltip(root, w, h);
       drawTooltip(root, w, h);
     }
-    if (sharingCovered || voiceMenuCovered) {
+    if (sharingCovered || voiceMenuCovered || formattingCovered) {
       m_pointerX = pointer.first;
       m_pointerY = pointer.second;
     }
@@ -8390,6 +8450,8 @@ namespace app {
       m_window.invalidate();
       return;
     }
+    if (composerEditKey(key))
+      return;
     if (userAccountDialogKey(key))
       return;
     if (sharingKey(key))
@@ -9012,12 +9074,7 @@ namespace app {
     case Action::PasteClipboard:
       if (!m_demo && !m_channelId.empty()) {
         focusControl("composer");
-        m_pasteInput = "composer";
-        m_pasteServerScope = serverSettingsScope();
-        m_pasteConnected = m_connected;
-        m_pasteSession = m_session;
-        m_pasteChannel = m_channelId;
-        m_window.paste(true);
+        beginInputPaste("composer", true);
       }
       break;
     case Action::ToggleStickers:

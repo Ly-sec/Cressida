@@ -41,6 +41,33 @@ AM/PM times, enable **Use 12-hour clock** in
 Bot authors show an **APP** chip beside their name and role icon. The chip
 remains visible when role icons are turned off.
 
+## Edit and format your draft
+
+Right-click the message input or inline message editor for **Undo**, **Redo**,
+**Cut**, **Copy**, **Paste**, **Paste as plain text**, **Delete** and **Select
+All**. Unavailable actions are dimmed. **Paste** can include an available
+clipboard image in the composer; pasting never sends the message.
+
+Select text to show a compact formatting toolbar, or choose **Formatting** in
+the input's context menu. Apply bold, italic, underline, strikethrough, quotes,
+code or spoilers. These actions add or remove Markdown while keeping the content
+selected. Quotes affect complete selected lines, and multiline code uses a code
+block. Each formatting action is one undoable edit.
+
+Choose **Insert Link** from the toolbar or input menu, or press **Ctrl+K**. Its
+window has separate **Text** and **Link** fields, with selected text already
+filled in. Without a selection, it inserts at the caret. **Cancel** keeps the
+draft unchanged. Links use complete `http://` or `https://` addresses.
+
+Pasting a web address onto selected draft or editor text also creates a Markdown
+link. Use **Paste as plain text** or **Ctrl+Shift+V** to insert the address
+literally.
+
+With draft or editor text selected, **Ctrl+B**, **Ctrl+I** and **Ctrl+U** toggle
+bold, italic and underline. **Shift+F10** or the keyboard's menu key opens the
+editing menu. Menus close on outside click, **Escape** or window focus loss.
+Formatting controls stay hidden during input-method composition.
+
 ## Copy text
 
 Drag across a message's author name, timestamp or text, then press **Ctrl+C** to
@@ -61,8 +88,10 @@ body.
 
 Hover a reaction badge to see a few names and the reaction count. Move onto the
 hover card and click its colored **View all** count to open the people list. The
-count underlines on hover and sits below the names or loading message. You can
-also right-click a reaction badge, or right-click its message and choose **View
+count underlines on hover and sits below the names or loading message. The card
+closes immediately when the pointer leaves the badge and card. Moving directly
+from the badge onto the card keeps its count accessible. You can also
+right-click a reaction badge, or right-click its message and choose **View
 Reactions**.
 
 Choose an emoji in the left column to see the people who used it. The selected

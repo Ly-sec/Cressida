@@ -84,6 +84,11 @@ public:
   static void setValidateKeyMatcher(std::function<bool(std::uint32_t sym, std::uint32_t modifiers)> matcher) noexcept;
   static void setPasswordMaskStyle(PasswordMaskStyle style) noexcept;
   void clearSelection();
+  enum class EditCommand { Undo, Redo, Cut, Copy, Delete, SelectAll };
+  [[nodiscard]] bool canEdit(EditCommand command) const;
+  bool edit(EditCommand command);
+  // Apply one undoable committed edit, retaining the requested UTF-8 selection.
+  bool applyEdit(std::string text, std::size_t anchor, std::size_t cursor);
 
   [[nodiscard]] const std::string& value() const noexcept {
     return m_preeditSnapshot ? m_preeditSnapshot->value : m_value;

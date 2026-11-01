@@ -42,6 +42,7 @@ namespace app {
         && !m_revealedBlocked.contains(message.id);
   }
   void ClientApplication::closeContext() {
+    const auto inputTarget = std::exchange(m_inputEditMenu, {});
     if (m_voiceMenuInput) {
       if (m_selectOwner.starts_with("popup:voice-"))
         closeSelectDropdown();
@@ -61,6 +62,8 @@ namespace app {
     m_channelSubmenu = false;
     m_channelSubmenuEntries.clear();
     m_reactionSubmenu = m_reactionSubmenuFocus = false;
+    if (inputTarget && inputEditValid(*inputTarget))
+      focusControl(inputTarget->id);
     m_window.invalidate();
   }
   void ClientApplication::openContext(float x, float y) {
@@ -320,6 +323,10 @@ namespace app {
   void ClientApplication::drawContext(Node& root, float w, float h) {
     if (!m_contextOpen)
       return;
+    if (m_inputEditMenu && !inputEditValid(*m_inputEditMenu)) {
+      closeContext();
+      return;
+    }
     if (m_voiceMenuInput) {
       drawVoiceMenu(root, w, h);
       return;
@@ -333,11 +340,13 @@ namespace app {
       control->setMaxVisible(64);
       control->setRedrawCallback([this] { m_window.invalidate(); });
       control->setOnActivate([this](const ContextMenuControlEntry& entry) {
-        if (!serverMenuEntry(entry.id) && !channelMenuEntry(entry.id))
+        if (!inputMenuEntry(entry.id) && !serverMenuEntry(entry.id) && !channelMenuEntry(entry.id))
           contextAction(static_cast<Action>(entry.id));
       });
       control->setOnSubmenuOpen([this](const ContextMenuControlEntry& entry, float center) {
-        if (entry.id >= serverMenuBase)
+        if (entry.id >= inputMenuBase)
+          openInputFormatting(center);
+        else if (entry.id >= serverMenuBase)
           openServerSubmenu(entry.id, center);
         else if (entry.id >= channelMenuBase)
           openChannelSubmenu(entry.id, center);
@@ -427,7 +436,7 @@ namespace app {
           const auto index = static_cast<std::size_t>(entry.id);
           if (m_channelSubmenu && index < m_channelSubmenuEntries.size()) {
             const auto id = m_channelSubmenuEntries[index].id;
-            if (!serverMenuEntry(id))
+            if (!inputMenuEntry(id) && !serverMenuEntry(id))
               channelMenuEntry(id);
           } else if (index < m_reactionChoices.size())
             chooseReaction(m_reactionChoices[index].first);
@@ -762,7 +771,8 @@ namespace app {
         return false;
       if (key.control && key.symbol == XKB_KEY_comma)
         return true;
-      if (!m_focusedInput.starts_with("channel-")
+      if (!m_focusedInput.starts_with("composer-link:")
+          && !m_focusedInput.starts_with("channel-")
           && !m_focusedInput.starts_with("application-field:")
           && !m_focusedInput.starts_with("slash-field:")
           && !m_focusedInput.starts_with("server-menu:")
@@ -1098,6 +1108,7 @@ namespace app {
       m_dialogError = m_status;
   }
   void ClientApplication::closeDialog() {
+    const auto link = std::exchange(m_composerLink, {});
     closeReactionBrowser();
     closeSelectDropdown();
     cancelSlashCommand(false);
@@ -1149,10 +1160,15 @@ namespace app {
     m_profileScroll = 0;
     if (m_inputs.contains("dialog"))
       m_inputs["dialog"]->setValue("");
+    for (const auto* id : {"composer-link:label", "composer-link:url"})
+      if (m_inputs.contains(id))
+        m_inputs.at(id)->setValue("");
     if (m_inputs.contains("channel-create-access"))
       m_inputs["channel-create-access"]->setValue("");
     m_controlInput.setFocus(nullptr);
     m_focusedInput.clear();
+    if (link && m_connected && link->target.session == m_session && link->target.channel == m_channelId)
+      m_focusedInput = link->target.id;
     m_window.invalidate();
   }
   void ClientApplication::clearInteractions() {
@@ -1182,7 +1198,6 @@ namespace app {
     closeDialog();
     m_pendingInteractions.clear();
     m_reactorHoverTimer.stop();
-    m_reactorLeaveTimer.stop();
     m_reactionTooltip.reset();
     m_reactionTooltipBounds = {};
     m_reactorPages.clear();
@@ -1272,6 +1287,10 @@ namespace app {
     m_tooltip.clear();
   }
   void ClientApplication::drawDialog(Node& root, float w, float h) {
+    if (m_dialogKind == "composer-link") {
+      drawComposerLink(root, w, h);
+      return;
+    }
     if (m_dialogKind.starts_with("server-")) {
       drawServerMenuDialog(root, w, h);
       return;
@@ -1381,6 +1400,10 @@ namespace app {
     m_tooltip.clear();
   }
   void ClientApplication::submitDialog() {
+    if (m_dialogKind == "composer-link") {
+      submitComposerLink();
+      return;
+    }
     if (m_dialogKind.starts_with("server-")) {
       submitServerMenuDialog();
       return;

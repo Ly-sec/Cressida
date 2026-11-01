@@ -754,6 +754,68 @@ TextInputState Input::textInputState() const {
   };
 }
 
+bool Input::canEdit(EditCommand command) const {
+  if (!m_enabled || isReadOnlyVisual() || hasPreedit())
+    return false;
+  switch (command) {
+  case EditCommand::Undo:
+    return !m_passwordMode && !m_undoStack.empty();
+  case EditCommand::Redo:
+    return !m_passwordMode && !m_redoStack.empty();
+  case EditCommand::Cut:
+  case EditCommand::Copy:
+    return !m_passwordMode && hasSelection();
+  case EditCommand::Delete:
+    return hasSelection();
+  case EditCommand::SelectAll:
+    return !m_value.empty();
+  }
+  return false;
+}
+
+bool Input::edit(EditCommand command) {
+  if (!canEdit(command))
+    return false;
+  switch (command) {
+  case EditCommand::Undo:
+    return undoEdit();
+  case EditCommand::Redo:
+    return redoEdit();
+  case EditCommand::Copy:
+    handleKey('c', 0, KeyMod::Ctrl);
+    break;
+  case EditCommand::Cut:
+    handleKey('x', 0, KeyMod::Ctrl);
+    break;
+  case EditCommand::Delete:
+    handleKey(XKB_KEY_Delete, 0, 0);
+    break;
+  case EditCommand::SelectAll:
+    selectAll();
+    break;
+  }
+  return true;
+}
+
+bool Input::applyEdit(std::string text, std::size_t anchor, std::size_t cursor) {
+  if (!m_enabled
+      || isReadOnlyVisual()
+      || m_passwordMode
+      || hasPreedit()
+      || anchor > text.size()
+      || cursor > text.size()
+      || !g_utf8_validate(text.data(), text.size(), nullptr)
+      || clampToUtf8End(text, anchor) != anchor
+      || clampToUtf8End(text, cursor) != cursor)
+    return false;
+  if (text == m_value && anchor == m_selectionAnchor && cursor == m_cursorPos)
+    return false;
+  pushUndoSnapshot(EditCoalesceKind::Discrete);
+  resetUndoCoalescing();
+  restoreEditSnapshot({std::move(text), cursor, anchor});
+  return true;
+}
+
 void Input::textInputApplyEdit(const TextInputEdit& edit) {
   if (!m_enabled
       || (edit.hasCommitText && !g_utf8_validate(edit.commitText.data(), edit.commitText.size(), nullptr))

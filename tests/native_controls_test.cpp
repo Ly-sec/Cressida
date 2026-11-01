@@ -164,9 +164,39 @@ int main() {
     const auto font = paths::assetPath("fonts/tabler-icons.ttf").string();
     require(FT_New_Face(fonts, font.c_str(), 0, &face) == 0, "Load the copied Tabler font");
     for (const auto* icon :
-         {"message-circle", "settings", "users", "clipboard-plus", "mood-smile", "x", "minus", "square", "squares",
-          "chevron-left", "chevron-right", "chevron-down", "zoom-in", "zoom-out", "loader", "activity-listening",
-          "activity-watching", "activity-playing", "activity-competing"})
+         {"message-circle",
+          "settings",
+          "users",
+          "clipboard-plus",
+          "mood-smile",
+          "x",
+          "minus",
+          "square",
+          "squares",
+          "chevron-left",
+          "chevron-right",
+          "chevron-down",
+          "zoom-in",
+          "zoom-out",
+          "loader",
+          "activity-listening",
+          "activity-watching",
+          "activity-playing",
+          "activity-competing",
+          "bold",
+          "italic",
+          "underline",
+          "strikethrough",
+          "blockquote",
+          "code",
+          "eye-off",
+          "arrow-back-up",
+          "arrow-forward-up",
+          "scissors",
+          "clipboard",
+          "clipboard-text",
+          "select-all",
+          "typography"})
       require(
           GlyphRegistry::contains(icon) && FT_Get_Char_Index(face, GlyphRegistry::lookup(icon)) != 0,
           "Every native action glyph resolves to a bundled font character"
@@ -246,6 +276,32 @@ int main() {
         field.value() == "<@123>tail" && field.displayValue() == "@Mayatail",
         "Undo restores the original mention without retaining its cancelled preedit"
     );
+    field.setTextPresenter({});
+    field.setValue("héllo 👋");
+    field.selectAll();
+    require(
+        field.applyEdit("**héllo 👋**", 2, std::string("**héllo 👋").size()),
+        "Host editing applies one committed transaction with its inner Unicode selection"
+    );
+    require(
+        field.edit(Input::EditCommand::Undo) && field.value() == "héllo 👋",
+        "Native menu undo restores both text and selection"
+    );
+    require(
+        field.edit(Input::EditCommand::Redo) && field.value() == "**héllo 👋**",
+        "Native menu redo restores the formatted selection"
+    );
+    require(
+        field.edit(Input::EditCommand::Copy) && clipboard.text == "héllo 👋",
+        "Native menu copy retains the inner selection"
+    );
+    require(!field.applyEdit("é", 1, 2), "Host editing rejects a split UTF-8 selection");
+    field.setEnabled(false);
+    require(
+        !field.canEdit(Input::EditCommand::Cut) && !field.applyEdit("replacement", 0, 0),
+        "Disabled inputs reject host edits and menu actions"
+    );
+    field.setEnabled(true);
     field.setTextPresenter({});
     field.setValue("one two");
     key(XKB_KEY_a, KeyMod::Ctrl);

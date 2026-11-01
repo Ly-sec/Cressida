@@ -1,5 +1,7 @@
 #include "capture/pipewire_video.h"
 
+#include "core/application_identity.h"
+
 #include <algorithm>
 #include <array>
 #include <cstdlib>
@@ -151,7 +153,7 @@ namespace capture {
         m->core, "Cressida screen capture",
         pw_properties_new(
             PW_KEY_MEDIA_TYPE, "Video", PW_KEY_MEDIA_CATEGORY, "Capture", PW_KEY_MEDIA_ROLE, "Screen", PW_KEY_APP_ID,
-            "dev.lysec.Cressida", nullptr
+            cressida::applicationId, nullptr
         )
     );
     if (!m->stream) {

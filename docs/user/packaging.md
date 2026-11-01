@@ -24,15 +24,20 @@ compiler-aware archiver, such as `gcc-ar` or `llvm-ar`.
 
 ## Installed files
 
-| Component           | Typical path with prefix `/usr`                                 |
-| ------------------- | --------------------------------------------------------------- |
-| Executable          | `/usr/bin/cressida`                                             |
-| Renderer library    | `/usr/lib/libcressida-render.so`                                |
-| Development headers | `/usr/include/cressida/`                                        |
-| Complete assets     | `/usr/share/cressida/assets/`                                   |
-| Desktop entry       | `/usr/share/applications/dev.lysec.Cressida.desktop`            |
-| Application icon    | `/usr/share/icons/hicolor/scalable/apps/dev.lysec.Cressida.svg` |
-| License notices     | `/usr/share/licenses/cressida/`                                 |
+| Component           | Typical path with prefix `/usr`                       |
+| ------------------- | ----------------------------------------------------- |
+| Executable          | `/usr/bin/cressida`                                   |
+| Renderer library    | `/usr/lib/libcressida-render.so`                      |
+| Development headers | `/usr/include/cressida/`                              |
+| Complete assets     | `/usr/share/cressida/assets/`                         |
+| Desktop entry       | `/usr/share/applications/cressida.desktop`            |
+| Application icon    | `/usr/share/icons/hicolor/scalable/apps/cressida.svg` |
+| License notices     | `/usr/share/licenses/cressida/`                       |
+
+When upgrading a manual installation, remove the previous
+`dev.lysec.Cressida.desktop` launcher and `dev.lysec.Cressida.svg` icon from
+that installation prefix to avoid duplicate launcher entries. Package upgrades
+should replace those old files with the paths above.
 
 Meson supports other libdirs. Ship the renderer and executable from the same
 build; there is no versioned renderer ABI. The installed executable has a

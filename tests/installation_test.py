@@ -70,10 +70,11 @@ def check_installation(build, source, meson, readelf):
         for filename in ("LICENSE", "PROVENANCE.md", "upstream-files.json", "patched-files.json"):
             notice = installed("datadir", "licenses", "cressida", "mlspp", filename)
             assert notice.read_bytes() == (source / "third_party/mlspp" / filename).read_bytes(), f"Missing/changed MLS notice: {filename}"
-        desktop = installed("datadir", "applications", "dev.lysec.Cressida.desktop")
+        desktop = installed("datadir", "applications", "cressida.desktop")
         assert "Exec=cressida\n" in desktop.read_text()
-        assert "Icon=dev.lysec.Cressida\n" in desktop.read_text()
-        assert installed("datadir", "icons", "hicolor", "scalable", "apps", "dev.lysec.Cressida.svg").is_file()
+        assert "Icon=cressida\n" in desktop.read_text()
+        assert "StartupWMClass=cressida\n" in desktop.read_text()
+        assert installed("datadir", "icons", "hicolor", "scalable", "apps", "cressida.svg").is_file()
 
         dynamic = run_checked(readelf, "-d", str(binary))
         for dependency in ("libdave", "libmlspp", "libhpke", "libtls_syntax", "libbytes"):

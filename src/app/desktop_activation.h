@@ -1,12 +1,14 @@
 #pragma once
 
+#include "core/application_identity.h"
+
 #include <chrono>
 #include <string>
 #include <string_view>
 #include <utility>
 
 namespace app {
-  inline constexpr char desktopApplicationId[] = "dev.lysec.Cressida";
+  inline constexpr auto& desktopApplicationId = cressida::applicationId;
   // Desktop-issued activation handles are session-only, single-use and short
   // lived. Do not retain or log them as application preferences.
   class DesktopActivationToken {

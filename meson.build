@@ -329,8 +329,8 @@ test('theme_catalog', theme_test, args: [meson.current_source_dir() / 'assets/th
 theme_runtime_test = executable('theme_runtime_test', 'tests/theme_runtime_test.cpp', dependencies: theme_dep)
 test('theme_runtime', theme_runtime_test, args: [meson.current_source_dir() / 'assets/themes'], timeout: 20)
 
-install_data('assets/dev.lysec.Cressida.desktop', install_dir: get_option('datadir') / 'applications')
-install_data('assets/cressida-logo.svg', rename: 'dev.lysec.Cressida.svg',
+install_data('assets/cressida.desktop', install_dir: get_option('datadir') / 'applications')
+install_data('assets/cressida-logo.svg', rename: 'cressida.svg',
   install_dir: get_option('datadir') / 'icons/hicolor/scalable/apps')
 # These tools are optional; importing this module adds no GTK/GNOME UI dependency.
 # Meson skips the cache refreshes for DESTDIR/package staging.

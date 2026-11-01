@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
 Name=Cressida
-Comment=A native Discord desktop client
+Comment=A native chat client
 Exec=cressida
-Icon=dev.lysec.Cressida
+Icon=cressida
 Terminal=false
 Categories=Network;InstantMessaging;
-StartupWMClass=dev.lysec.Cressida
+StartupWMClass=cressida

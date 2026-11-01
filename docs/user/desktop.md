@@ -69,3 +69,13 @@ In **Advanced**, use **Desktop decorations** to request your compositor's window
 decorations. Disable it to request Cressida's own controls. The compositor
 decides which decoration mode it supports. The Titlebar controls settings let
 you adjust the available client-side buttons and their placement.
+
+## Window rules
+
+Cressida's Wayland application ID is `cressida`. Use `^cressida$` when your
+compositor matches application IDs with regular expressions. The installed
+launcher is `cressida.desktop` and the icon name is `cressida`.
+
+Update rules and pinned launcher shortcuts that still refer to
+`dev.lysec.Cressida`. Fully exit and reopen Cressida after updating the client
+to use the new application ID.

@@ -13,8 +13,8 @@ Meson and Ninja build the client directly. Contributor checks are described in
 | Homepage | https://github.com/Ly-sec/Cressida |
 | Version | `project(... version: ...)` in `meson.build`; keep `nix/package.nix` in sync |
 | License | MIT; retain the bundled third-party notices described below |
-| Desktop entry | `dev.lysec.Cressida.desktop` |
-| Desktop icon | `dev.lysec.Cressida`, installed in `icons/hicolor/scalable/apps` |
+| Desktop entry | `cressida.desktop` |
+| Desktop icon | `cressida`, installed in `icons/hicolor/scalable/apps` |
 
 CI builds and tests native `x86_64` and `aarch64` Linux packages with glibc,
 plus an `x86_64` musl build in Alpine edge. Other targets have no dedicated
@@ -222,8 +222,8 @@ With prefix `/usr` and the usual `lib`/`share` directories:
 /usr/lib/libcressida-log.so
 /usr/include/cressida/...
 /usr/share/cressida/assets/...
-/usr/share/applications/dev.lysec.Cressida.desktop
-/usr/share/icons/hicolor/scalable/apps/dev.lysec.Cressida.svg
+/usr/share/applications/cressida.desktop
+/usr/share/icons/hicolor/scalable/apps/cressida.svg
 /usr/share/licenses/cressida/...
 ```
 

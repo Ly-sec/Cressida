@@ -46,7 +46,7 @@ def main():
                     time.sleep(.01)
                 for identity, name, left, right in (("fixture.browser", "Browser", 400, 800),
                                                    ("fixture.music", "Music", 200, 600),
-                                                   ("dev.lysec.Cressida", "Excluded self playback", 1000, 1000)):
+                                                   ("cressida", "Excluded self playback", 1000, 1000)):
                     app = subprocess.Popen([player, "--playback", "--raw", "--format=float32le", "--rate=48000", "--channels=2",
                                             "--latency-msec=40", "--property=application.id=" + identity,
                                             "--property=application.name=" + name], env=environment,

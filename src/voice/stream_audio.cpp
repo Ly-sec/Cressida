@@ -1,5 +1,6 @@
 #include "voice/stream_audio.h"
 
+#include "core/application_identity.h"
 #include "core/process/wake_event.h"
 
 #include <algorithm>
@@ -184,7 +185,7 @@ namespace voice {
         pa_mainloop_set_poll_func(loop, pollAudio, this);
         auto* properties = pa_proplist_new();
         pa_proplist_sets(properties, PA_PROP_APPLICATION_NAME, "Cressida shared audio");
-        pa_proplist_sets(properties, PA_PROP_APPLICATION_ID, "dev.lysec.Cressida");
+        pa_proplist_sets(properties, PA_PROP_APPLICATION_ID, cressida::applicationId);
         const auto pid = std::to_string(getpid());
         pa_proplist_sets(properties, PA_PROP_APPLICATION_PROCESS_ID, pid.c_str());
         context = pa_context_new_with_proplist(pa_mainloop_get_api(loop), "Cressida shared audio", properties);
@@ -277,7 +278,7 @@ namespace voice {
                 return text ? std::string(text).substr(0, maximumLabelBytes) : std::string{};
               };
               if (property(PA_PROP_APPLICATION_PROCESS_ID) == std::to_string(getpid())
-                  || property(PA_PROP_APPLICATION_ID) == "dev.lysec.Cressida"
+                  || property(PA_PROP_APPLICATION_ID) == cressida::applicationId
                   || property(PA_PROP_APPLICATION_NAME).starts_with("Cressida"))
                 return;
               auto name = property(PA_PROP_APPLICATION_NAME);

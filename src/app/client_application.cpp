@@ -3040,9 +3040,22 @@ namespace app {
             {"id":"9203","channel_id":"101","timestamp":"2026-10-20T10:45:00Z",
              "author":{"id":"11","username":"Maya"},
              "embeds":[{"type":"article","provider":{"name":"GitHub"},
+               "author":{"name":"Preview author","url":"https://example.com/author",
+                 "proxy_icon_url":"https://media.discordapp.net/external/demo/embed-author.png"},
+               "footer":{"text":"Repository activity",
+                 "proxy_icon_url":"https://media.discordapp.net/external/demo/embed-footer.png"},
+               "timestamp":"2026-10-20T10:45:00Z",
                "title":"GitHub - repository preview with a continuous wrapped link title",
                "url":"https://example.com/preview","description":"A compact description below the linked title."}]}
           ])JSON"));
+          for (const auto* icon : {"embed-author", "embed-footer"}) {
+            const int size = Style::space2Xl;
+            std::vector<unsigned char> pixels(size * size * 4, 180);
+            for (std::size_t i = 3; i < pixels.size(); i += 4)
+              pixels[i] = 255;
+            m_images["https://media.discordapp.net/external/demo/" + std::string(icon) + ".png"].texture =
+                m_window.context().textureManager().loadFromRgba(pixels.data(), size, size);
+          }
           m_messageLayouts.clear();
           m_unreadTimeline.snapshot({});
           m_unreadTimeline.positioned();
@@ -4499,6 +4512,7 @@ namespace app {
           const auto& message = timeline[i];
           auto& cached = m_messageLayouts[message.id];
           const auto& renderer = m_window.target().renderer();
+          const auto timestampDay = std::chrono::floor<std::chrono::milliseconds>(std::chrono::system_clock::now());
           auto reply = message.reply;
           if (reply) {
             const auto source = replySources.find(reply->message);
@@ -4511,6 +4525,8 @@ namespace app {
           if (cached.width != textWidth
               || cached.scale != renderer.renderScale()
               || cached.fonts != renderer.textMetricsGeneration()
+              || cached.twelveHourClock != m_preferences.twelveHourClock
+              || !sameLocalMessageDay(cached.day, timestampDay)
               || cached.replySource != reply) {
             auto displayed = message;
             if (message.type == autoModerationActionType)
@@ -4560,7 +4576,9 @@ namespace app {
                    .channelMention = [this](auto guild, auto channel) { return channelMention(guild, channel); },
                    .roleMention = [this](
                                       auto role
-                                  ) { return m_roleDirectory.roleName(m_dmMode ? "" : m_guildId, std::string(role)); }}
+                                  ) { return m_roleDirectory.roleName(m_dmMode ? "" : m_guildId, std::string(role)); },
+                   .twelveHourClock = m_preferences.twelveHourClock,
+                   .showEmbedIcons = m_preferences.showImages}
               );
               cached.layout = withEditHistory(
                   std::move(cached.layout), versions, textWidth, measure, m_preferences.messageSize,
@@ -4589,6 +4607,8 @@ namespace app {
             cached.width = textWidth;
             cached.scale = renderer.renderScale();
             cached.fonts = renderer.textMetricsGeneration();
+            cached.day = timestampDay;
+            cached.twelveHourClock = m_preferences.twelveHourClock;
           }
           const float bodyHeight = m_messageEdit && m_messageEdit->message == message.id
               ? messageEditHeight(textWidth)
@@ -5337,10 +5357,10 @@ namespace app {
                     label(
                         *messageContent, rx, ry + continuationTextOffset, std::max(1.0F, run.width + Style::spaceXxs),
                         messageMarkup(run.text, style, false), run.style.size,
-                        run.style.historical || run.style.muted            ? muted
-                            : run.style.syntax != CodeToken::Plain         ? syntaxColor(run.style.syntax)
-                            : run.style.link.empty() && !run.style.mention ? foreground
-                                                                           : accent,
+                        run.style.historical || run.style.muted    ? muted
+                            : run.style.syntax != CodeToken::Plain ? syntaxColor(run.style.syntax)
+                            : (run.style.link.empty() || run.style.neutralLink) && !run.style.mention ? foreground
+                                                                                                      : accent,
                         FontWeight::Normal, 1, true
                     );
                   else if (!emojiImage(*messageContent, rx, ry, run.width, run.image))
@@ -5367,6 +5387,19 @@ namespace app {
                       marker.width + Style::spaceXxs, "(edited)", marker.size, muted
                   );
                 }
+                if (m_preferences.showImages)
+                  for (const auto& icon : layout.embedIcons) {
+                    const auto& frame = icon.frame;
+                    image(
+                        *messageContent, layout::Chat::authorGutter + frame.x, bodyY + frame.y, frame.width, icon.url,
+                        frame.width / 2
+                    );
+                    if (!icon.link.empty())
+                      m_hits.push_back(
+                          {left + Style::spaceXl + layout::Chat::authorGutter + frame.x, top + bodyY + frame.y,
+                           frame.width, frame.height, Action::OpenUrl, icon.link}
+                      );
+                  }
                 for (const auto& pic : layout.pictures) {
                   if (pic.spoiler && !spoilersVisible(message.id)) {
                     rectangle(

@@ -134,4 +134,15 @@ namespace app {
     const auto first = localMessageTime(before), second = localMessageTime(after);
     return first && second && first->tm_year == second->tm_year && first->tm_yday == second->tm_yday;
   }
+  inline std::string formatEmbedTimestamp(
+      std::string_view value, bool twelveHourClock = false,
+      std::chrono::sys_time<std::chrono::milliseconds> now =
+          std::chrono::floor<std::chrono::milliseconds>(std::chrono::system_clock::now())
+  ) {
+    const auto time = messageTime(value);
+    if (!time)
+      return {};
+    auto result = formatMessageTimestamp(value, twelveHourClock, now);
+    return !result.empty() && sameLocalMessageDay(*time, now) ? "Today at " + result : result;
+  }
 } // namespace app

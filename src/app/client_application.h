@@ -1581,6 +1581,8 @@ namespace app {
       std::optional<api::MessageReference> replySource;
       float width = -1, scale = -1;
       std::uint64_t fonts = 0;
+      std::chrono::sys_time<std::chrono::milliseconds> day{};
+      bool twelveHourClock = false;
     };
     std::map<std::string, CachedMessageLayout> m_messageLayouts;
     std::vector<api::GuildFolder> m_folders;

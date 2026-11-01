@@ -209,6 +209,7 @@ namespace api {
     std::vector<EmbedField> fields;
     Media video;
     std::vector<EmbedComponent> components;
+    std::string authorIcon, footerIcon, timestamp, authorUrl;
     bool operator==(const Embed&) const = default;
   };
   struct Upload {

@@ -412,6 +412,9 @@ namespace app::layout {
     static constexpr float bodySize = Style::fontSizeDescription;
     static constexpr float titleSize = Style::fontSizeBody;
     static constexpr float detailSize = Style::fontSizeMini;
+    static constexpr float authorIconSize = Style::spaceXl;
+    static constexpr float footerIconSize = Style::spaceLg;
+    static constexpr float iconGap = Style::spaceSm;
     static constexpr float thumbnailSize = Style::embedThumbnailSize;
     static constexpr float thumbnailReserve = thumbnailSize + padding;
     static constexpr float thumbnailMinimumWidth = thumbnailReserve * 2 + Style::spaceXl;

@@ -4,6 +4,7 @@
 #include "app/layout_metrics.h"
 #include "app/message_layout.h"
 #include "app/message_log_layout.h"
+#include "app/message_time.h"
 #include "app/reply_preview.h"
 #include "app/text_edit.h"
 
@@ -1385,6 +1386,85 @@ int main(int argc, char** argv) {
          {"https://cdn.discordapp.com/attachments/1/2/photo.png", 1920, 1080}}
     );
     api::Embed embed;
+    api::Message metadataPreview;
+    metadataPreview.embeds = {
+        {.title = "Repository update",
+         .author = "Preview author",
+         .footer = "Build status",
+         .authorIcon = "author-icon",
+         .footerIcon = "footer-icon",
+         .timestamp = "2026-10-30T09:05:00Z",
+         .authorUrl = "https://example.com/author"}
+    };
+    for (const auto width : {80.0F, 120.0F, 400.0F}) {
+      const auto card = app::layoutRichMessage(metadataPreview, width, editMeasure);
+      require(card.embeds.size() == 1 && card.pictures.empty(), "Metadata icons are not gallery attachments");
+      require(
+          card.plainText.contains(app::formatEmbedTimestamp(metadataPreview.embeds[0].timestamp)),
+          "An independent embed timestamp is rendered alongside its footer"
+      );
+      for (const auto& icon : card.embedIcons)
+        require(
+            icon.frame.x >= 0
+                && icon.frame.y >= card.embeds[0].y
+                && icon.frame.x + icon.frame.width <= card.embeds[0].width
+                && icon.frame.y + icon.frame.height <= card.embeds[0].y + card.embeds[0].height,
+            "Metadata icon measurement stays inside narrow and full-width embed cards"
+        );
+      require(
+          std::ranges::any_of(
+              card.runs,
+              [](const auto& run) { return run.style.link == "https://example.com/author" && run.style.neutralLink; }
+          ),
+          "Author links retain the normal text color"
+      );
+      if (width == 400)
+        require(
+            card.embedIcons.size() == 2
+                && card.embedIcons[0].url == "author-icon"
+                && card.embedIcons[1].url == "footer-icon",
+            "Both metadata icons share the measured card"
+        );
+    }
+    const auto noIcons =
+        app::layoutRichMessage(metadataPreview, 400, editMeasure, Style::fontSizeBody, {.showEmbedIcons = false});
+    require(
+        noIcons.embedIcons.empty() && noIcons.plainText.contains("Preview author"),
+        "Image preferences hide metadata artwork while preserving author and footer text"
+    );
+    const auto originalMetadata = app::layoutRichMessage(metadataPreview, 400, editMeasure);
+    const std::vector<api::Message> priorVersions{{.id = "1", .content = "Earlier text"}};
+    const auto editedMetadata =
+        app::withEditHistory(originalMetadata, priorVersions, 400, editMeasure, Style::fontSizeBody);
+    require(
+        editedMetadata.embedIcons.size() == 2
+            && editedMetadata.embedIcons[0].frame.y > originalMetadata.embedIcons[0].frame.y,
+        "Retained edit history moves metadata artwork with its preview"
+    );
+    api::Message forwardedMetadata;
+    forwardedMetadata.forwarded = api::ForwardedMessage{.message = "2", .embeds = metadataPreview.embeds};
+    const auto forwardedCard = app::layoutRichMessage(forwardedMetadata, 400, editMeasure);
+    require(
+        forwardedCard.embedIcons.size() == 2
+            && forwardedCard.embedIcons[0].frame.x > originalMetadata.embedIcons[0].frame.x,
+        "Forwarded previews keep metadata artwork inside their inset"
+    );
+    auto timestampOnly = metadataPreview;
+    timestampOnly.embeds = {{.timestamp = "2026-10-30T09:05:00Z"}};
+    require(
+        !app::layoutRichMessage(timestampOnly, 400, editMeasure).embeds.empty(),
+        "A timestamp-only preview still has a footer"
+    );
+    timestampOnly.embeds[0].timestamp = "invalid";
+    require(
+        app::layoutRichMessage(timestampOnly, 400, editMeasure).embeds.empty(),
+        "An invalid timestamp does not create an empty preview"
+    );
+    metadataPreview.flags = api::messageSuppressEmbeds;
+    require(
+        app::layoutRichMessage(metadataPreview, 400, editMeasure).embedIcons.empty(),
+        "Suppressed embeds cannot retain their author or footer artwork"
+    );
     embed.title = "Preview";
     embed.description = "**Formatted** description";
     embed.fields.push_back({"Field", "value"});

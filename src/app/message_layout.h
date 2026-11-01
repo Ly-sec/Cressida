@@ -24,6 +24,7 @@ namespace app {
     std::size_t linkId = 0;
     std::size_t spoilerId = 0;
     std::size_t strikeId = 0;
+    bool neutralLink = false;
   };
   struct MessageRun {
     std::string text, image;
@@ -82,6 +83,11 @@ namespace app {
     std::vector<MessageRun> runs;
     std::vector<MessageBox> boxes;
     std::vector<MessagePicture> pictures;
+    struct EmbedIcon {
+      std::string url, link;
+      layout::Frame frame;
+    };
+    std::vector<EmbedIcon> embedIcons;
     std::vector<layout::Frame> embeds;
     std::string plainText;
     float height = 0, historyHeight = 0;
@@ -100,6 +106,7 @@ namespace app {
     };
     std::function<ChannelMention(std::string_view, std::string_view)> channelMention;
     std::function<std::string(std::string_view)> roleMention;
+    bool twelveHourClock = false, showEmbedIcons = true;
   };
   MessageLayout layoutRichMessage(
       const api::Message& message, float width,

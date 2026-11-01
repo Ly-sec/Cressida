@@ -3,6 +3,7 @@
 #include "app/message_time.h"
 #include "app/system_message.h"
 #include "app/theme.h"
+#include "render/scene/image_node.h"
 #include "render/scene/text_node.h"
 
 #include <algorithm>
@@ -818,13 +819,39 @@ namespace app {
       return;
     }
     const auto& preview = m_messageLayouts.at("9203").layout;
+    require(preview.embedIcons.size() == 2, "Parsed author and footer icons share the embed layout");
+    const auto& embed = m_messages.back().embeds.front();
+    require(
+        preview.plainText.contains(formatEmbedTimestamp(embed.timestamp, m_preferences.twelveHourClock)),
+        "The rendered footer uses the embed timestamp and current clock choice"
+    );
+    if (step == 0) {
+      for (const auto& icon : preview.embedIcons) {
+        const auto texture = m_images.at(icon.url).texture.id;
+        const auto mounted = [&](auto&& self, const Node& node) -> bool {
+          if (node.type() == NodeType::Image) {
+            const auto& image = static_cast<const ImageNode&>(node);
+            if (image.textureId() == texture)
+              return image.radius() > 0 && image.width() == icon.frame.width;
+          }
+          return std::ranges::any_of(node.children(), [&](const auto& child) { return self(self, *child); });
+        };
+        require(mounted(mounted, *m_scene), "Visible embed metadata artwork paints as small round images");
+        require(
+            std::ranges::none_of(
+                m_hits, [&](const auto& hit) { return hit.action == Action::ViewImage && hit.id == icon.url; }
+            ),
+            "Metadata icons do not become media-viewer targets"
+        );
+      }
+    }
     const auto areas = messageLinkAreas(preview);
     require(!areas.empty(), "The preview has a linked title");
     require(
         std::ranges::count_if(
             m_hits,
             [](const auto& hit) { return hit.action == Action::OpenUrl && hit.id == "https://example.com/preview"; }
-        ) == std::ssize(areas),
+        ) == std::ranges::count(areas, "https://example.com/preview", &MessageLinkArea::url),
         "Actual embed hit targets span complete rendered lines instead of individual words"
     );
     const auto hasText = [&](std::string_view expected, float size) {
@@ -845,14 +872,16 @@ namespace app {
       if (run.style.link.empty())
         continue;
       auto style = run.style;
-      style.linkHovered = step == 1;
+      style.linkHovered = step == 1 && run.style.link == "https://example.com/preview";
       require(
           hasText(messageMarkup(run.text, style), run.style.size),
           "Rendered linked title glyphs underline together only while their logical link is hovered"
       );
     }
     if (step == 0) {
-      const auto region = std::ranges::find_if(areas, [](const auto& area) { return area.last > area.first; });
+      const auto region = std::ranges::find_if(areas, [](const auto& area) {
+        return area.url == "https://example.com/preview" && area.last > area.first;
+      });
       require(region != areas.end(), "The fixture has multiple linked words on one line");
       const auto& first = preview.runs[region->first];
       const auto& second = preview.runs[region->first + 1];
@@ -872,6 +901,7 @@ namespace app {
           "Whitespace between linked words remains inside the actual click target"
       );
       m_window.motion(gapX, gapY + m_window.titlebarHeight() - layout::Window::titlebarHeight);
+      m_preferences.twelveHourClock = true;
     } else if (step == 1) {
       m_window.motion(0, 0);
       m_preferences.messageSize = Style::fontSizePage;

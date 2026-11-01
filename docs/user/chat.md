@@ -175,7 +175,10 @@ formatted text. Link underlines appear when you hover the link.
 
 Pasted images can be uploaded from the composer. Multiple images in a message
 appear together in a gallery. Links may show compact previews with a title,
-description or image. See [Images and video](media.md).
+description or image. Previews also show their author and footer icons when
+provided. Their timestamps appear below the content using your local timezone
+and 12-hour or 24-hour clock choice, including **Today at**, **Yesterday at** or
+an explicit date. See [Images and video](media.md).
 
 To remove a message's embeds, hover the message and click the **×** beside a
 preview, or right-click the message and choose **Remove Embeds**. You can remove

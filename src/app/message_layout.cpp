@@ -6,6 +6,7 @@
 #include "app/discord_link.h"
 #include "app/discord_timestamp.h"
 #include "app/layout_metrics.h"
+#include "app/message_time.h"
 #include "app/reply_preview.h"
 #include "ui/style.h"
 
@@ -1523,6 +1524,8 @@ namespace app {
         run.offset += offset;
         run.style.bold |= style.bold;
         run.style.spoiler |= style.spoiler;
+        run.style.muted |= style.muted;
+        run.style.neutralLink |= style.neutralLink;
         if (run.style.link.empty()) {
           run.style.link = style.link;
           run.style.linkId = inheritedLink;
@@ -1781,11 +1784,13 @@ namespace app {
           );
         continue;
       }
+      const auto timestamp = formatEmbedTimestamp(embed.timestamp, options.twelveHourClock);
       if (embed.title.empty()
           && embed.description.empty()
           && embed.provider.empty()
           && embed.author.empty()
           && embed.footer.empty()
+          && timestamp.empty()
           && embed.fields.empty()
           && embed.image.url.empty()
           && embed.thumbnail.url.empty()
@@ -1828,11 +1833,30 @@ namespace app {
       const auto embedText = [&](std::string_view text, MessageStyle style, float available) {
         return append(text, layout::Embed::padding, y, available, style, false);
       };
+      const auto metadataRow = [&](std::string_view text, const std::string& icon, float size, MessageStyle style,
+                                   float available) {
+        const bool showIcon =
+            options.showEmbedIcons && !icon.empty() && available >= size + layout::Embed::iconGap + Style::space2Xl;
+        const float reserve = showIcon ? size + layout::Embed::iconGap : 0;
+        const float lineHeight = style.size + Style::spaceSm;
+        const float offset = showIcon ? std::max(0.0F, (size - lineHeight) / 2) : 0;
+        const float height =
+            append(text, layout::Embed::padding + reserve, y + offset, available - reserve, style, false);
+        if (showIcon)
+          result.embedIcons.push_back(
+              {icon, style.link, {layout::Embed::padding, y + std::max(0.0F, (lineHeight - size) / 2), size, size}}
+          );
+        return std::max(showIcon ? size : 0.0F, height + offset);
+      };
       if (!embed.provider.empty())
         y += embedText(embed.provider, {.size = layout::Embed::detailSize}, contentWidth) + layout::Embed::gap;
       if (!embed.author.empty())
-        y +=
-            embedText(embed.author, {.bold = true, .size = layout::Embed::bodySize}, contentWidth) + layout::Embed::gap;
+        y += metadataRow(
+                 embed.author, embed.authorIcon, layout::Embed::authorIconSize,
+                 {.bold = true, .size = layout::Embed::bodySize, .link = embed.authorUrl, .neutralLink = true},
+                 contentWidth
+             )
+            + layout::Embed::gap;
       if (!embed.title.empty())
         y += embedText(embed.title, {.bold = true, .size = layout::Embed::titleSize, .link = embed.url}, contentWidth)
             + layout::Embed::gap;
@@ -1857,9 +1881,15 @@ namespace app {
         );
         result.pictures.back().video = video;
       }
-      if (!embed.footer.empty()) {
+      if (!embed.footer.empty() || !timestamp.empty()) {
         y += Style::spaceSm;
-        y += embedText(embed.footer, {.size = layout::Embed::detailSize}, cardWidth - layout::Embed::padding * 2);
+        const auto footer = embed.footer.empty() ? timestamp
+            : timestamp.empty()                  ? embed.footer
+                                                 : embed.footer + " • " + timestamp;
+        y += metadataRow(
+            footer, embed.footerIcon, layout::Embed::footerIconSize, {.muted = true, .size = layout::Embed::detailSize},
+            cardWidth - layout::Embed::padding * 2
+        );
       }
       y += layout::Embed::verticalPadding;
       result.boxes[box].height = y - start;
@@ -1929,6 +1959,11 @@ namespace app {
         image.x += 12;
         image.y += y;
         result.pictures.push_back(std::move(image));
+      }
+      for (auto& icon : part.embedIcons) {
+        icon.frame.x += Style::spaceMd;
+        icon.frame.y += y;
+        result.embedIcons.push_back(std::move(icon));
       }
       result.plainText += part.plainText;
       y += part.height + 26;

@@ -467,6 +467,11 @@ namespace api {
   }
 
   namespace {
+    constexpr std::size_t maximumEmbedTimestampBytes = 40;
+    std::string embedIcon(const nlohmann::json& value) {
+      auto url = mediaUrl(text(value, "proxy_icon_url"));
+      return url.empty() ? mediaUrl(text(value, "icon_url")) : url;
+    }
     Media parseMedia(const nlohmann::json& value) {
       Media media;
       if (!value.is_object())
@@ -680,10 +685,18 @@ namespace api {
           embed.color = item["color"].get<int>() & 0xFFFFFF;
         if (item.contains("provider"))
           embed.provider = text(item["provider"], "name");
-        if (item.contains("author"))
+        if (item.contains("author") && item["author"].is_object()) {
           embed.author = text(item["author"], "name");
-        if (item.contains("footer"))
+          embed.authorIcon = embedIcon(item["author"]);
+          embed.authorUrl = text(item["author"], "url");
+        }
+        if (item.contains("footer") && item["footer"].is_object()) {
           embed.footer = text(item["footer"], "text");
+          embed.footerIcon = embedIcon(item["footer"]);
+        }
+        const auto timestamp = text(item, "timestamp");
+        if (timestamp.size() <= maximumEmbedTimestampBytes)
+          embed.timestamp = timestamp;
         if (item.contains("image"))
           embed.image = parseMedia(item["image"]);
         if (item.contains("thumbnail"))

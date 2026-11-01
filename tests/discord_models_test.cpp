@@ -345,6 +345,45 @@ int main() {
             && rich.front().embeds.front().fields.front().name == "field",
         "Decode attachments, signed CDN URLs, and rich embed fields"
     );
+    const std::string icon = "https://media.discordapp.net/external/hash/https/example.com/avatar.png";
+    auto metadata = api::parseMessagePatch(
+        json{
+            {"embeds",
+             json::array(
+                 {{{"author",
+                    {{"name", "Author"},
+                     {"url", "https://example.com/author"},
+                     {"icon_url", "https://example.com/avatar.png"},
+                     {"proxy_icon_url", icon}}},
+                   {"footer", {{"text", "Build status"}, {"icon_url", "/icons/1/footer.png"}}},
+                   {"timestamp", "2026-10-30T09:05:00Z"}}}
+             )}
+        }
+    );
+    require(
+        metadata.embeds
+            && metadata.embeds->front().authorIcon == icon
+            && metadata.embeds->front().footerIcon == "https://cdn.discordapp.com/icons/1/footer.png"
+            && metadata.embeds->front().timestamp == "2026-10-30T09:05:00Z"
+            && metadata.embeds->front().authorUrl == "https://example.com/author",
+        "Preserve author/footer icons, proxied artwork, author links and the independent embed timestamp"
+    );
+    metadata = api::parseMessagePatch(
+        json{
+            {"embeds",
+             json::array(
+                 {{{"author", {{"name", "Author"}, {"icon_url", "https://localhost/private.png"}}},
+                   {"footer", {{"text", "Footer"}, {"proxy_icon_url", "file:///private.png"}}},
+                   {"timestamp", std::string(41, 'x')}}}
+             )}
+        }
+    );
+    require(
+        metadata.embeds->front().authorIcon.empty()
+            && metadata.embeds->front().footerIcon.empty()
+            && metadata.embeds->front().timestamp.empty(),
+        "Icon metadata never bypasses asset origin checks and overlong timestamps are discarded"
+    );
     require(
         !api::mediaUrl(
              "https://images-ext-1.discordapp.net/external/hash/https/i.ytimg.com/vi/test/hqdefault.jpg?width=640"

@@ -33,6 +33,10 @@ namespace app {
         picture.y += y;
         result.pictures.push_back(std::move(picture));
       }
+      for (auto icon : part.embedIcons) {
+        icon.frame.y += y;
+        result.embedIcons.push_back(std::move(icon));
+      }
       if (part.edited) {
         part.edited->y += y;
         result.edited = part.edited;

@@ -37,6 +37,17 @@ int main() {
     const auto stamp = [](std::string_view value, std::string_view now, bool twelveHourClock = false) {
       return app::formatMessageTimestamp(value, twelveHourClock, *app::messageTime(now));
     };
+    const auto embedStamp = [](std::string_view value, std::string_view now, bool twelveHourClock = false) {
+      return app::formatEmbedTimestamp(value, twelveHourClock, *app::messageTime(now));
+    };
+    require(
+        embedStamp("2026-10-30T09:05:00Z", "2026-10-30T12:00:00Z") == "Today at 09:05"
+            && embedStamp("2026-10-30T09:05:00Z", "2026-10-30T12:00:00Z", true) == "Today at 9:05 AM"
+            && embedStamp("2026-10-29T23:59:00Z", "2026-10-30T00:01:00Z") == "Yesterday at 23:59"
+            && embedStamp("2026-10-15T14:22:00Z", "2026-10-30T12:00:00Z") == "10/15/26, 14:22"
+            && embedStamp("invalid", "2026-10-30T12:00:00Z").empty(),
+        "Embed footers include their own local date and respect clock preferences without changing header labels"
+    );
     require(
         stamp("2026-10-30T09:05:00Z", "2026-10-30T12:00:00Z") == "09:05"
             && stamp("2026-10-30T09:05:00Z", "2026-10-30T12:00:00Z", true) == "9:05 AM"
@@ -84,6 +95,10 @@ int main() {
       );
 
     setTestTimezone("IST-5:30");
+    require(
+        embedStamp("2026-10-29T20:00:00Z", "2026-10-30T01:00:00Z") == "Today at 01:30",
+        "Embed date labels compare local calendar days rather than wire dates"
+    );
     require(
         app::formatMessageClock("2026-10-24T09:16:12Z", true) == "2:46 PM",
         "The 12-hour clock keeps the system timezone conversion"

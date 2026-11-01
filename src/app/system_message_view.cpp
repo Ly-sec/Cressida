@@ -454,6 +454,20 @@ namespace app {
     };
     const auto step = m_demoInteractionStep++;
     const auto& message = m_messageLayouts.at("9401").layout;
+    const auto& quoted = m_messageLayouts.at("9400").layout;
+    require(
+        std::ranges::count_if(quoted.boxes, [](const auto& box) { return box.quote; }) == 2,
+        "Explicitly quoted lines form two independent native rules"
+    );
+    const auto ordinary = std::ranges::find_if(quoted.runs, [](const auto& run) { return run.text == "Ordinary"; });
+    require(
+        ordinary != quoted.runs.end()
+            && ordinary->x == 0
+            && !ordinary->style.muted
+            && quoted.runs.front().style.muted
+            && quoted.boxes.front().y + quoted.boxes.front().height <= ordinary->y,
+        "Native quote layout restores ordinary indentation and color after the quoted source line"
+    );
     const auto links = messageLinkAreas(message);
     const auto spoilers = messageSpoilerAreas(message);
     const auto strikes = messageStrikeAreas(message);

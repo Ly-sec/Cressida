@@ -3005,6 +3005,9 @@ namespace app {
           if (view.ends_with("light"))
             m_preferences.theme = "light";
           m_messages = api::parseMessages(nlohmann::json::parse(R"JSON([
+            {"id":"9400","channel_id":"101","timestamp":"2026-10-21T10:44:00Z",
+             "author":{"id":"12","username":"Noah"},
+             "content":"> A quoted line stays muted while wrapping within the message column.\nOrdinary text starts outside the quote.\n> Consecutive quoted lines\n> share one rule.\nAnother ordinary line."},
             {"id":"9401","channel_id":"101","timestamp":"2026-10-21T10:45:00Z",
              "author":{"id":"11","username":"Maya"},
              "content":"[A linked phrase with spaces](https://example.com/markdown)\n||A hidden phrase **with bold words**||\n~~strike **through** several words~~\n__underlined text with spaces__\n-# A smaller line with **emphasis** and [a small link](https://example.com/small).\nBody size again."}

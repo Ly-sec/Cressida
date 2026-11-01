@@ -157,6 +157,10 @@ types, suggestions and responses.
 | `# Heading`                    | A heading at the start of a line           |
 | `-# Small text`                | Smaller, muted text at the start of a line |
 
+Start a line with `> ` to quote it. Quoted text is muted, and its rule covers
+any wrapped lines. The next line without a quote marker returns to ordinary
+text. Prefix consecutive lines with `> ` to keep them in the same quote.
+
 Use three backticks on their own lines for a code block. You can put a language
 name after the opening backticks. Outside quotes and lists, received code blocks
 also display their full content when the opening or closing backticks share a

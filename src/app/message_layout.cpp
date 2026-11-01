@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <md4c.h>
 #include <pango/pango.h>
+#include <utility>
 
 namespace app {
   std::string messageMarkup(std::string_view text, const MessageStyle& style, bool inlineStrike) {
@@ -397,6 +398,110 @@ namespace app {
       }
       return result;
     }
+    std::vector<std::size_t>
+    separateQuotes(std::string& input, std::map<std::size_t, FenceBody>& bodies, const MD_PARSER& parser) {
+      if (input.find('>') == std::string::npos)
+        return {};
+      struct Scan {
+        std::string_view source;
+        std::vector<std::size_t> breaks;
+        std::optional<std::size_t> quotedCodeLine;
+        unsigned quotes = 0;
+        bool blockCode = false, inlineCode = false, codeTextSeen = false, quotedCode = false, ended = false,
+             openingText = true;
+      } scan{input};
+      auto probe = parser;
+      probe.enter_block = [](MD_BLOCKTYPE type, void*, void* context) {
+        auto& scan = *static_cast<Scan*>(context);
+        if (type == MD_BLOCK_QUOTE) {
+          ++scan.quotes;
+          scan.ended = false;
+          scan.openingText = true;
+        } else if (type == MD_BLOCK_CODE)
+          scan.blockCode = true;
+        return 0;
+      };
+      probe.leave_block = [](MD_BLOCKTYPE type, void*, void* context) {
+        auto& scan = *static_cast<Scan*>(context);
+        if (type == MD_BLOCK_QUOTE)
+          --scan.quotes;
+        else if (type == MD_BLOCK_CODE)
+          scan.blockCode = false;
+        return 0;
+      };
+      probe.enter_span = [](MD_SPANTYPE type, void*, void* context) {
+        if (type == MD_SPAN_CODE) {
+          auto& scan = *static_cast<Scan*>(context);
+          scan.inlineCode = true;
+          scan.codeTextSeen = false;
+        }
+        return 0;
+      };
+      probe.leave_span = [](MD_SPANTYPE type, void*, void* context) {
+        if (type == MD_SPAN_CODE)
+          static_cast<Scan*>(context)->inlineCode = false;
+        return 0;
+      };
+      probe.text = [](MD_TEXTTYPE, const MD_CHAR* text, MD_SIZE size, void* context) {
+        auto& scan = *static_cast<Scan*>(context);
+        if (!size || scan.quotes != 1 || scan.blockCode)
+          return 0;
+        const auto start = reinterpret_cast<std::uintptr_t>(scan.source.data());
+        const auto at = reinterpret_cast<std::uintptr_t>(text);
+        if (at < start || at - start > scan.source.size() || size > scan.source.size() - (at - start))
+          return 0;
+        const auto offset = at - start;
+        const auto previous = offset ? scan.source.find_last_of("\r\n", offset - 1) : std::string_view::npos;
+        const auto line = previous == std::string_view::npos ? 0 : previous + 1;
+        const auto marker = scan.source.find_first_not_of(" \t", line);
+        const bool explicitQuote = scan.quotedCodeLine == line
+            || std::exchange(scan.openingText, false)
+            || (marker < offset && scan.source[marker] == '>');
+        if (scan.inlineCode) {
+          if (!scan.codeTextSeen)
+            scan.quotedCode = explicitQuote;
+          if (scan.quotedCode) {
+            const auto lastBreak = scan.source.find_last_of("\r\n", offset + size - 1);
+            scan.quotedCodeLine = lastBreak == std::string_view::npos ? 0 : lastBreak + 1;
+          }
+          if (std::exchange(scan.codeTextSeen, true))
+            return 0;
+        }
+        if (explicitQuote)
+          scan.ended = false;
+        else if (line && !scan.ended) {
+          scan.breaks.push_back(line);
+          scan.ended = true;
+        }
+        return 0;
+      };
+      // Let the parser identify quoted prose and protect fenced/inline code.
+      // A synthetic paragraph boundary disables its lazy quote continuation.
+      md_parse(input.data(), input.size(), &probe, &scan);
+      if (scan.breaks.empty())
+        return {};
+      std::ranges::sort(scan.breaks);
+      scan.breaks.erase(std::unique(scan.breaks.begin(), scan.breaks.end()), scan.breaks.end());
+      std::map<std::size_t, FenceBody> rebased;
+      for (auto& [offset, body] : bodies)
+        rebased.emplace(
+            offset + (std::upper_bound(scan.breaks.begin(), scan.breaks.end(), offset) - scan.breaks.begin()),
+            std::move(body)
+        );
+      bodies = std::move(rebased);
+      std::string result;
+      std::vector<std::size_t> synthetic;
+      std::size_t previous = 0;
+      for (const auto at : scan.breaks) {
+        result.append(input, previous, at - previous);
+        synthetic.push_back(result.size());
+        result += at && input[at - 1] == '\r' ? '\r' : '\n';
+        previous = at;
+      }
+      result.append(input, previous);
+      input = std::move(result);
+      return synthetic;
+    }
     struct Layout {
       MessageLayout output;
       float width, x = 0, y = 0, indent = 0, lineHeight = 22, fontSize = 14;
@@ -424,8 +529,10 @@ namespace app {
       std::string_view source;
       std::optional<std::size_t> sourceEnd;
       std::size_t semanticBreaks = 0, lastSourceBreaks = 0;
+      std::vector<std::size_t> syntheticQuoteBreaks;
       MessageStyle currentStyle() const {
         auto current = style;
+        current.muted |= !quotes.empty() && !codeBlock;
         current.underline |= underlineOn;
         current.strike |= strikeOn;
         if (strikeOn)
@@ -450,13 +557,16 @@ namespace app {
         if (!sourceEnd || at < *sourceEnd)
           return;
         std::size_t breaks = 0;
-        for (auto i = *sourceEnd; i < at; ++i)
+        for (auto i = *sourceEnd; i < at; ++i) {
+          if (std::binary_search(syntheticQuoteBreaks.begin(), syntheticQuoteBreaks.end(), i))
+            continue;
           if (source[i] == '\r') {
             ++breaks;
             if (i + 1 < at && source[i + 1] == '\n')
               ++i;
           } else if (source[i] == '\n')
             ++breaks;
+        }
         const auto rendered = semanticBreaks - lastSourceBreaks;
         if (breaks < 2 || breaks <= rendered)
           return;
@@ -1022,7 +1132,8 @@ namespace app {
           .text = textCallback
       };
       auto prepared = prepareFences(content);
-      const auto input = discordSyntax(prepared.input, options.discordTimestamps, prepared.bodies);
+      auto input = discordSyntax(prepared.input, options.discordTimestamps, prepared.bodies);
+      layout.syntheticQuoteBreaks = separateQuotes(input, prepared.bodies, parser);
       layout.source = input;
       layout.fenceBodies = &prepared.bodies;
       md_parse(input.data(), input.size(), &parser, &layout);

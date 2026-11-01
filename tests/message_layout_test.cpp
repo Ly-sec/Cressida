@@ -1299,6 +1299,82 @@ int main(int argc, char** argv) {
     require(
         std::ranges::any_of(link.boxes, [](const auto& box) { return box.quote; }), "Blockquotes have a native rule"
     );
+    for (const auto newline : {"\n", "\r\n", "\r"}) {
+      for (const auto width : {160.0F, 600.0F}) {
+        const auto quoted = app::layoutMessage(
+            "> A quoted line that can wrap" + std::string(newline) + "Ordinary text", width, editMeasure
+        );
+        const auto rule = std::ranges::find_if(quoted.boxes, [](const auto& box) { return box.quote; });
+        const auto ordinary = std::ranges::find_if(quoted.runs, [](const auto& run) { return run.text == "Ordinary"; });
+        require(
+            rule != quoted.boxes.end()
+                && ordinary != quoted.runs.end()
+                && ordinary->x == 0
+                && rule->y + rule->height <= ordinary->y,
+            "Single-line quotes end before the next unquoted source line, including after wrapping"
+        );
+        require(
+            !ordinary->style.muted && quoted.runs.front().style.muted,
+            "Quoted text is muted and following prose restores ordinary text color"
+        );
+        require(
+            quoted.plainText == "A quoted line that can wrap\nOrdinary text\n",
+            "Ending a quote does not add blank lines to copied text"
+        );
+        for (const auto& run : quoted.runs)
+          require(
+              quoted.plainText.substr(run.offset, run.text.size()) == run.text,
+              "Quote boundaries preserve rendered selection offsets"
+          );
+      }
+    }
+    const auto adjacentQuotes = app::layoutMessage(
+        "> First quoted line\n> Second quoted line\nOrdinary **bold** text\nAnother plain line", 600, editMeasure
+    );
+    require(
+        std::ranges::count_if(adjacentQuotes.boxes, [](const auto& box) { return box.quote; }) == 1
+            && adjacentQuotes.plainText
+                == "First quoted line\nSecond quoted line\nOrdinary bold text\nAnother plain line\n"
+            && std::ranges::any_of(
+                adjacentQuotes.runs, [](const auto& run) { return run.text == "Another" && run.x == 0; }
+            )
+            && !adjacentQuotes.runs.back().style.muted,
+        "Consecutive quoted lines share a rule and following ordinary lines retain their line breaks"
+    );
+    const auto quotedCode = app::layoutMessage(
+        "> Quoted text\nOrdinary `inline code`\n```cpp\n> literal code\nbody\n```\n> Another quote\nEnd", 600,
+        editMeasure
+    );
+    require(
+        std::ranges::count_if(quotedCode.boxes, [](const auto& box) { return box.quote; }) == 2
+            && std::ranges::any_of(
+                quotedCode.boxes, [](const auto& box) { return box.code == "> literal code\nbody\n"; }
+            )
+            && !quotedCode.runs.back().style.muted,
+        "Quote boundaries preserve fenced code bodies, independent quote blocks and following prose"
+    );
+    const auto escapedQuote = app::layoutMessage("\\> Literal marker\nOrdinary", 600, editMeasure);
+    require(
+        escapedQuote.boxes.empty() && escapedQuote.plainText == "> Literal marker\nOrdinary\n",
+        "Escaped quote markers remain ordinary text"
+    );
+    const auto wrappedQuoteCode = app::layoutMessage("> `code\ncontinues` tail\nOrdinary", 600, editMeasure);
+    require(
+        wrappedQuoteCode.plainText == "code continues tail\nOrdinary\n"
+            && std::ranges::any_of(
+                wrappedQuoteCode.runs, [](const auto& run) { return run.text == "continues" && run.style.code; }
+            )
+            && wrappedQuoteCode.runs.back().x == 0
+            && !wrappedQuoteCode.runs.back().style.muted,
+        "Multiline inline code inside a quote stays literal before ordinary prose resumes"
+    );
+    const auto quotedComparison = app::layoutMessage("> Quoted\n`x > y` **first\nsecond**", 600, editMeasure);
+    require(
+        quotedComparison.plainText == "Quoted\nx > y first\nsecond\n"
+            && quotedComparison.runs.back().style.bold
+            && !quotedComparison.runs.back().style.muted,
+        "Comparison operators after a quote cannot restart quoting or interrupt multiline emphasis"
+    );
     api::Message rich;
     rich.content = "**An image**";
     rich.attachments.push_back(

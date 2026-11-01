@@ -134,12 +134,20 @@ CI covers native glibc builds on x86_64 and aarch64, plus an x86_64 musl build
 in Alpine edge. The musl build links dynamically to system libraries; it is not
 a portable static package.
 
-Pushing a version tag runs CI, then calls `release-packages.yml`. Native x86_64
-and aarch64 runners build the client with pinned dependencies in the Freedesktop
-26.08 SDK. The workflow exports a Flatpak bundle and deploys the same native
-payload into an AppImage with its runtime libraries. Neither package requires
-Nix. Package builds omit test targets; private headless replays check both
-packaged formats after the main test suite passes.
+The root `VERSION` file is the single source of the client version. Meson, Nix
+packaging, `cressida --version`, startup diagnostics and network identifiers all
+use that value. To prepare a release, update its single line, for example
+`0.2.0`, and use the matching `v0.2.0` tag. Prerelease values such as
+`0.2.0-rc.1` use the matching `v0.2.0-rc.1` tag. A missing or mismatched version
+stops release packaging. Source archives include `VERSION` so builds from an
+archive report the same version.
+
+Pushing a matching version tag runs CI, then calls `release-packages.yml`.
+Native x86_64 and aarch64 runners build the client with pinned dependencies in
+the Freedesktop 26.08 SDK. The workflow exports a Flatpak bundle and deploys the
+same native payload into an AppImage with its runtime libraries. Neither package
+requires Nix. Package builds omit test targets; private headless replays check
+both packaged formats after the main test suite passes.
 
 The release job attaches both `.AppImage` and `.flatpak` files for each
 architecture, a `cressida-VERSION.tar.xz` source archive and `SHA256SUMS`

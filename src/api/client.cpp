@@ -10,6 +10,7 @@
 #include "api/thread_member_list.h"
 #include "api/uploads.h"
 #include "core/log.h"
+#include "cressida_version.h"
 
 #include <algorithm>
 #include <chrono>
@@ -338,7 +339,7 @@ namespace api {
         transfer.body.clear();
         curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
-        curl_easy_setopt(curl.get(), CURLOPT_USERAGENT, "cressida/0.1.0");
+        curl_easy_setopt(curl.get(), CURLOPT_USERAGENT, "cressida/" CRESSIDA_VERSION);
         curl_easy_setopt(curl.get(), CURLOPT_PROTOCOLS_STR, "https");
         curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 0L);
         curl_easy_setopt(curl.get(), CURLOPT_SSL_VERIFYPEER, 1L);

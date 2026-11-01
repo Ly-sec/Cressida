@@ -17,8 +17,9 @@ class ReleasePackageTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         (self.root / "nix").mkdir()
-        (self.root / "meson.build").write_text("project('fixture', version: '0.1.0')")
-        (self.root / "nix/package.nix").write_text('version = "0.1.0";')
+        (self.root / "VERSION").write_text("0.1.0\n")
+        (self.root / "meson.build").write_text("project('fixture', version: files('VERSION'))")
+        (self.root / "nix/package.nix").write_text("version = lib.fileContents ../VERSION;")
         (self.root / "packaging/flatpak").mkdir(parents=True)
         self.manifest = self.root / "packaging/flatpak/dev.lysec.Cressida.json"
         self.manifest.write_text(json.dumps({

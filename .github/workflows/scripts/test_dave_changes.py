@@ -30,7 +30,7 @@ class DaveChangesTests(unittest.TestCase):
             "tests/voice_dave_test.cpp", "tests/voice_encryption_test.cpp",
             "tests/voice_video_crypto_test.cpp", "tests/voice_dave/meson.build",
             "meson.build", "meson.options", "meson_options.txt", "nix/package.nix",
-            "flake.nix", "flake.lock", "justfile", ".github/workflows/ci.yml",
+            "VERSION", "flake.nix", "flake.lock", "justfile", ".github/workflows/ci.yml",
             ".github/workflows/ci-dave.yml", ".github/workflows/release.yml",
             ".github/workflows/scripts/dave_changes.py", ".github/workflows/scripts/test_dave_changes.py",
             ".github/workflows/scripts/check_mls_snapshot.py", ".github/workflows/scripts/test_mls_snapshot.py",

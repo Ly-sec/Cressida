@@ -4,6 +4,7 @@
 #include "app/voice_command.h"
 #include "core/environment.h"
 #include "core/log.h"
+#include "cressida_version.h"
 
 #include <cstdlib>
 #include <fstream>
@@ -53,7 +54,7 @@ int main(int argc, char** argv) {
       return 0;
     }
     if (arg == "--version") {
-      std::cout << "cressida 0.1.0\n";
+      std::cout << "cressida " << CRESSIDA_VERSION << '\n';
       return 0;
     }
     if (arg == "voice") {
@@ -120,8 +121,8 @@ int main(int argc, char** argv) {
       }
       logging = std::make_unique<LogLifetime>(consoleLevel);
       kLog.info(
-          "starting Cressida version=0.1.0 demo={} smoke={} start_minimized={} separate_instance={}", demo, smoke,
-          startMinimized, newInstance
+          "starting Cressida version={} demo={} smoke={} start_minimized={} separate_instance={}", CRESSIDA_VERSION,
+          demo, smoke, startMinimized, newInstance
       );
       stage = "credential-input";
       std::string token;

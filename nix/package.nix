@@ -45,7 +45,7 @@
 }:
 stdenv.mkDerivation {
   pname = "cressida";
-  version = "0.1.0";
+  version = lib.fileContents ../VERSION;
 
   src = lib.cleanSourceWith {
     src = ../.;

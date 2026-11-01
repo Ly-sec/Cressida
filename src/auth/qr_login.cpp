@@ -1,5 +1,7 @@
 #include "auth/qr_login.h"
 
+#include "cressida_version.h"
+
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -40,7 +42,7 @@ namespace auth {
     constexpr auto maximumPoll = 100ms;
     constexpr std::string_view qrPrefix = "https://discord.com/ra/";
     constexpr std::string_view originHeader = "Origin: https://discord.com";
-    constexpr std::string_view userAgent = "Cressida/0.1";
+    constexpr std::string_view userAgent = "Cressida/" CRESSIDA_VERSION;
 
     struct Failure : std::runtime_error {
       using std::runtime_error::runtime_error;

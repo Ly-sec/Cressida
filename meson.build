@@ -1,5 +1,5 @@
 project('cressida', ['c', 'cpp'],
-  version: '0.1.0',
+  version: files('VERSION'),
   meson_version: '>=1.2.0',
   default_options: ['cpp_std=c++23', 'cpp_extensions=false', 'warning_level=1'],
 )
@@ -11,6 +11,10 @@ if not build_tests and (get_option('voice_crypto_only') or get_option('dave_refe
   error('The requested encryption test fixture requires -Dtests=enabled.')
 endif
 summary('Offline tests', build_tests)
+
+version_config = configuration_data()
+version_config.set_quoted('CRESSIDA_VERSION', meson.project_version())
+configure_file(output: 'cressida_version.h', configuration: version_config)
 
 # This portable fixture needs only system crypto and JSON, without desktop dependencies.
 if get_option('voice_crypto_only')
@@ -290,14 +294,17 @@ test('discord_models', model_test)
 client_test = executable('discord_client_test', 'tests/discord_client_test.cpp', dependencies: backend_dep)
 test('discord_client', client_test)
 test('client_help', client, args: ['--help'])
-test('client_version', client, args: ['--version'])
+test('client_version', python,
+  args: [files('tests/client_version_test.py'), client.full_path(), files('VERSION')], depends: client)
 test('client_log_level_help', client, args: ['--log-level', 'debug', '--help'])
 test('client_log_level_invalid', python,
   args: [files('tests/cli_error_test.py'), client.full_path(), '--log-level', 'invalid'], depends: client)
 test('client_log_level_missing', python,
   args: [files('tests/cli_error_test.py'), client.full_path(), '--log-level'], depends: client)
 test('client_start_minimized_help', client, args: ['--start-minimized', '--help'])
-test('client_start_minimized_version', client, args: ['--start-minimized', '--start-minimized', '--version'])
+test('client_start_minimized_version', python,
+  args: [files('tests/client_version_test.py'), client.full_path(), files('VERSION'),
+    '--start-minimized', '--start-minimized'], depends: client)
 test('client_start_minimized_invalid', python,
   args: [files('tests/cli_error_test.py'), client.full_path(), '--start-minimized=true'], depends: client)
 test('installation', python,

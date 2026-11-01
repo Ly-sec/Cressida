@@ -12,13 +12,14 @@ def release_version(ref, root):
     if not match:
         raise ValueError("Run Release on a vMAJOR.MINOR.PATCH tag (optional prerelease suffix).")
     version = match[1]
-    for filename, pattern in (
-        ("meson.build", r"\bversion:\s*'([^']+)'"),
-        ("nix/package.nix", r'\bversion\s*=\s*"([^"]+)"'),
-    ):
-        configured = re.search(pattern, (root / filename).read_text())
-        if not configured or configured[1] != version:
-            raise ValueError(f"{filename} version must match the tag ({version}).")
+    try:
+        lines = (root / "VERSION").read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as error:
+        raise ValueError("Could not read VERSION.") from error
+    if len(lines) != 1 or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", lines[0]):
+        raise ValueError("VERSION must contain one MAJOR.MINOR.PATCH line (optional prerelease suffix).")
+    if lines[0] != version:
+        raise ValueError(f"VERSION must match the tag ({version}).")
     return version
 
 

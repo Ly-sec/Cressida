@@ -14,7 +14,7 @@ REQUEST_TIMEOUT_SECONDS = 30
 SHA = re.compile(r"[0-9a-fA-F]{40}")
 REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 RELEVANT_FILES = {
-    "flake.nix", "flake.lock", "justfile",
+    "VERSION", "flake.nix", "flake.lock", "justfile",
     ".github/workflows/ci.yml", ".github/workflows/ci-dave.yml",
     ".github/workflows/release.yml",
     ".github/workflows/scripts/dave_changes.py",

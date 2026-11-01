@@ -41,6 +41,37 @@ int main() {
   };
   try {
     {
+      const auto rpcPath = std::filesystem::path(directory) / "rpc.json";
+      app::SessionStore store(rpcPath);
+      require(store.preferences("123").rpcEnabled, "Local application RPC is enabled by default");
+      app::Preferences preferences;
+      preferences.rpcEnabled = false;
+      preferences.rpcBlocked = {"456"};
+      preferences.customActivity = *rpc::parseActivity(
+          "44",
+          {{"name", "Synthetic activity"},
+           {"type", 2},
+           {"secrets", {{"join", "private-session-secret"}}},
+           {"buttons", nlohmann::json::array({{{"label", "Website"}, {"url", "https://example.com"}}})}}
+      );
+      store.savePreferences("123", preferences);
+      const auto saved = store.preferences("123");
+      require(
+          !saved.rpcEnabled
+              && saved.rpcBlocked == preferences.rpcBlocked
+              && saved.customActivity
+              && !saved.customActivity->fields.contains("secrets")
+              && saved.customActivity->fields["buttons"].size() == 1,
+          "RPC preferences retain the custom editor and buttons without session secrets"
+      );
+      require(
+          store.preferences("789").rpcEnabled
+              && !store.preferences("789").customActivity
+              && store.preferences("789").rpcBlocked.empty(),
+          "RPC settings remain per account"
+      );
+    }
+    {
       const auto voicePath = std::filesystem::path(directory) / "voice.json";
       app::SessionStore store(voicePath);
       app::Preferences preferences;

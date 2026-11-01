@@ -3,6 +3,7 @@
 #include "api/models.h"
 #include "api/streams.h"
 #include "core/process/wake_event.h"
+#include "rpc/activity.h"
 
 #include <atomic>
 #include <chrono>
@@ -40,6 +41,7 @@ namespace api {
     searchMembers(std::uint64_t session, const std::string& guild, const std::string& query, const std::string& nonce);
     bool setPresence(std::uint64_t session, std::string status, std::optional<std::string> customText = {});
     bool restorePresence(std::uint64_t session, Presence presence);
+    bool setActivities(std::uint64_t session, std::vector<rpc::Activity> activities);
     bool setVoice(std::uint64_t session, std::string guild, std::string channel, bool muted, bool deafened);
     bool stream(std::uint64_t session, StreamCommand command);
     void subscribe(std::string guild, std::string channel, int first, bool force = false, bool thread = false);
@@ -57,6 +59,7 @@ namespace api {
     Presence m_presence;
     bool m_presenceChosen = false, m_presenceRestored = false;
     std::uint64_t m_presenceVersion = 0;
+    std::vector<rpc::Activity> m_activities;
     std::string m_voiceGuild, m_voiceChannel;
     bool m_voiceMuted = false, m_voiceDeafened = false, m_voiceChosen = false;
     std::uint64_t m_voiceVersion = 0;

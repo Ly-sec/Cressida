@@ -25,6 +25,34 @@ int main(int argc, char** argv) {
         parsed->dark == app::defaultThemePalette(false) && parsed->light == app::defaultThemePalette(true),
         "The template contains complete, independent dark and light palettes"
     );
+    require(
+        parsed->dark.hover != parsed->dark.raised && parsed->light.hover != parsed->light.raised,
+        "Button hover colors remain distinct from ordinary raised surfaces"
+    );
+    for (const bool light : {false, true}) {
+      const auto& colors = light ? parsed->light : parsed->dark;
+      app::theme::apply(colors, light);
+      require(
+          app::theme::hover == rgbHex(colors.hover) && app::theme::onHover == rgbHex(colors.onHover),
+          "Theme application preserves paired hover background and text colors in both modes"
+      );
+    }
+    auto legacy = sample;
+    for (const std::string key : {"hover", "on_hover"}) {
+      for (auto at = legacy.find("\n" + key + " ="); at != std::string::npos; at = legacy.find("\n" + key + " ="))
+        legacy.erase(at, legacy.find('\n', at + 1) - at);
+    }
+    const auto fallback = app::parseColorTheme(legacy, "without-hover");
+    require(
+        fallback && fallback->dark.hover == fallback->dark.property && fallback->dark.onHover == fallback->dark.ink,
+        "Existing theme files derive paired hover colors without adding required fields"
+    );
+    const auto overridden =
+        app::parseColorTheme(legacy + "\nhover = '#123456'\non_hover = '#fedcba'\n", "hover-override");
+    require(
+        overridden && overridden->light.hover == 0x123456 && overridden->light.onHover == 0xfedcba,
+        "Explicit hover colors override the fallback pair independently"
+    );
     require(!app::parseColorTheme(sample, "../bad"), "Theme IDs cannot escape the theme directory");
     require(!app::parseColorTheme(sample + "\n[dark]\n", "bad"), "Duplicate TOML tables are rejected");
     require(!app::parseColorTheme("version=1\nname='Missing light'\n[dark]\n", "bad"), "Both variants are required");

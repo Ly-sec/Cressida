@@ -308,6 +308,20 @@ namespace app {
         settings = voice::sanitizeShareSettings(std::move(settings));
       }
       result.logDeletedMessages = value.value("log_deleted_messages", false);
+      if (const auto at = value.find("rpc"); at != value.end() && at->is_object()) {
+        if (at->contains("enabled") && (*at)["enabled"].is_boolean())
+          result.rpcEnabled = (*at)["enabled"].get<bool>();
+        if (const auto blocked = at->find("blocked");
+            blocked != at->end() && blocked->is_array() && blocked->size() <= 128)
+          for (const auto& application : *blocked)
+            if (application.is_string() && api::validSnowflake(application.get<std::string>()))
+              result.rpcBlocked.push_back(application.get<std::string>());
+        if (const auto custom = at->find("custom"); custom != at->end() && custom->is_object())
+          if (const auto application = custom->find("application_id");
+              application != custom->end() && application->is_string())
+            if (auto activity = rpc::parseActivity(application->get<std::string>(), *custom))
+              result.customActivity = std::move(*activity);
+      }
       result.logEditHistory = value.value("log_edit_history", false);
       result.roleColors = value.value("role_colors", true);
       result.animateRoleColors = value.value("animate_role_colors", true);
@@ -475,6 +489,11 @@ namespace app {
             {"audio_sources", preferences.sharing.audioSources},
             {"cursor", preferences.sharingCursor}}},
           {"log_deleted_messages", preferences.logDeletedMessages},
+          {"rpc",
+           {{"enabled", preferences.rpcEnabled},
+            {"blocked", preferences.rpcBlocked},
+            {"custom",
+             preferences.customActivity ? rpc::savedActivity(*preferences.customActivity) : nlohmann::json(nullptr)}}},
           {"log_edit_history", preferences.logEditHistory},
           {"role_colors", preferences.roleColors},
           {"animate_role_colors", preferences.animateRoleColors},

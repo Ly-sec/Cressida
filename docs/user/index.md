@@ -46,6 +46,7 @@ See the [capabilities and FAQ](faq.md) before making Cressida your main client.
 | Share a screen or watch a stream  | [Screen sharing](screen-sharing.md)           |
 | Start in the tray                 | [Desktop integration](desktop.md)             |
 | Write my own palette              | [Custom themes](custom-themes.md)             |
+| Share music or game activity      | [Rich Presence](rich-presence.md)             |
 | Fix a startup or sign-in problem  | [Troubleshooting](troubleshooting.md)         |
 | Build or contribute               | [Development setup](building.md)              |
 

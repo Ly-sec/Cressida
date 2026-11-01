@@ -66,15 +66,19 @@ ink = "#ffffff"
 
 Optional colors, inside either variant:
 
-| Keys                                                                          | Purpose                    |
-| ----------------------------------------------------------------------------- | -------------------------- |
-| `rail`                                                                        | Server rail background.    |
-| `danger`, `destructive`, `success`                                            | Status and action colors.  |
-| `keyword`, `string`, `number`, `function`, `type`, `property`, `preprocessor` | Syntax palette.            |
-| `added`, `removed`                                                            | Added and removed content. |
+| Keys                                                                          | Purpose                     |
+| ----------------------------------------------------------------------------- | --------------------------- |
+| `rail`                                                                        | Server rail background.     |
+| `danger`, `destructive`, `success`                                            | Status and action colors.   |
+| `keyword`, `string`, `number`, `function`, `type`, `property`, `preprocessor` | Syntax palette.             |
+| `added`, `removed`                                                            | Added and removed content.  |
+| `hover`, `on_hover`                                                           | Button hover fill and text. |
 
-Omitted optional colors use Cressida's fallback values. Check text against every
-surface it appears on, especially `ink` against `accent`, in both variants.
+Omitted optional colors use Cressida's fallback values. `hover` defaults to the
+variant's `property` color and `on_hover` to its `ink` color. Set both to
+customize button hover colors independently. Check text against every surface it
+appears on, especially `ink` against `accent` and `on_hover` against `hover`, in
+both variants.
 
 ## Names, limits and overrides
 

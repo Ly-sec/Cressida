@@ -419,6 +419,7 @@ namespace api {
            {"avatars/",
             "icons/",
             "app-icons/",
+            "app-assets/",
             "emojis/",
             "embed/avatars/",
             "attachments/",

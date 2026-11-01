@@ -15,6 +15,48 @@ int main() {
   using nlohmann::json;
   try {
     {
+      api::UserDirectory gateway, view;
+      const json activity{
+          {"name", "Synthetic player"},     {"type", 3},
+          {"details", "A private fixture"}, {"state", "Synthetic creator"},
+          {"status_display_type", nullptr}, {"timestamps", {{"start", 1793534400000LL}, {"end", 1793534640000LL}}}
+      };
+      const auto dispatch = [&](const std::string& type, const json& data) { view.apply(gateway.consume(type, data)); };
+      const auto member = [&](const std::string& id, const json& activities) {
+        return json{
+            {"member", {{"user", {{"id", id}}}, {"presence", {{"status", "online"}, {"activities", activities}}}}}
+        };
+      };
+      dispatch(
+          "GUILD_MEMBER_LIST_UPDATE",
+          {{"guild_id", "10"},
+           {"ops", json::array({{{"op", "SYNC"}, {"items", json::array({member("8", json::array({activity}))})}}})}}
+      );
+      require(
+          view.activities("8").size() == 1 && view.activities("8").front().fields["details"] == "A private fixture",
+          "Member-list snapshots hydrate non-friend rich activities through the owning-loop projection"
+      );
+      dispatch(
+          "GUILD_MEMBER_LIST_UPDATE",
+          {{"guild_id", "10"}, {"ops", json::array({{{"op", "UPDATE"}, {"item", member("8", json::array())}}})}}
+      );
+      require(view.activities("8").empty(), "Member-list updates clear ended activities");
+      dispatch(
+          "GUILD_MEMBERS_CHUNK",
+          {{"guild_id", "10"},
+           {"presences", json::array({{{"user_id", "8"}, {"activities", json::array({activity})}}})}}
+      );
+      require(view.activities("8").size() == 1, "Member chunk presences hydrate activity cards");
+      dispatch("PRESENCE_UPDATE", {{"user_id", "8"}, {"activities", json::array()}});
+      dispatch("PRESENCE_UPDATE", {{"user_id", "8"}, {"guild_id", "10"}, {"activities", json::array({activity})}});
+      require(view.activities("8").empty(), "A global activity clear remains authoritative over guild fallbacks");
+      dispatch("PRESENCE_UPDATE", {{"user_id", "8"}, {"activities", json::array({activity})}});
+      dispatch("PRESENCE_UPDATE", {{"user_id", "8"}, {"status", "idle"}});
+      require(view.activities("8").size() == 1, "Status-only patches retain activity fields");
+      dispatch("READY", json::object());
+      require(view.activities("8").empty(), "Account replacement clears all rich activity scopes");
+    }
+    {
       api::UserDirectory notifications;
       auto state = notifications.consume(
           "USER_GUILD_SETTINGS_UPDATE",

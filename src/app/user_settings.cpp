@@ -6,6 +6,8 @@
 #include "render/scene/input_area.h"
 #include "render/scene/rect_node.h"
 #include "ui/controls/button.h"
+#include "ui/controls/collapsible.h"
+#include "ui/controls/label.h"
 #include "ui/controls/scrollbar.h"
 #include "ui/controls/select.h"
 #include "ui/controls/slider.h"
@@ -60,7 +62,8 @@ namespace app {
         {"keybinds", "Keybinds", "APP SETTINGS"},
         {"language", "Language", "APP SETTINGS"},
         {"advanced", "Advanced", "APP SETTINGS"},
-        {"activity", "Activity Privacy", "ACTIVITY SETTINGS"},
+        {"activity", "Activity Privacy", "ACTIVITY SETTINGS",
+         "rpc rich presence local apps listening music custom artwork buttons timer party"},
         {"games", "Registered Games", "ACTIVITY SETTINGS"},
         {"overlay", "Game Overlay", "ACTIVITY SETTINGS"}
     };
@@ -74,6 +77,9 @@ namespace app {
     }
   } // namespace
   void ClientApplication::clearAccountSettings() {
+    rpcClear();
+    m_rpcCustomExpanded = false;
+    std::erase_if(m_settingsFields, [](const auto& entry) { return entry.first.starts_with("rpc:"); });
     m_voiceJoinTimer.stop();
     releasePushToTalk();
     m_client.voiceAudio()->stopTest();
@@ -94,6 +100,8 @@ namespace app {
     m_settingsLoaded = m_loadingSettings = m_savingSettings = false;
   }
   void ClientApplication::selectSettingsPage(const std::string& page) {
+    if (page == "activity" && !m_settingsFields.contains("rpc:application"))
+      rpcEditor();
     if (m_userSettingsLists.busy && page != m_settingsPage) {
       m_userSettingsLists.status = "Wait for the current account operation to finish before changing pages.";
       m_window.invalidate();
@@ -1387,18 +1395,245 @@ namespace app {
       section("Activity sharing");
       accountToggle(
           "Share current activity", "show_activity",
-          "Share activities published to Discord. Cressida does not currently detect running games."
+          "Share activities from local applications or your custom activity. Cressida does not scan running games."
       );
-      accountToggle("Show recent games", "recent_games", "Show recently played games on your Discord profile.");
-      accountToggle(
-          "Hide from leaderboards", "leaderboard_opt_out", "Exclude your activity from Discord's game leaderboards."
-      );
+      accountToggle("Show recent games", "recent_games", "Show recently played games on your profile.");
+      accountToggle("Hide from leaderboards", "leaderboard_opt_out", "Exclude your activity from game leaderboards.");
       section("Activity access");
-      accountToggle("Allow friends to join", "join_friends", "Let friends join the activities you share on Discord.");
+      accountToggle(
+          "Allow friends to join", "join_friends", "Let friends join your shared activities in supported clients."
+      );
       accountToggle(
           "Allow voice participants to join", "join_voice",
-          "Let people in your voice channel join your activities on Discord."
+          "Let people in your voice channel join your activities in supported clients."
       );
+
+      section("Local applications");
+      toggle(
+          "Enable RPC", m_preferences.rpcEnabled, "rpc:enabled",
+          "Let local games and music players share their activity while you are signed in."
+      );
+      if (!m_demo && !m_rpc.error().empty())
+        row("Connection unavailable", m_rpc.error());
+      else
+        row("Local connection",
+            m_demo                         ? "Offline activity preview"
+                : m_rpc.endpoint().empty() ? "Disabled or waiting for sign-in"
+                                           : m_rpc.endpoint());
+      for (const auto& [connection, application] : m_rpcApplications) {
+        if (!connection)
+          continue;
+        const auto name = application.resolved ? application.resolved->fields.value("name", application.raw.application)
+                                               : application.raw.fields.value("name", application.raw.application);
+        rowAction(
+            actionRow(
+                name,
+                application.error.empty() ? application.resolved && !application.externalPending
+                        ? "Ready to share"
+                        : "Loading activity details…"
+                                          : application.error
+            ),
+            Action::Preference, "rpc:block:" + application.raw.application, "Block"
+        );
+        if (!application.error.empty())
+          rowAction(
+              actionRow("Retry activity", "Try loading this application's details again."), Action::Preference,
+              "rpc:retry:" + std::to_string(connection), "Try again"
+          );
+      }
+      for (const auto& application : m_preferences.rpcBlocked)
+        rowAction(
+            actionRow("Blocked application", application), Action::Preference, "rpc:unblock:" + application, "Allow"
+        );
+      if (!m_userDirectory.activities(m_account.id).empty()) {
+        section("Current activity");
+        cursor += drawActivities(
+            &p, {0, cursor, width, 0}, m_account.id, {contentLeft, viewportY, contentWidth, viewportH}, "rpc-settings"
+        );
+      }
+      finishCategory();
+      const float customTop = cursor + Style::spaceLg;
+      const auto customFirstChild = p.children().size(), customFirstHit = m_hits.size();
+      cursor = 0;
+      section("Activity identity");
+      rowAction(
+          actionRow("Get an application ID", "Create or open an application, then copy its Application ID."),
+          Action::OpenUrl, "https://discord.com/developers/applications", "Developer portal"
+      );
+      field(
+          "Application ID", "rpc:application", Style::controlHeight,
+          "Required. Use a registered application's public ID, not your user ID, a token or a client secret."
+      );
+      field("Name", "rpc:name", Style::controlHeight, "Leave blank to use the application's registered name.");
+      formChoose(
+          "rpc-type", "Activity type", "Choose how the activity is described.",
+          {"Playing", "Listening", "Watching", "Competing"},
+          m_settingsFields["rpc:type"] == "2"       ? 1
+              : m_settingsFields["rpc:type"] == "3" ? 2
+              : m_settingsFields["rpc:type"] == "5" ? 3
+                                                    : 0,
+          [this](std::size_t index) {
+            const std::array types{0, 2, 3, 5};
+            if (index < types.size())
+              m_settingsFields["rpc:type"] = std::to_string(types[index]);
+          },
+          true
+      );
+      field("Details", "rpc:details", Style::controlHeight, "Describe what you are doing.");
+      field("State", "rpc:state", Style::controlHeight, "Add a second line, such as an artist or a party status.");
+      formChoose(
+          "rpc-status-display", "Status display", "Choose the text used beside your name.",
+          {"Application name", "State", "Details"},
+          m_settingsFields["rpc:status_display_type"] == "1"       ? 1
+              : m_settingsFields["rpc:status_display_type"] == "2" ? 2
+                                                                   : 0,
+          [this](std::size_t index) { m_settingsFields["rpc:status_display_type"] = std::to_string(index); }, true
+      );
+      field("Details link", "rpc:details_url", Style::controlHeight, "Optional HTTPS link for the details text.");
+      field("State link", "rpc:state_url", Style::controlHeight, "Optional HTTPS link for the state text.");
+      section("Artwork");
+      for (const auto& [key, caption] :
+           {std::pair{"large_image", "Large image"},
+            {"large_text", "Large image hover text"},
+            {"large_url", "Large image link"},
+            {"small_image", "Small image"},
+            {"small_text", "Small image hover text"},
+            {"small_url", "Small image link"},
+            {"invite_cover_image", "Invite cover image"}})
+        field(
+            caption, std::string("rpc:assets:") + key, Style::controlHeight,
+            std::string_view(key).ends_with("image")     ? "An uploaded asset key, asset ID or public HTTPS image URL."
+                : std::string_view(key).ends_with("url") ? "An optional HTTPS link."
+                                                         : "Text shown when the image is hovered."
+        );
+      section("Timers");
+      field(
+          "Start time", "rpc:timestamps:start", Style::controlHeight,
+          "Optional Unix time in seconds. A start time shows elapsed time."
+      );
+      field(
+          "End time", "rpc:timestamps:end", Style::controlHeight,
+          "Optional Unix time in seconds. An end time shows time remaining."
+      );
+      section("Buttons");
+      for (std::size_t i = 0; i < rpc::maximumButtons; ++i) {
+        const auto prefix = "rpc:button:" + std::to_string(i) + ":";
+        field(
+            "Button " + std::to_string(i + 1) + " label", prefix + "label", Style::controlHeight,
+            "Leave both fields empty to omit this button."
+        );
+        field(
+            "Button " + std::to_string(i + 1) + " link", prefix + "url", Style::controlHeight,
+            "The HTTPS page opened by this button."
+        );
+      }
+      section("Party and joining");
+      field("Party ID", "rpc:party:id", Style::controlHeight, "Optional shared party identifier.");
+      field("Current party size", "rpc:party:current", Style::controlHeight, "The number of people in the party.");
+      field("Maximum party size", "rpc:party:maximum", Style::controlHeight, "The party's capacity.");
+      formChoose(
+          "rpc-party-privacy", "Party privacy", "Choose who may join the party.", {"Private", "Public"},
+          m_settingsFields["rpc:party:privacy"] == "1" ? 1 : 0,
+          [this](std::size_t index) { m_settingsFields["rpc:party:privacy"] = std::to_string(index); }, true
+      );
+      formToggle(
+          "rpc-instance", "Instanced session", "This activity represents an individual game session.",
+          m_settingsFields["rpc:instance"] == "1",
+          [this](bool value) { m_settingsFields["rpc:instance"] = value ? "1" : "0"; }, true
+      );
+      for (const auto platform : {"desktop", "android", "ios"})
+        formToggle(
+            std::string("rpc-platform-") + platform, std::string("Join from ") + platform,
+            "Allow joining on this platform.", m_settingsFields[std::string("rpc:platform:") + platform] == "1",
+            [this, platform](bool value) {
+              m_settingsFields[std::string("rpc:platform:") + platform] = value ? "1" : "0";
+            },
+            true
+        );
+      for (const auto& [key, caption] :
+           {std::pair{"join", "Join secret"}, {"spectate", "Spectate secret"}, {"match", "Match secret"}})
+        field(
+            caption, std::string("rpc:secrets:") + key, Style::controlHeight,
+            "Session-only value supplied by your game. This value is not saved."
+        );
+      section("Publish");
+      if (!m_rpcStatus.empty())
+        row("Custom activity", m_rpcStatus);
+      if (const auto custom = m_rpcApplications.find(0); custom != m_rpcApplications.end())
+        row("Current custom activity",
+            custom->second.error.empty() ? custom->second.externalPending || !custom->second.resolved
+                    ? "Loading activity details…"
+                    : "Ready to share"
+                                         : custom->second.error);
+      if (const auto custom = m_rpcApplications.find(0);
+          custom != m_rpcApplications.end() && !custom->second.error.empty())
+        rowAction(
+            actionRow("Retry custom activity", "Try loading the custom activity again."), Action::Preference,
+            "rpc:retry:0", "Try again"
+        );
+      rowAction(
+          actionRow("Save custom activity", "Keep this configuration for your account without starting it."),
+          Action::Preference, "rpc:save", "Save"
+      );
+      rowAction(
+          actionRow(
+              "Start custom activity", "Publish this activity. It takes priority over local apps of the same type."
+          ),
+          Action::Preference, "rpc:start", "Start", true
+      );
+      rowAction(
+          actionRow("Stop custom activity", "Return to activities shared by local apps."), Action::Preference,
+          "rpc:stop", "Stop"
+      );
+      finishCategory();
+      auto customBody = std::make_unique<Node>();
+      customBody->setSize(contentWidth, cursor);
+      auto* customBodyNode = customBody.get();
+      while (p.children().size() > customFirstChild) {
+        auto child = p.removeChild(p.children()[customFirstChild].get());
+        child->setPosition(child->x() + layout::Settings::contentInset, child->y());
+        customBody->addChild(std::move(child));
+      }
+      const std::string customId = "rpc-custom-activity";
+      auto saved = retained(customId);
+      auto custom = saved ? std::unique_ptr<Collapsible>(static_cast<Collapsible*>(saved.release()))
+                          : std::make_unique<Collapsible>();
+      m_widgets[customId] = custom.get();
+      auto heading = std::make_unique<Label>();
+      heading->setText("Custom activity");
+      heading->setFontSize(Style::fontSizeBody);
+      heading->setFontWeight(FontWeight::Medium);
+      heading->setColor(foreground);
+      custom->setHeaderPadding(Style::spaceXs, layout::Settings::contentInset);
+      custom->setHeader(std::move(heading));
+      custom->setBody(std::move(customBody));
+      custom->setExpandedImmediate(m_rpcCustomExpanded);
+      custom->setOnToggle([this](bool expanded) {
+        m_rpcCustomExpanded = expanded;
+        m_window.invalidate();
+      });
+      LayoutConstraints customConstraints;
+      customConstraints.setExactWidth(contentWidth);
+      const auto customSize = custom->measure(m_window.target().renderer(), customConstraints);
+      custom->arrange(
+          m_window.target().renderer(), {-layout::Settings::contentInset, customTop, contentWidth, customSize.height}
+      );
+      p.addChild(std::move(custom));
+      if (!m_rpcCustomExpanded)
+        m_hits.erase(m_hits.begin() + static_cast<std::ptrdiff_t>(customFirstHit), m_hits.end());
+      else {
+        float bodyX = 0, bodyY = 0, parentX = 0, parentY = 0;
+        Node::mapToScene(customBodyNode, 0, 0, bodyX, bodyY);
+        Node::mapToScene(&p, 0, 0, parentX, parentY);
+        const float bodyOffset = bodyY - parentY;
+        for (auto i = customFirstHit; i < m_hits.size(); ++i) {
+          m_hits[i].y += bodyOffset;
+          const float bottom = std::min(m_hits[i].y + m_hits[i].height, parentY + customTop + customSize.height);
+          m_hits[i].y = std::max(m_hits[i].y, bodyY);
+          m_hits[i].height = std::max(0.0F, bottom - m_hits[i].y);
+        }
+      }
+      cursor = customTop + customSize.height;
     } else if (m_settingsPage == "keybinds") {
       section("Application shortcuts");
       for (const auto& [id, title] :

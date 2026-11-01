@@ -6,8 +6,12 @@
 #include "core/text_clipboard.h"
 #include "render/scene/input_area.h"
 #include "render/scene/input_dispatcher.h"
+#include "render/scene/rect_node.h"
 #include "render/text/glyph_registry.h"
+#include "ui/controls/button.h"
+#include "ui/controls/collapsible.h"
 #include "ui/controls/input.h"
+#include "ui/controls/label.h"
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -30,6 +34,66 @@ int main() {
       throw std::runtime_error(message);
   };
   try {
+    {
+      const auto saved = palette;
+      auto colors = saved;
+      colors.hover = colors.primary;
+      colors.onHover = colors.onPrimary;
+      setPalette(colors);
+      for (const auto variant : {ButtonVariant::Default, ButtonVariant::Primary, ButtonVariant::Secondary}) {
+        Button button;
+        button.setText("Hover");
+        button.setVariant(variant);
+        button.setEnabled(true);
+        button.setHoveredVisual(true);
+        const bool hoverFill = std::ranges::any_of(button.children(), [&](const auto& child) {
+          return child->type() == NodeType::Rect && static_cast<const RectNode&>(*child).style().fill == colors.hover;
+        });
+        require(
+            hoverFill && button.label()->color() == colors.onHover,
+            "Native buttons pair their hovered background with the hovered text color"
+        );
+        button.setHoveredVisual(false);
+        require(
+            button.label()->color() == resolveColorSpec(Button::defaultPalette(variant).normal.label),
+            "Leaving a button restores its ordinary text color"
+        );
+      }
+      setPalette(saved);
+    }
+    {
+      Collapsible collapsible;
+      collapsible.setBody(std::make_unique<Node>());
+      InputDispatcher input;
+      auto* header = input.firstTabFocusUnder(&collapsible);
+      require(header && !collapsible.expanded(), "A collapsed section exposes its header to keyboard focus");
+      int changes = 0;
+      collapsible.setOnToggle([&](bool) { ++changes; });
+      header->dispatchKey(XKB_KEY_Right, 0, 0, true);
+      require(collapsible.expanded() && changes == 1, "Right expands a native collapsible once");
+      header->dispatchKey(XKB_KEY_Right, 0, 0, true);
+      require(changes == 1, "Repeated expansion does not send duplicate changes");
+      header->dispatchKey(XKB_KEY_Left, 0, 0, true);
+      require(!collapsible.expanded() && changes == 2, "Left collapses the native section");
+      header->dispatchKey(XKB_KEY_space, 0, 0, true);
+      header->dispatchKey(XKB_KEY_Return, 0, 0, true);
+      require(!collapsible.expanded() && changes == 4, "Space and Enter toggle the same native control");
+      using Card = app::layout::ActivityCard;
+      const auto wide =
+          Card::timeline({0, 0, Style::profileCardWidth, Card::row}, Style::spaceSection, Style::spaceSection);
+      const auto narrow =
+          Card::timeline({0, 0, Style::spaceSection * 2, Card::row}, Style::spaceSection, Style::spaceSection);
+      require(
+          wide.track.y < wide.elapsed.height && wide.track.x >= wide.elapsed.width,
+          "A wide activity timeline places its progress between the time labels"
+      );
+      require(
+          narrow.track.y >= narrow.elapsed.height
+              && narrow.track.width == Style::spaceSection * 2
+              && narrow.height >= narrow.track.y + narrow.track.height,
+          "A narrow activity timeline puts its full-width track below the labels without overlap"
+      );
+    }
     std::ifstream logoFile(paths::assetPath("cressida-logo.svg"), std::ios::binary);
     const std::string logo(std::istreambuf_iterator<char>{logoFile}, std::istreambuf_iterator<char>{});
     require(
@@ -101,7 +165,8 @@ int main() {
     require(FT_New_Face(fonts, font.c_str(), 0, &face) == 0, "Load the copied Tabler font");
     for (const auto* icon :
          {"message-circle", "settings", "users", "clipboard-plus", "mood-smile", "x", "minus", "square", "squares",
-          "chevron-left", "chevron-right", "chevron-down", "zoom-in", "zoom-out", "loader"})
+          "chevron-left", "chevron-right", "chevron-down", "zoom-in", "zoom-out", "loader", "activity-listening",
+          "activity-watching", "activity-playing", "activity-competing"})
       require(
           GlyphRegistry::contains(icon) && FT_Get_Char_Index(face, GlyphRegistry::lookup(icon)) != 0,
           "Every native action glyph resolves to a bundled font character"

@@ -576,9 +576,6 @@ namespace app {
             key, userName(stream->stream.key.owner, "Participant") + " · Live stream", stream->video,
             [this](std::string action) { sharingAction(action); }, m_window.uiScale()
         );
-        m_window.auxiliaryFds = [this] {
-          return m_streamPopout ? std::vector<int>{m_streamPopout->eventFd()} : std::vector<int>{};
-        };
         m_window.context().makeCurrent(m_window.target());
       }
     } else if (action.starts_with("unwatch:")) {

@@ -9,6 +9,7 @@
 namespace app::theme {
   inline Color background, sidebar, panel, raised, foreground, muted, accent, ink;
   inline Color railBackground, danger, destructive, success;
+  inline Color hover, onHover;
   inline ThemePalette palette = defaultThemePalette(false);
   inline bool lightTheme = false;
   inline float saturation = 1;
@@ -37,6 +38,8 @@ namespace app::theme {
     danger = accessible(rgbHex(colors.danger));
     destructive = accessible(rgbHex(colors.destructive));
     success = accessible(rgbHex(colors.success));
+    hover = accessible(rgbHex(colors.hover));
+    onHover = accessible(rgbHex(colors.onHover));
   }
   inline void select(std::string_view mode) { apply(defaultThemePalette(mode == "light"), mode == "light"); }
   inline Color syntaxColor(CodeToken token) {

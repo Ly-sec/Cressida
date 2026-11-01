@@ -97,6 +97,7 @@ namespace api {
       m_guildCosmetics.clear();
       m_statuses.clear();
       m_customStatuses.clear();
+      m_activities.clear();
       m_relationships.clear();
       m_mutedChannels.clear();
       m_notifications.clear();
@@ -131,6 +132,8 @@ namespace api {
         m_statuses[id] = *user.status;
       if (user.customStatus && (m_customStatuses.contains(id) || m_customStatuses.size() < maxUsers))
         m_customStatuses[id] = *user.customStatus;
+      if (user.activities && (m_activities.contains(id) || m_activities.size() < maxUsers))
+        m_activities[id] = *user.activities;
       if (user.relationship && (m_relationships.contains(id) || m_relationships.size() < maxUsers))
         m_relationships[id] = *user.relationship;
       if (user.guildTag && (m_tags.contains(id) || m_tags.size() < maxUsers))
@@ -197,6 +200,10 @@ namespace api {
   UserCustomStatus UserDirectory::customStatus(const std::string& user) const {
     const auto at = m_customStatuses.find(user);
     return at == m_customStatuses.end() ? UserCustomStatus{} : at->second;
+  }
+  std::vector<rpc::Activity> UserDirectory::activities(const std::string& user) const {
+    const auto at = m_activities.find(user);
+    return at == m_activities.end() ? std::vector<rpc::Activity>{} : at->second;
   }
   int UserDirectory::relationship(const std::string& user) const {
     const auto found = m_relationships.find(user);
@@ -275,6 +282,8 @@ namespace api {
       m_guildStatuses.clear();
       m_globalCustomStatuses.clear();
       m_guildCustomStatuses.clear();
+      m_globalActivities.clear();
+      m_guildActivities.clear();
     }
     auto recordTag = [&](const nlohmann::json& user) {
       const auto id = text(user, "id");
@@ -340,6 +349,25 @@ namespace api {
         return;
       if (const auto list = item.find("activities");
           list != item.end() && list->is_array() && list->size() <= maximumActivities) {
+        const auto activities = rpc::receivedActivities(*list);
+        if (activityGuild.empty()) {
+          if (m_globalActivities.contains(id) || m_globalActivities.size() < maxUsers)
+            m_globalActivities[id] = activities;
+        } else if (m_guildActivities.contains(id) || m_guildActivities.size() < maxUsers) {
+          auto& scopes = m_guildActivities[id];
+          if (scopes.contains(activityGuild) || scopes.size() < maximumPresenceGuilds)
+            scopes[activityGuild] = activities;
+        }
+        auto resolvedActivities = activities;
+        if (const auto global = m_globalActivities.find(id); global != m_globalActivities.end())
+          resolvedActivities = global->second;
+        else if (const auto scopes = m_guildActivities.find(id); scopes != m_guildActivities.end())
+          for (const auto& [scope, value] : scopes->second)
+            if (!value.empty()) {
+              resolvedActivities = value;
+              break;
+            }
+        changes.users[id].activities = std::move(resolvedActivities);
         std::optional<UserCustomStatus> custom = UserCustomStatus{};
         for (const auto& activity : *list) {
           if (!activity.is_object()
@@ -479,7 +507,41 @@ namespace api {
       relationship(data, type == "RELATIONSHIP_REMOVE");
     else if (type == "PRESENCE_UPDATE")
       presence(data);
-    else if (type == "USER_GUILD_SETTINGS_UPDATE")
+    else if (type == "GUILD_CREATE" || type == "GUILD_MEMBERS_CHUNK") {
+      const auto guild = text(data, type == "GUILD_CREATE" ? "id" : "guild_id");
+      if (const auto list = data.find("presences"); list != data.end() && list->is_array() && list->size() <= maxUsers)
+        for (const auto& item : *list)
+          presence(item, guild);
+    } else if (type == "GUILD_MEMBER_LIST_UPDATE") {
+      const auto guild = text(data, "guild_id");
+      constexpr std::size_t maximumPresenceOperations = 128, maximumPresenceItems = 1000;
+      const auto memberPresence = [&](const nlohmann::json& item) {
+        if (!item.is_object() || !item.contains("member") || !item["member"].is_object())
+          return;
+        const auto& member = item["member"];
+        if (!member.contains("presence")
+            || !member["presence"].is_object()
+            || !member.contains("user")
+            || !member["user"].is_object())
+          return;
+        auto value = member["presence"];
+        const auto id = text(member["user"], "id");
+        if (!validSnowflake(id) || (value.contains("user") && text(value["user"], "id") != id))
+          return;
+        value["user_id"] = id;
+        presence(value, guild);
+      };
+      if (const auto operations = data.find("ops");
+          operations != data.end() && operations->is_array() && operations->size() <= maximumPresenceOperations)
+        for (const auto& operation : *operations) {
+          if (const auto items = operation.find("items");
+              items != operation.end() && items->is_array() && items->size() <= maximumPresenceItems)
+            for (const auto& item : *items)
+              memberPresence(item);
+          if (const auto item = operation.find("item"); item != operation.end())
+            memberPresence(*item);
+        }
+    } else if (type == "USER_GUILD_SETTINGS_UPDATE")
       notificationSettings(data);
     const auto recordMember = [&](const nlohmann::json& member, const std::string& guild) {
       if (!member.is_object() || !validSnowflake(guild))

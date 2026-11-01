@@ -20,6 +20,7 @@ namespace app {
     std::uint32_t background, sidebar, panel, raised, foreground, muted, accent, ink;
     std::uint32_t rail, danger, destructive, success;
     std::uint32_t keyword, string, number, function, type, property, preprocessor, added, removed;
+    std::uint32_t hover = property, onHover = ink;
     bool operator==(const ThemePalette&) const = default;
   };
   constexpr ThemePalette defaultThemePalette(bool light) {

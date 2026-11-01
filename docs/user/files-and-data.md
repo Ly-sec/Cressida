@@ -32,6 +32,10 @@ Voice device choices, input/output volume, activation mode and activity
 threshold are also saved per account. Active calls, mute/deafen state,
 microphone audio and voice-session encryption keys are not saved.
 
+[Rich Presence](rich-presence.md) enablement, blocked applications and custom
+editor fields are saved per account. Active publications, local connections and
+activity session secrets are not saved or restored.
+
 [Screen sharing](screen-sharing.md) quality, content preference, cursor,
 hardware encoding and application audio selections are saved per account.
 Captured screens, video or audio frames, portal permissions, stream credentials

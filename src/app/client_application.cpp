@@ -108,6 +108,12 @@ namespace app {
       : m_instance(instance), m_screen([this](auto frame) { m_client.streams().preview()->source(std::move(frame)); }),
         m_token(std::move(token)) {
     m_window.setTextInputDispatcher(&m_controlInput);
+    m_window.auxiliaryFds = [this] {
+      std::vector<int> descriptors{m_rpc.eventFd()};
+      if (m_streamPopout)
+        descriptors.push_back(m_streamPopout->eventFd());
+      return descriptors;
+    };
     const auto* trace = std::getenv("CRESSIDA_TRACE_SCROLL");
     m_traceScroll = trace && std::string_view(trace) == "1";
     const auto* animation = std::getenv("CRESSIDA_SCROLL_ANIMATION");
@@ -466,6 +472,8 @@ namespace app {
         demoSharingStep();
       if (m_demo && m_demoOverlay.starts_with("voice-cycle") && m_demoInteractionStep < voiceReplayFrames)
         demoVoiceStep();
+      if (m_demo && m_demoOverlay.starts_with("rpc-cycle") && m_demoInteractionStep < rpcReplayFrames)
+        demoRpcStep();
       if (m_demo && m_demoOverlay.starts_with("ime-cycle") && m_demoInteractionStep < imeReplayFrames)
         replayImeStep();
       if (m_demo && m_demoOverlay == "user-preferences-cycle" && m_demoInteractionStep < 12)
@@ -1651,6 +1659,7 @@ namespace app {
                    ? reducedMotionReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("sharing-cycle")        ? sharingReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("voice-cycle")          ? voiceReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("rpc-cycle")            ? rpcReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("ime-cycle")            ? imeReplayFrames
                    : m_demo && view && std::string_view(view) == "user-preferences-cycle"         ? 12
                    : m_demo && view && std::string_view(view) == "user-account-cycle"             ? 16
@@ -1757,6 +1766,8 @@ namespace app {
       throw std::runtime_error("Reduced motion media replay did not finish");
     if (m_demoOverlay.starts_with("voice-cycle") && m_demoInteractionStep != voiceReplayFrames)
       throw std::runtime_error("The voice replay did not complete");
+    if (m_demoOverlay.starts_with("rpc-cycle") && m_demoInteractionStep != rpcReplayFrames)
+      throw std::runtime_error("The RPC replay did not complete");
     if (m_demoOverlay.starts_with("sharing-cycle") && m_demoInteractionStep != sharingReplayFrames)
       throw std::runtime_error("Sharing replay did not finish");
     if (m_demoOverlay.starts_with("ime-cycle") && m_demoInteractionStep != imeReplayFrames)
@@ -3358,6 +3369,10 @@ namespace app {
           prepareSharingDemo(view);
         } else if (view.starts_with("voice-cycle") || view.starts_with("voice-menu")) {
           prepareVoiceDemo(view);
+        } else if (
+            view.starts_with("rpc-cycle") || view.starts_with("rpc-settings") || view.starts_with("rpc-profile")
+        ) {
+          prepareRpcDemo(view);
         } else if (view.starts_with("ime-cycle")) {
           prepareImeDemo(view);
         } else if (view == "user-preferences-cycle") {
@@ -4157,33 +4172,44 @@ namespace app {
                                        )
                                      : 0;
           const auto weight = selected ? FontWeight::SemiBold : FontWeight::Normal;
-          const float available = std::max(1.0F, right - 136);
+          const float available = std::max(1.0F, right - layout::DmIdentity::textX);
           const bool tagFits = tag && available >= tagWidth + (Style::spaceSection - Style::spaceXxs);
           const float nameWidth = std::max(1.0F, available - (tagFits ? tagWidth + Style::spaceCompact : 0));
           const auto name = channelName(channel);
           const auto custom = channel.kind() == api::ChannelType::DirectMessage && !channel.recipients.empty()
               ? m_userDirectory.customStatus(channel.recipients.front().id)
               : api::UserCustomStatus{};
-          const float identityHeight = custom.empty() ? row.height : layout::DmSidebar::identityHeight;
-          const float identityY = y + (custom.empty() ? 0 : layout::DmSidebar::contentInset);
+          const auto activityUser =
+              channel.type == 1 && !channel.recipients.empty() ? channel.recipients.front().id : "";
+          const bool hasActivity = !activitySummary(activityUser).empty();
+          const bool detail = hasActivity || !custom.empty();
+          const float identityHeight = detail ? layout::DmSidebar::identityHeight : row.height;
+          const float identityY = y + (detail ? layout::DmSidebar::contentInset : 0);
           const auto metrics =
               m_window.target().renderer().measureText(name, Style::fontSizeBody, weight, nameWidth, 1);
           label(
-              root, 136, identityY + (identityHeight - (metrics.bottom - metrics.top)) / 2, nameWidth, name,
-              Style::fontSizeBody, selected || over || unread ? foreground : muted, weight
+              root, layout::DmIdentity::textX, identityY + (identityHeight - (metrics.bottom - metrics.top)) / 2,
+              nameWidth, name, Style::fontSizeBody, selected || over || unread ? foreground : muted, weight
           );
-          if (!custom.empty())
+          if (hasActivity)
+            drawActivitySummary(
+                root,
+                {layout::DmIdentity::textX, identityY + identityHeight, available, layout::DmSidebar::statusHeight},
+                activityUser, Style::fontSizeMini
+            );
+          else if (!custom.empty())
             drawCustomStatus(
-                root, {136, identityY + identityHeight, available, layout::DmSidebar::statusHeight}, custom,
-                Style::fontSizeMini
+                root,
+                {layout::DmIdentity::textX, identityY + identityHeight, available, layout::DmSidebar::statusHeight},
+                custom, Style::fontSizeMini
             );
           if (tagFits) {
             const float actualName = std::min(
                 nameWidth, std::ceil(m_window.target().renderer().measureText(name, Style::fontSizeBody, weight).width)
             );
             drawGuildTag(
-                root, 136 + actualName + Style::spaceCompact, identityY + (identityHeight - Style::spaceRelaxed) / 2,
-                tagWidth, tag
+                root, layout::DmIdentity::textX + actualName + Style::spaceCompact,
+                identityY + (identityHeight - Style::spaceRelaxed) / 2, tagWidth, tag
             );
           }
           if (showPin)
@@ -4289,10 +4315,15 @@ namespace app {
           root, account.nameX, accountTextTop, account.nameWidth, m_account.name, Style::fontSizeCaption, foreground,
           FontWeight::Medium
       );
-      label(
-          root, account.nameX, accountTextTop + accountNameHeight + Style::spaceXxs, account.nameWidth, accountDetail,
-          Style::fontSizeDetail, muted
-      );
+      const auto accountDetailFrame = layout::Frame{
+          account.nameX, accountTextTop + accountNameHeight + Style::spaceXxs, account.nameWidth, accountDetailHeight
+      };
+      if ((!m_live && !m_demo)
+          || !drawActivitySummary(root, accountDetailFrame, m_account.id, Style::fontSizeDetail, true))
+        label(
+            root, accountDetailFrame.x, accountDetailFrame.y, accountDetailFrame.width, accountDetail,
+            Style::fontSizeDetail, muted
+        );
       m_hits.push_back({account.x, account.y, account.presenceWidth, account.height, Action::TogglePresence, {}});
       drawAccountVoiceControls(root, account);
       iconButton(
@@ -5895,11 +5926,17 @@ namespace app {
                   *members, 38, rowY + ((Style::spaceXl + Style::spaceXxs) + Style::borderWidth), status,
                   memberOver ? panel : background, member.user.id, m_channelId
               );
+              const bool hasActivity = !activitySummary(member.user.id).empty();
+              const auto identity = layout::MemberIdentity::name(rowY, memberWidth, hasActivity);
               roleLabel(
-                  *members, 60, rowY + Style::spaceMd, memberWidth - 78, name, Style::fontSizeCaption,
+                  *members, identity.x, identity.y, identity.width, name, Style::fontSizeCaption,
                   status == "offline" ? muted : foreground, FontWeight::Normal, member.user.id,
                   "member:" + member.user.id, memberOver
               );
+              if (hasActivity)
+                drawActivitySummary(
+                    *members, layout::MemberIdentity::activity(rowY, memberWidth), member.user.id, Style::fontSizeMini
+                );
               const auto rowTop = std::max(memberTop, memberTop + rowY),
                          rowBottom = std::min(memberBottom, memberTop + rowY + layout::Members::rowHitHeight);
               m_contextTargets.push_back(
@@ -7132,6 +7169,7 @@ namespace app {
   }
 
   void ClientApplication::tick() {
+    rpcTick();
     voiceTick();
     sharingTick();
     if (m_instance) {
@@ -7288,6 +7326,8 @@ namespace app {
     }
     for (auto& event : m_client.drain()) {
       if (event.session != m_session || m_demo)
+        continue;
+      if (rpcResult(event))
         continue;
       if (event.operation == api::Operation::VoiceRoster && event.voiceRoster) {
         m_voiceRoster.apply(*event.voiceRoster);
@@ -8438,6 +8478,8 @@ namespace app {
         userAccountAction(hit.id);
       break;
     case Action::Preference:
+      if (rpcAction(hit.id))
+        break;
       if (extendedPreference(hit.id))
         break;
       if (fontPreference(hit.id))

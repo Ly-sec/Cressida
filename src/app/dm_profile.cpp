@@ -184,7 +184,7 @@ namespace app {
     const auto created = api::accountCreationDate(user.id);
     const float biographyY = summaryY + (created.empty() ? 0 : P::metaHeight * 2 + P::sectionGap);
     const bool notice = m_dmProfile.request || !m_dmProfile.error.empty() || profile.privateProfile;
-    const float bodyHeight = std::max(
+    const float biographyHeight = std::max(
         P::identityTop + P::nameHeight,
         biographyY
             + (notice                 ? P::nameHeight * 2
@@ -192,6 +192,9 @@ namespace app {
                                       : P::metaHeight + P::gap + bio.height)
             + P::inset
     );
+    const float activityHeight =
+        profile.privateProfile ? 0 : drawActivities(nullptr, {P::inset, biographyHeight, inner, 0}, user.id, {}, "dm");
+    const float bodyHeight = biographyHeight + activityHeight;
     m_scrolling.limit(m_dmProfile.scroll, std::max(0.0F, bodyHeight - viewport));
     drawProfileCosmetics(root, frame, profile, false);
     floatingPanel(
@@ -210,6 +213,11 @@ namespace app {
     auto* body = content.get();
     clip->addChild(std::move(content));
     root.addChild(std::move(clip));
+    if (!profile.privateProfile)
+      drawActivities(
+          body, {P::inset, biographyHeight, inner, activityHeight}, user.id, {frame.x, frame.y, frame.width, viewport},
+          "dm"
+      );
     const auto hit = [&](float x, float y, float width, float height, Action action, const std::string& id,
                          bool context = false) {
       const float top = std::max(frame.y, frame.y + y - m_dmProfile.scroll);

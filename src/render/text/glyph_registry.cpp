@@ -52,6 +52,10 @@ const std::unordered_map<std::string, std::string_view> kAliases = {
     {"shuffle", "arrows-shuffle"},
     {"stop", "player-stop-filled"},
     {"microphone-mute", "microphone-off"},
+    {"activity-listening", "headphones-filled"},
+    {"activity-watching", "player-play-filled"},
+    {"activity-playing", "device-gamepad-3-filled"},
+    {"activity-competing", "trophy-filled"},
 
     // Volume
     {"volume-high", "volume"},

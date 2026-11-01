@@ -1,6 +1,7 @@
 #pragma once
 #include "app/layout_metrics.h"
 #include "app/window_controls.h"
+#include "rpc/activity.h"
 #include "voice/audio.h"
 #include "voice/video_codec.h"
 
@@ -47,6 +48,9 @@ namespace app {
     voice::AudioSettings voice;
     voice::ShareSettings sharing;
     bool sharingCursor = true;
+    bool rpcEnabled = true;
+    std::vector<std::string> rpcBlocked;
+    std::optional<rpc::Activity> customActivity;
   };
   struct LastChannel {
     std::string guild, channel;

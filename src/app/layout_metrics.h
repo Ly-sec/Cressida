@@ -693,6 +693,24 @@ namespace app::layout {
     static constexpr float chat = Chat::avatarSize, rail = Style::spaceSection, preview = 56, large = 64;
     static constexpr float request = 72, profile = 84, hero = 96;
   };
+  struct DmIdentity {
+    static constexpr float textX = Sidebar::railWidth + Style::spaceXl + Avatar::dm + Style::spaceMd;
+  };
+  struct MemberIdentity {
+    static Frame name(float rowY, float width, bool activity) {
+      const float left = Style::spaceLg + Avatar::small + Style::spaceMd;
+      const float nameHeight = Style::fontSizeCaption + Style::spaceXs;
+      const float detailHeight = activity ? Style::fontSizeMini + Style::spaceXs : 0;
+      return {
+          left, rowY + (Members::rowHitHeight - nameHeight - detailHeight) / 2,
+          std::max(0.0F, width - left - Style::spaceLg - Style::spaceXxs), nameHeight
+      };
+    }
+    static Frame activity(float rowY, float width) {
+      const auto identity = name(rowY, width, true);
+      return {identity.x, identity.y + identity.height, identity.width, Style::fontSizeMini + Style::spaceXs};
+    }
+  };
   struct DmProfile {
     static constexpr float width = Style::spaceSection * 8;
     static constexpr float inset = Style::spaceLg;
@@ -781,6 +799,40 @@ namespace app::layout {
       const float x = icon.x + icon.width + Style::spaceSm;
       return {x, icon.y, std::max(0.0F, disconnect.x - Style::spaceXs - x), icon.height};
     }
+  };
+  struct ActivityCard {
+    static constexpr float inset = Style::spaceMd;
+    static constexpr float gap = Style::spaceSm;
+    static constexpr float image = Avatar::large;
+    static constexpr float smallImage = Avatar::compact;
+    static constexpr float row = Style::fontSizeCaption + Style::spaceXs;
+    static constexpr float header = Style::fontSizeDetail + Style::spaceSm;
+    static constexpr float progressHeight = Style::spaceXs;
+    struct Timeline {
+      Frame elapsed, total, track;
+      float height = 0;
+    };
+    static Timeline timeline(Frame bounds, float elapsedWidth, float totalWidth) {
+      Timeline result;
+      const bool stacked = bounds.width < elapsedWidth + totalWidth + gap * 2 + Style::space2Xl;
+      const float clockWidth = std::min(bounds.width / 2, std::max(elapsedWidth, totalWidth));
+      result.elapsed = {bounds.x, bounds.y, clockWidth, row};
+      result.total = {bounds.x + bounds.width - clockWidth, bounds.y, clockWidth, row};
+      result.track = stacked ? Frame{bounds.x, bounds.y + row + gap / 2, bounds.width, progressHeight}
+                             : Frame{
+                                   bounds.x + elapsedWidth + gap, bounds.y + (row - progressHeight) / 2,
+                                   std::max(0.0F, bounds.width - elapsedWidth - totalWidth - gap * 2), progressHeight
+                               };
+      result.height = stacked ? row + gap + progressHeight : row;
+      return result;
+    }
+    static float height(float contentHeight, std::size_t buttons) {
+      return inset * 2
+          + header
+          + std::max(image, contentHeight)
+          + (buttons ? gap + buttons * (Style::controlHeightSm + gap) : 0);
+    }
+    static float height(std::size_t lines, std::size_t buttons) { return height(lines * row, buttons); }
   };
   struct VoiceMenu {
     Frame panel, viewport, scrollbar, deviceLabel, device, modeLabel, mode, volumeLabel, volume, settings;

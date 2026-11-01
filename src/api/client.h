@@ -57,6 +57,9 @@ namespace api {
     SaveProfile,
     SavePresence,
     PresenceChanged,
+    ActivityApplication,
+    ActivityExternalAssets,
+    ActivityMetadata,
     UserState,
     Interaction,
     Reaction,
@@ -140,6 +143,7 @@ namespace api {
     bool live = false;
     MessagePatch patch;
     std::optional<Presence> presence;
+    std::optional<nlohmann::json> activityData;
     std::optional<SettingValues> settings;
     std::vector<SettingsEntry> settingsEntries;
     std::map<std::string, std::string> unread;
@@ -237,6 +241,16 @@ namespace api {
     bool settingsList(const std::string& section);
     bool saveProfile(const Account& profile);
     bool setPresence(std::string status, std::optional<std::string> customText = {});
+    bool setActivities(std::vector<rpc::Activity> activities);
+    bool activityApplication(const std::string& application, std::uint64_t revision);
+    bool activityMetadata(
+        const std::string& user, const rpc::Activity& activity, std::uint64_t revision,
+        std::shared_ptr<std::atomic_bool> revoked
+    );
+    bool activityExternalAssets(
+        const std::string& application, const std::vector<std::string>& urls, std::uint64_t revision,
+        std::shared_ptr<std::atomic_bool> revoked
+    );
     void subscribe(const std::string& guild, const std::string& channel, int first = 0);
     void subscribe(
         const std::string& guild, const std::string& channel, int first, std::optional<MemberListIdentity> identity
@@ -274,6 +288,7 @@ namespace api {
       std::optional<InboxQuery> inboxQuery;
       std::optional<CommandIndexQuery> commandIndex;
       std::optional<StreamPreviewQuery> streamPreview;
+      std::shared_ptr<std::atomic_bool> activityRevoked;
     };
     struct PreloadRead {
       std::uint64_t session;

@@ -82,7 +82,11 @@ namespace app {
     }
     const float roleHeight =
         chips.empty() ? 0 : chipY + (Style::spaceXl + Style::spaceXxs) - roleTop + (shown < roles.size() ? 30 : 0);
-    const float bodyHeight = std::max(20.0F, roleTop + roleHeight);
+    const float activityTop = std::max(20.0F, roleTop + roleHeight);
+    const float activityHeight = profile.privateProfile
+        ? 0
+        : drawActivities(nullptr, {0, activityTop, inner - Style::spaceSm, 0}, user.id, {}, "profile");
+    const float bodyHeight = activityTop + activityHeight;
     const float height = std::min(
         h - layout::Profile::viewportReserve - frameTop - frameBottom,
         bodyStart + bodyHeight + layout::Profile::footerHeight
@@ -203,6 +207,11 @@ namespace app {
     auto* body = content.get();
     clip->addChild(std::move(content));
     root.addChild(std::move(clip));
+    if (!profile.privateProfile)
+      drawActivities(
+          body, {0, activityTop, inner - Style::spaceSm, activityHeight}, user.id,
+          {x + inset, y + bodyStart, inner, viewport}, "profile"
+      );
     auto bodyHit = [&](float bx, float by, float bw, float bh, Action action, std::string id = {}) {
       const float top = std::max(y + bodyStart, y + bodyStart + by - m_profileScroll);
       const float bottom = std::min(y + bodyStart + viewport, y + bodyStart + by - m_profileScroll + bh);

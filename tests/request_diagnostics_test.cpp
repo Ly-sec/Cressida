@@ -40,6 +40,19 @@ int main() {
       "Emoji names are opaque"
   );
   require(route("/users/@me/channels") == "/users/@me/channels", "Literal account endpoints stay specific");
+  const auto activity = format(
+      {.id = nextId(),
+       .action = "activity-metadata",
+       .method = "GET",
+       .path = "/users/123/sessions/private-activity-session/activities/456/metadata"}
+  );
+  require(
+      activity.contains("route=/users/:id/sessions/:session/activities/:id/metadata")
+          && !activity.contains("private-activity-session")
+          && !activity.contains("123")
+          && !activity.contains("456"),
+      "Activity metadata diagnostics never expose activity sessions or identities"
+  );
   require(
       route("/channels/123/application-command-index") == "/channels/:id/application-command-index"
           && route("/users/@me/application-command-index") == "/users/@me/application-command-index"

@@ -163,6 +163,7 @@ namespace api {
       m_memberSearch.reset();
       m_presenceChosen = false;
       m_presenceRestored = false;
+      m_activities.clear();
       m_voiceChosen = false;
       m_streamCommands.clear();
       m_voiceGuild.clear();
@@ -188,6 +189,7 @@ namespace api {
     m_memberPendingCount = 0;
     m_memberSearch.reset();
     m_presence = {};
+    m_activities.clear();
     m_presenceVersion = 0;
     m_presenceChosen = false;
     m_presenceRestored = false;
@@ -292,6 +294,26 @@ namespace api {
         || m_presence.emojiId != presence.emojiId
         || m_presence.emojiName != presence.emojiName) {
       m_presence = std::move(presence);
+      ++m_presenceVersion;
+      (void)m_wake.signal();
+    }
+    return true;
+  }
+
+  bool Gateway::setActivities(std::uint64_t session, std::vector<rpc::Activity> activities) {
+    if (activities.size() > rpc::maximumActivities)
+      return false;
+    for (auto& activity : activities) {
+      auto parsed = rpc::parseActivity(activity.application, activity.fields);
+      if (!parsed)
+        return false;
+      activity = std::move(*parsed);
+    }
+    std::lock_guard lock(m_mutex);
+    if (session != m_generation || session != m_session || m_token.empty())
+      return false;
+    if (m_activities != activities) {
+      m_activities = std::move(activities);
       ++m_presenceVersion;
       (void)m_wake.signal();
     }
@@ -491,10 +513,12 @@ namespace api {
               }
             }
             Presence presence;
+            std::vector<rpc::Activity> richActivities;
             std::uint64_t desiredVersion;
             {
               std::lock_guard lock(m_mutex);
               presence = m_presence;
+              richActivities = m_activities;
               desiredVersion = m_presenceVersion;
             }
             while (!presenceTimes.empty() && now - presenceTimes.front() >= gateway_pacing::presenceWindow)
@@ -519,6 +543,8 @@ namespace api {
                     custom["emoji"] = {{"name", presence.emojiName}};
                   activities.push_back(std::move(custom));
                 }
+                for (const auto& activity : richActivities)
+                  activities.push_back(rpc::gatewayActivity(activity));
                 send(
                     curl.get(),
                     Json{

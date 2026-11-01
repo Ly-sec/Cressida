@@ -28,6 +28,8 @@ namespace api {
     using Json = nlohmann::json;
     const Logger restLog("rest");
     const Logger accountLog("account");
+    constexpr long applicationNotFoundStatus = 404;
+    constexpr int unknownApplicationCode = 10002;
     const char* operationLabel(Operation operation) {
       switch (operation) {
       case Operation::Connect:
@@ -48,6 +50,11 @@ namespace api {
         return "save-profile";
       case Operation::SavePresence:
         return "save-presence";
+      case Operation::ActivityApplication:
+      case Operation::ActivityExternalAssets:
+        return "activity-assets";
+      case Operation::ActivityMetadata:
+        return "activity-metadata";
       case Operation::AccountSettings:
         return "account-settings";
       case Operation::SaveAccountSettings:
@@ -116,6 +123,9 @@ namespace api {
       case Operation::GifSearch:
       case Operation::InboxRead:
       case Operation::StreamPreviewRead:
+        return true;
+      case Operation::ActivityApplication:
+      case Operation::ActivityMetadata:
         return true;
       default:
         return false;
@@ -1054,6 +1064,43 @@ namespace api {
     return true;
   }
 
+  bool Client::setActivities(std::vector<rpc::Activity> activities) {
+    return m_authenticatedSession == m_session && m_gateway->setActivities(m_session, std::move(activities));
+  }
+  bool Client::activityApplication(const std::string& application, std::uint64_t revision) {
+    if (!validSnowflake(application))
+      return false;
+    Command command{Operation::ActivityApplication, m_session, application, {}};
+    command.nonce = std::to_string(revision);
+    return enqueue(std::move(command));
+  }
+  bool Client::activityMetadata(
+      const std::string& user, const rpc::Activity& activity, std::uint64_t revision,
+      std::shared_ptr<std::atomic_bool> revoked
+  ) {
+    const auto path = rpc::activityMetadataPath(user, activity);
+    if (!path || !revoked || revoked->load())
+      return false;
+    Command command{Operation::ActivityMetadata, m_session, user, *path};
+    command.nonce = std::to_string(revision);
+    command.activityRevoked = std::move(revoked);
+    return enqueue(std::move(command));
+  }
+  bool Client::activityExternalAssets(
+      const std::string& application, const std::vector<std::string>& urls, std::uint64_t revision,
+      std::shared_ptr<std::atomic_bool> revoked
+  ) {
+    if (!validSnowflake(application) || urls.empty() || urls.size() > 3 || !revoked || revoked->load())
+      return false;
+    for (const auto& url : urls)
+      if (!url.starts_with("https://") || url.size() > 2048)
+        return false;
+    Command command{Operation::ActivityExternalAssets, m_session, application, Json{{"urls", urls}}.dump()};
+    command.nonce = std::to_string(revision);
+    command.activityRevoked = std::move(revoked);
+    return enqueue(std::move(command));
+  }
+
   void Client::subscribe(const std::string& guild, const std::string& channel, int first) {
     std::optional<MemberListIdentity> identity;
     {
@@ -1782,10 +1829,12 @@ namespace api {
       }};
       if (command.session != m_session
           || command.session != m_authenticatedSession
+          || (command.activityRevoked && command.activityRevoked->load())
           || (command.streamPreview && streamPreviewRevoked(*command.streamPreview))
           || (command.readRevision && command.readRevision != m_historyRevision))
         continue;
       Event event{.operation = command.operation, .session = command.session, .resource = command.resource};
+      event.nonce = command.nonce;
       event.history = command.history;
       event.threadQuery = command.threadQuery;
       event.channelQuery = command.channelQuery;
@@ -1803,7 +1852,7 @@ namespace api {
       scope.expectedCredentialRevision = credentialRevision;
       scope.intent = command.readIntent.get();
       scope.promotedNavigation = command.readIntent ? &m_historyRevision : nullptr;
-      scope.revoked = command.streamPreview ? command.streamPreview->revoked.get() : nullptr;
+      scope.revoked = command.streamPreview ? command.streamPreview->revoked.get() : command.activityRevoked.get();
       Transfer transfer{{}, scope, connection.get(), multi.get(), &m_readWake[lane]};
       transfer.restrictions = &m_restRestrictions;
       transfer.label = operationLabel(command.operation);
@@ -1811,6 +1860,12 @@ namespace api {
       try {
         std::string path;
         switch (command.operation) {
+        case Operation::ActivityMetadata:
+          path = command.content;
+          break;
+        case Operation::ActivityApplication:
+          path = "/oauth2/applications/" + command.resource + "/rpc";
+          break;
         case Operation::CommandIndex:
           path = commandIndexPath(*command.commandIndex);
           break;
@@ -1874,11 +1929,55 @@ namespace api {
               && inboxMissingCollection(*command.inboxQuery, response.error().httpStatus, response.error().serviceCode))
             event.inboxPage = InboxPage{};
           else {
-            event.error = response.error().message;
+            event.error = command.operation == Operation::ActivityApplication
+                    && response.error().httpStatus == applicationNotFoundStatus
+                    && response.error().serviceCode == unknownApplicationCode
+                ? "Application not found. Use a valid application ID from the developer portal."
+                : response.error().message;
             event.unauthorized = response.error().unauthorized;
           }
         } else {
           switch (command.operation) {
+          case Operation::ActivityMetadata: {
+            const auto urls = rpc::activityButtonUrls(*response);
+            if (!urls)
+              throw std::runtime_error(urls.error());
+            event.activityData = *urls;
+            break;
+          }
+          case Operation::ActivityApplication: {
+            if (!response->is_object()
+                || response->value("id", std::string{}) != command.resource
+                || !response->contains("name")
+                || !(*response)["name"].is_string())
+              throw std::runtime_error("Unexpected activity application identity");
+            const auto assets =
+                request(token, "/oauth2/applications/" + command.resource + "/assets", nullptr, transfer, m_rateLimits);
+            if (!assets || !assets->is_array() || assets->size() > 1024)
+              throw std::runtime_error("Activity artwork could not be loaded");
+            Json projected = Json::array();
+            for (const auto& asset : *assets)
+              if (asset.is_object()
+                  && asset.contains("name")
+                  && asset["name"].is_string()
+                  && asset["name"].get_ref<const std::string&>().size() <= 256
+                  && asset.contains("id")
+                  && asset["id"].is_string()
+                  && validSnowflake(asset["id"].get<std::string>()))
+                projected.push_back({{"id", asset["id"]}, {"name", asset["name"]}});
+            event.activityData = {
+                {"id", command.resource},
+                {"name", (*response)["name"].get<std::string>().substr(0, 512)},
+                {"icon",
+                 response->contains("icon")
+                         && (*response)["icon"].is_string()
+                         && validAssetHash((*response)["icon"].get<std::string>())
+                     ? (*response)["icon"]
+                     : Json("")},
+                {"assets", std::move(projected)}
+            };
+            break;
+          }
           case Operation::CommandIndex:
             event.commands = parseCommandIndex(*response, *command.commandIndex);
             break;
@@ -2188,6 +2287,11 @@ namespace api {
         transfer.retryRateLimits = false;
       }
       event.restoredLogin = command.restoredLogin;
+      if (command.operation == Operation::ActivityExternalAssets) {
+        event.nonce = command.nonce;
+        transfer.scope.revoked = command.activityRevoked.get();
+        transfer.retryRateLimits = false;
+      }
       transfer.restrictions = &m_restRestrictions;
       transfer.label = operationLabel(command.operation);
       network_profile::queued(transfer.label, command.queuedAt);
@@ -2889,6 +2993,13 @@ namespace api {
           body = route->body;
           break;
         }
+        case Operation::ActivityExternalAssets:
+          if (!command.activityRevoked || command.activityRevoked->load())
+            throw std::runtime_error("Activity publication was cancelled.");
+          path = "/applications/" + command.resource + "/external-assets";
+          method = "POST";
+          body = Json::parse(command.content);
+          break;
         case Operation::Send:
           path = "/channels/" + command.resource + "/messages";
           body = messageBody(command.content, command.reply, command.stickers, command.nonce);
@@ -3022,6 +3133,11 @@ namespace api {
           }
         } else
           switch (command.operation) {
+          case Operation::ActivityExternalAssets:
+            if (!response->is_array() || response->size() > 3)
+              throw std::runtime_error("Unexpected activity artwork response");
+            event.activityData = *response;
+            break;
           case Operation::UserSettings: {
             const auto& action = *command.userSettings;
             const auto proof = [&](const char* field, std::string binding = {}) {

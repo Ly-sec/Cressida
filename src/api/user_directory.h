@@ -2,6 +2,7 @@
 
 #include "api/models.h"
 #include "api/server_preferences.h"
+#include "rpc/activity.h"
 
 #include <chrono>
 
@@ -27,6 +28,7 @@ namespace api {
     std::optional<bool> ignored;
     std::optional<Account> account;
     std::optional<UserCustomStatus> customStatus;
+    std::optional<std::vector<rpc::Activity>> activities;
     UserCosmetics cosmetics;
   };
   struct UserUpdates {
@@ -49,6 +51,7 @@ namespace api {
     std::string name(const std::string& user, const std::string& fallback) const;
     std::string status(const std::string& user, const std::string& fallback = "offline") const;
     UserCustomStatus customStatus(const std::string& user) const;
+    std::vector<rpc::Activity> activities(const std::string& user) const;
     UserCosmetics cosmetics(const std::string& user, const std::string& guild = {}) const;
     int relationship(const std::string& user) const;
     bool ignored(const std::string& user) const;
@@ -70,6 +73,8 @@ namespace api {
     std::map<std::string, std::string> m_names, m_statuses, m_globalStatuses;
     std::map<std::string, std::map<std::string, std::string>> m_guildStatuses;
     std::map<std::string, UserCustomStatus> m_customStatuses, m_globalCustomStatuses;
+    std::map<std::string, std::vector<rpc::Activity>> m_activities, m_globalActivities;
+    std::map<std::string, std::map<std::string, std::vector<rpc::Activity>>> m_guildActivities;
     std::map<std::string, std::map<std::string, UserCustomStatus>> m_guildCustomStatuses;
     std::map<std::string, int> m_relationships;
     std::map<std::string, Account> m_accounts;

@@ -52,6 +52,7 @@
 #include "render/scene/image_node.h"
 #include "render/scene/input_dispatcher.h"
 #include "render/scene/node.h"
+#include "rpc/server.h"
 #include "ui/controls/context_menu.h"
 #include "ui/controls/input.h"
 #include "ui/controls/select_popup_context.h"
@@ -93,6 +94,7 @@ namespace app {
     static constexpr int imageMenuReplayFrames = 13;
     static constexpr int trayReplayFrames = 4;
     static constexpr int voiceReplayFrames = 24;
+    static constexpr int rpcReplayFrames = 12;
     static constexpr int sharingReplayFrames = 33;
     static constexpr int imeReplayFrames = 14;
     static constexpr int slashCommandReplayFrames = 26;
@@ -721,6 +723,24 @@ namespace app {
     void drainDesktopNotifications();
     void desktopNoticeAction(DesktopNoticeAction action);
     bool extendedPreference(const std::string& action);
+    void rpcTick();
+    void rpcClear();
+    bool rpcAction(const std::string& action);
+    bool rpcResult(const api::Event& event);
+    void activityButton(const std::string& user, const rpc::Activity& activity, std::size_t index);
+    void rpcResolve();
+    void rpcPublish();
+    void rpcEditor();
+    void prepareRpcDemo(const std::string& view);
+    void demoRpcStep();
+    std::string activitySummary(const std::string& user, bool detailed = false) const;
+    bool drawActivitySummary(
+        Node& root, const layout::Frame& frame, const std::string& user, float fontSize, bool detailed = false
+    );
+    float drawActivities(
+        Node* root, const layout::Frame& area, const std::string& user, const layout::Frame& clip,
+        std::string_view scope
+    );
     std::string shortcutLabel(const std::string& action) const;
     bool shortcutKey(const Key& key);
     void demoUserPreferencesStep();
@@ -1345,6 +1365,36 @@ namespace app {
     bool m_live = false;
     bool m_showMembers = true;
     bool m_showDmProfile = true;
+    rpc::Server m_rpc;
+    Timer m_activityTimer;
+    rpc::Configuration m_rpcConfiguration;
+    struct ActivityButtonRequest {
+      std::uint64_t revision = 0;
+      std::string user, openedUrl;
+      rpc::Activity source;
+      std::size_t index = 0;
+      std::shared_ptr<std::atomic_bool> revoked = std::make_shared<std::atomic_bool>(false);
+      bool pending = false;
+    };
+    std::optional<ActivityButtonRequest> m_activityButtonRequest;
+    struct RpcApplication {
+      rpc::Update request;
+      rpc::Activity raw;
+      std::optional<rpc::Activity> resolved;
+      std::uint64_t revision = 0;
+      std::shared_ptr<std::atomic_bool> revoked = std::make_shared<std::atomic_bool>(false);
+      std::string error;
+      bool externalPending = false;
+      bool replyPending = true;
+    };
+    std::map<std::uint64_t, RpcApplication> m_rpcApplications;
+    std::map<std::string, nlohmann::json> m_rpcMetadata;
+    std::map<std::string, std::string> m_rpcLookups;
+    std::vector<rpc::Activity> m_rpcPublished;
+    std::uint64_t m_rpcRevision = 0;
+    std::string m_rpcStatus;
+    std::string m_rpcListenerState;
+    bool m_rpcCustomExpanded = false;
     bool m_dmMode = false;
     bool m_loadingPrivate = false;
     std::string m_gatewayStatus = "Connecting…";

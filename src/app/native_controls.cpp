@@ -88,6 +88,7 @@ namespace app {
     );
   }
   ClientApplication::~ClientApplication() {
+    rpcClear();
     clearSharing();
     m_window.setTextInputDispatcher(nullptr);
     clearOutgoing();
@@ -155,7 +156,7 @@ namespace app {
     using namespace theme;
     setPalette(
         {accent, ink, accent, ink, accent, ink, theme::destructive, rgbHex(0xFFFFFF), background, foreground, panel,
-         muted, raised, rgbHex(0x000000), raised, foreground}
+         muted, raised, rgbHex(0x000000), theme::hover, onHover}
     );
   }
   void ClientApplication::focusControl(const std::string& id) {

@@ -1,5 +1,6 @@
 #include "ui/controls/collapsible.h"
 
+#include "core/input/key_symbols.h"
 #include "render/animation/animation_manager.h"
 #include "render/scene/input_area.h"
 #include "render/scene/node.h"
@@ -16,6 +17,18 @@ Collapsible::Collapsible() {
   setAlign(FlexAlign::Stretch);
 
   auto area = std::make_unique<InputArea>();
+  area->setFocusable(true);
+  area->setTabStop(true);
+  area->setOnKeyDown([this](const InputArea::KeyData& key) {
+    if (!KeySymbol::isEnterOrSpace(key.sym) && !KeySymbol::isLeft(key.sym) && !KeySymbol::isRight(key.sym))
+      return;
+    const bool expanded = KeySymbol::isLeft(key.sym) ? false : KeySymbol::isRight(key.sym) ? true : !m_expanded;
+    if (expanded != m_expanded) {
+      setExpanded(expanded);
+      if (m_onToggle)
+        m_onToggle(expanded);
+    }
+  });
   area->setOnClick([this](const InputArea::PointerData&) {
     setExpanded(!m_expanded);
     if (m_onToggle) {

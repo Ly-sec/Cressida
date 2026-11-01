@@ -11,8 +11,8 @@ Friends. Friends and Message Requests also have their own entries in the
 sidebar.
 
 Use **Find or start a conversation** to find a person or conversation. The DM
-list shows avatars, presence and available custom statuses. A person's server
-tag can appear beside their name.
+list shows avatars, presence and available activity summaries or custom
+statuses. A person's server tag can appear beside their name.
 
 ## Read a profile beside your chat
 

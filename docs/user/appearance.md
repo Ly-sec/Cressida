@@ -26,7 +26,9 @@ variants. Bundled choices include:
 - Rosé Pine / Dawn.
 - Gruvbox dark / light.
 
-You can also [create a custom theme](custom-themes.md) with a TOML file.
+You can also [create a custom theme](custom-themes.md) with a TOML file. Buttons
+use a colored hover fill and its paired text color. Custom themes can set these
+separately with `hover` and `on_hover`.
 
 ## Corners and text
 

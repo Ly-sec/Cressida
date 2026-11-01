@@ -37,7 +37,9 @@ namespace app {
         {"property", &ThemePalette::property},
         {"preprocessor", &ThemePalette::preprocessor},
         {"added", &ThemePalette::added},
-        {"removed", &ThemePalette::removed}
+        {"removed", &ThemePalette::removed},
+        {"hover", &ThemePalette::hover},
+        {"on_hover", &ThemePalette::onHover}
     };
     std::expected<std::uint32_t, std::string> color(const toml::node& node) {
       const auto value = node.value<std::string>();
@@ -72,6 +74,10 @@ namespace app {
       }
       if (!table->contains("rail"))
         result.rail = result.sidebar;
+      if (!table->contains("hover"))
+        result.hover = result.property;
+      if (!table->contains("on_hover"))
+        result.onHover = result.ink;
       return result;
     }
     std::expected<std::string, std::string> text(const toml::table& table, const char* key, bool required = false) {

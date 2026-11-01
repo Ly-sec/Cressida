@@ -6,20 +6,21 @@ description:
 
 ## What works today?
 
-| Area           | Current support                                                           |
-| -------------- | ------------------------------------------------------------------------- |
-| Platforms      | Linux with Wayland. No X11 window backend.                                |
-| Messaging      | Text chat, replies, DMs, threads and forum conversations.                 |
-| Inbox          | Unread conversations, mentions, synced bookmarks and reminders.           |
-| App commands   | Slash-command picker, app filtering, arguments and responses.             |
-| Rich content   | Markdown, embeds, custom emoji, GIFs and stickers.                        |
-| Uploads        | Pasted chat images and files requested by slash commands.                 |
-| Media viewing  | Image galleries and native received-video playback.                       |
-| Voice          | Server voice channels and joining existing direct or group calls.         |
-| Screen sharing | Experimental screen/window capture, application audio and stream viewing. |
-| Profiles       | Rich profiles, equipped cosmetics and a profile panel in one-to-one DMs.  |
-| Appearance     | Dark, Light and System modes; bundled and custom palettes.                |
-| Desktop        | Tray, notification activation and reuse of the running window.            |
+| Area           | Current support                                                            |
+| -------------- | -------------------------------------------------------------------------- |
+| Platforms      | Linux with Wayland. No X11 window backend.                                 |
+| Messaging      | Text chat, replies, DMs, threads and forum conversations.                  |
+| Inbox          | Unread conversations, mentions, synced bookmarks and reminders.            |
+| App commands   | Slash-command picker, app filtering, arguments and responses.              |
+| Rich content   | Markdown, embeds, custom emoji, GIFs and stickers.                         |
+| Uploads        | Pasted chat images and files requested by slash commands.                  |
+| Media viewing  | Image galleries and native received-video playback.                        |
+| Voice          | Server voice channels and joining existing direct or group calls.          |
+| Screen sharing | Experimental screen/window capture, application audio and stream viewing.  |
+| Profiles       | Rich profiles, equipped cosmetics and a profile panel in one-to-one DMs.   |
+| Rich Presence  | Local application activities, custom activities, profile cards and timers. |
+| Appearance     | Dark, Light and System modes; bundled and custom palettes.                 |
+| Desktop        | Tray, notification activation and reuse of the running window.             |
 
 ## What is not supported yet?
 

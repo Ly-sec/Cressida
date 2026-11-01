@@ -116,7 +116,8 @@ sign-in.
 
 Do not ship user state, credentials or runtime sockets. Custom themes under the
 user's configuration directory must stay user-owned. Installed packages should
-find their assets without a `CRESSIDA_ASSETS_DIR` override.
+find their assets without users setting `CRESSIDA_ASSETS_DIR`. The AppImage
+launcher resolves its bundled paths when it starts.
 
 For deterministic emoji fallback, configure the actual runtime font path
 supplied by the distribution, for example:
@@ -133,6 +134,16 @@ CI covers native glibc builds on x86_64 and aarch64, plus an x86_64 musl build
 in Alpine edge. The musl build links dynamically to system libraries; it is not
 a portable static package.
 
-The client release workflow prepares a draft source release with a
-`cressida-VERSION.tar.xz` archive and `SHA256SUMS` after its checks pass. A
-maintainer publishes it. There is no automatic distribution-repository upload.
+Pushing a version tag runs CI, then calls `release-packages.yml`. Native x86_64
+and aarch64 runners build the client with pinned dependencies in the Freedesktop
+26.08 SDK. The workflow exports a Flatpak bundle and deploys the same native
+payload into an AppImage with its runtime libraries. Neither package requires
+Nix. Package builds omit test targets; private headless replays check both
+packaged formats after the main test suite passes.
+
+The release job attaches both `.AppImage` and `.flatpak` files for each
+architecture, a `cressida-VERSION.tar.xz` source archive and `SHA256SUMS`
+covering all five files to the draft release. A maintainer publishes it. The
+workflow does not upload an application to Flathub or another distribution
+repository. Manual runs of **Release packages** on a version tag retain package
+artifacts for seven days without creating a release.

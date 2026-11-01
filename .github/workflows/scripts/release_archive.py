@@ -23,7 +23,7 @@ def release_version(ref, root):
 
 
 def archive_source(root, destination, version):
-    excluded = {".git", ".direnv", ".agents", ".aws", ".codex", "__pycache__", "dist", "ci-logs", "result"}
+    excluded = {".git", ".direnv", ".agents", ".aws", ".codex", ".flatpak-builder", "__pycache__", "dist", "ci-logs", "result"}
     prefix = f"cressida-{version}"
 
     def include(info):

@@ -1,6 +1,7 @@
 /build*/
 __pycache__/
 .direnv/
+.flatpak-builder/
 /result
 /compile_commands.json
 /ci-logs/

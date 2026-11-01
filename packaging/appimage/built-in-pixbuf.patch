@@ -1,0 +1,13 @@
+--- a/src/appimagetool/appdirtool.go
++++ b/src/appimagetool/appdirtool.go
+@@ -681,8 +681,8 @@
+ 			log.Println("Determining Gdk pixbuf loaders (for GDK_PIXBUF_MODULEDIR and GDK_PIXBUF_MODULE_FILE)...")
+ 			locs, err := findWithPrefixInLibraryLocations("gdk-pixbuf")
+ 			if err != nil {
+-				log.Println("Could not find Gdk pixbuf loaders")
+-				os.Exit(1)
++				log.Println("No external Gdk pixbuf loaders; retaining built-in loaders")
++				continue
+ 			} else {
+ 				for _, loc := range locs {
+ 					determineELFsInDirTree(appdir, loc)

@@ -1,0 +1,297 @@
+{
+  "app-id": "dev.lysec.Cressida",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "26.08",
+  "sdk": "org.freedesktop.Sdk",
+  "command": "cressida",
+  "rename-desktop-file": "cressida.desktop",
+  "rename-icon": "cressida",
+  "finish-args": [
+    "--share=network",
+    "--socket=wayland",
+    "--socket=pulseaudio",
+    "--device=dri",
+    "--talk-name=org.freedesktop.secrets",
+    "--talk-name=org.freedesktop.Notifications",
+    "--talk-name=org.kde.StatusNotifierWatcher",
+    "--talk-name=org.freedesktop.StatusNotifierWatcher"
+  ],
+  "build-options": {
+    "cflags": "-O2 -g",
+    "cxxflags": "-O2 -g",
+    "env": {
+      "PYTHONPATH": "/app/share/cressida-build/python"
+    }
+  },
+  "cleanup": [
+    "/include",
+    "/lib/pkgconfig",
+    "/lib/cmake",
+    "/share/man",
+    "*.a",
+    "*.la",
+    "/share/cressida-build"
+  ],
+  "modules": [
+    {
+      "name": "json",
+      "buildsystem": "cmake-ninja",
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://codeload.github.com/nlohmann/json/tar.gz/refs/tags/v3.12.0",
+          "sha256": "4b92eb0c06d10683f7447ce9406cb97cd4b453be18d7279320f7b2f025c10187",
+          "archive-type": "tar-gzip"
+        }
+      ],
+      "config-opts": [
+        "-DJSON_BuildTests=OFF"
+      ],
+      "post-install": [
+        "install -Dm644 LICENSE.MIT /app/share/licenses/json/LICENSE.MIT"
+      ]
+    },
+    {
+      "name": "tomlplusplus",
+      "buildsystem": "meson",
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://codeload.github.com/marzer/tomlplusplus/tar.gz/refs/tags/v3.4.0",
+          "sha256": "8517f65938a4faae9ccf8ebb36631a38c1cadfb5efa85d9a72e15b9e97d25155",
+          "archive-type": "tar-gzip"
+        }
+      ],
+      "post-install": [
+        "install -Dm644 ../LICENSE /app/share/licenses/tomlplusplus/LICENSE"
+      ]
+    },
+    {
+      "name": "md4c",
+      "buildsystem": "cmake-ninja",
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://codeload.github.com/mity/md4c/tar.gz/refs/tags/release-0.5.2",
+          "sha256": "55d0111d48fb11883aaee91465e642b8b640775a4d6993c2d0e7a8092758ef21",
+          "archive-type": "tar-gzip"
+        }
+      ],
+      "config-opts": [
+        "-DBUILD_SHARED_LIBS=ON",
+        "-DBUILD_MD2HTML_EXECUTABLE=OFF",
+        "-DBUILD_TESTING=OFF"
+      ],
+      "post-install": [
+        "install -Dm644 LICENSE.md /app/share/licenses/md4c/LICENSE.md"
+      ]
+    },
+    {
+      "name": "qrencode",
+      "buildsystem": "cmake-ninja",
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://codeload.github.com/fukuchi/libqrencode/tar.gz/refs/tags/v4.1.1",
+          "sha256": "5385bc1b8c2f20f3b91d258bf8ccc8cf62023935df2d2676b5b67049f31a049c",
+          "archive-type": "tar-gzip"
+        }
+      ],
+      "config-opts": [
+        "-DWITH_TOOLS=OFF",
+        "-DWITH_TESTS=OFF",
+        "-DBUILD_SHARED_LIBS=ON",
+        "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+      ],
+      "post-install": [
+        "install -Dm644 COPYING /app/share/licenses/qrencode/COPYING"
+      ]
+    },
+    {
+      "name": "libsodium",
+      "buildsystem": "autotools",
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://download.libsodium.org/libsodium/releases/libsodium-1.0.20.tar.gz",
+          "sha256": "ebb65ef6ca439333c2bb41a0c1990587288da07f6c7fd07cb3a18cc18d30ce19"
+        }
+      ],
+      "config-opts": [
+        "--disable-static"
+      ],
+      "post-install": [
+        "install -Dm644 LICENSE /app/share/licenses/libsodium/LICENSE"
+      ]
+    },
+    {
+      "name": "rlottie",
+      "buildsystem": "meson",
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://codeload.github.com/Samsung/rlottie/tar.gz/ea06d2f29ba01b8d06c00a838d107f5e484ae59b",
+          "sha256": "a89e071a3455ccbf8f61af67aad0657259ae9aabdf3afe3a0670954370cdd37a",
+          "archive-type": "tar-gzip"
+        }
+      ],
+      "config-opts": [
+        "-Dexample=false",
+        "-Dtest=false",
+        "-Dmodule=false"
+      ],
+      "post-install": [
+        "install -Dm644 ../COPYING /app/share/licenses/rlottie/COPYING"
+      ]
+    },
+    {
+      "name": "libass",
+      "buildsystem": "autotools",
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://github.com/libass/libass/releases/download/0.17.4/libass-0.17.4.tar.xz",
+          "sha256": "78f1179b838d025e9c26e8fef33f8092f65611444ffa1bfc0cfac6a33511a05a"
+        }
+      ],
+      "config-opts": [
+        "--disable-static"
+      ],
+      "post-install": [
+        "install -Dm644 COPYING /app/share/licenses/libass/COPYING"
+      ]
+    },
+    {
+      "name": "markupsafe",
+      "buildsystem": "simple",
+      "build-commands": [
+        "mkdir -p /app/share/cressida-build/python",
+        "cp -a src/markupsafe /app/share/cressida-build/python/"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://files.pythonhosted.org/packages/7e/99/7690b6d4034fffd95959cbe0c02de8deb3098cc577c67bb6a24fe5d7caa7/markupsafe-3.0.3.tar.gz",
+          "sha256": "722695808f4b6457b320fdc131280796bdceb04ab50fe1795cd540799ebe1698"
+        }
+      ]
+    },
+    {
+      "name": "jinja2",
+      "buildsystem": "simple",
+      "build-commands": [
+        "mkdir -p /app/share/cressida-build/python",
+        "cp -a src/jinja2 /app/share/cressida-build/python/"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c72f3e33cef02e048281fec7ecec5f032d4aac52226b/jinja2-3.1.6.tar.gz",
+          "sha256": "0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d"
+        }
+      ]
+    },
+    {
+      "name": "libplacebo",
+      "buildsystem": "meson",
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://codeload.github.com/haasn/libplacebo/tar.gz/refs/tags/v7.387.0",
+          "sha256": "f9e62d3774a9c4cfd198ec3abaa88294aaade2e31c04d5ab02bcf4abc98b1df5",
+          "archive-type": "tar-gzip"
+        },
+        {
+          "type": "archive",
+          "url": "https://codeload.github.com/fastfloat/fast_float/tar.gz/refs/tags/v6.1.6",
+          "sha256": "4458aae4b0eb55717968edda42987cabf5f7fc737aee8fede87a70035dba9ab0",
+          "dest": "3rdparty/fast_float",
+          "archive-type": "tar-gzip"
+        },
+        {
+          "type": "archive",
+          "url": "https://codeload.github.com/Dav1dde/glad/tar.gz/73db193f853e2ee079bf3ca8a64aa2eaf6459043",
+          "sha256": "33dbeae44d8315ece57e14eba4b1b4a02ac5406d1c4f49cd20048c91522a6b9a",
+          "dest": "3rdparty/glad",
+          "archive-type": "tar-gzip"
+        }
+      ],
+      "config-opts": [
+        "-Ddemos=false",
+        "-Dtests=false",
+        "-Dvulkan=enabled",
+        "-Dshaderc=enabled",
+        "-Dglslang=disabled",
+        "-Dopengl=enabled"
+      ],
+      "post-install": [
+        "install -Dm644 ../LICENSE /app/share/licenses/libplacebo/LICENSE",
+        "install -Dm644 ../3rdparty/fast_float/LICENSE-MIT /app/share/licenses/fast_float/LICENSE-MIT",
+        "install -Dm644 ../3rdparty/glad/LICENSE /app/share/licenses/glad/LICENSE"
+      ]
+    },
+    {
+      "name": "mpv",
+      "buildsystem": "meson",
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://codeload.github.com/mpv-player/mpv/tar.gz/refs/tags/v0.41.0",
+          "sha256": "ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209",
+          "archive-type": "tar-gzip"
+        }
+      ],
+      "config-opts": [
+        "-Dlibmpv=true",
+        "-Dcplayer=false",
+        "-Dbuild-date=false",
+        "-Dtests=false",
+        "-Dgl=enabled",
+        "-Degl=enabled",
+        "-Dx11=disabled",
+        "-Dlua=disabled",
+        "-Djavascript=disabled"
+      ],
+      "post-install": [
+        "install -Dm644 ../LICENSE.GPL /app/share/licenses/mpv/LICENSE.GPL",
+        "install -Dm644 ../LICENSE.LGPL /app/share/licenses/mpv/LICENSE.LGPL"
+      ]
+    },
+    {
+      "name": "stb",
+      "buildsystem": "simple",
+      "build-commands": [
+        "install -Dm644 stb_image_resize2.h /app/include/stb/stb_image_resize2.h",
+        "install -Dm644 stb_image_write.h /app/include/stb/stb_image_write.h",
+        "install -Dm644 LICENSE /app/share/licenses/stb/LICENSE"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://codeload.github.com/nothings/stb/tar.gz/f1c79c02822848a9bed4315b12c8c8f3761e1296",
+          "sha256": "a39b0f2d96d9b64171ac1fd73295b7c5866f904e653b379da886d050a6900db9",
+          "archive-type": "tar-gzip"
+        }
+      ]
+    },
+    {
+      "name": "cressida",
+      "buildsystem": "meson",
+      "config-opts": [
+        "--buildtype=release",
+        "-Dtests=disabled",
+        "-Dcpp_std=c++23",
+        "-Demoji_font=/usr/share/fonts/noto-emoji/NotoColorEmoji.ttf"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "path": "cressida-source.tar.xz"
+        }
+      ],
+      "post-install": [
+        "install -Dm644 ../packaging/flatpak/dev.lysec.Cressida.metainfo.xml /app/share/metainfo/dev.lysec.Cressida.metainfo.xml"
+      ]
+    }
+  ]
+}

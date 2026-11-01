@@ -1,7 +1,8 @@
 ---
 title: Installation
 description:
-  Install Cressida on a Wayland Linux desktop with Nix, Guix or Meson.
+  Install Cressida on a Wayland Linux desktop with an AppImage, Flatpak, Nix,
+  Guix or Meson.
 ---
 
 ## Before you begin
@@ -26,6 +27,58 @@ Follow the official
 desktop. On KDE Plasma, select **Fcitx 5** under **Virtual Keyboard** in System
 Settings. Other compositors may start the service through their session or
 autostart configuration.
+
+## AppImage
+
+Download the `.AppImage` matching your architecture from a published
+[Cressida release](https://github.com/Ly-sec/Cressida/releases). Packages are
+built for `x86_64` and `aarch64`. Check the download against the release's
+`SHA256SUMS`, then make it executable and launch it:
+
+```sh
+chmod +x cressida-VERSION-x86_64.AppImage
+./cressida-VERSION-x86_64.AppImage
+```
+
+Replace `VERSION` and the architecture with your download's filename. A host
+Wayland session and working graphics drivers are still required. If FUSE is
+unavailable, extract and run the same package:
+
+```sh
+./cressida-VERSION-x86_64.AppImage --appimage-extract
+./squashfs-root/AppRun
+```
+
+To update, download the newer release and replace the executable. The AppImage
+does not install an automatic updater or alter your account data.
+
+## Flatpak
+
+Install [Flatpak](https://flatpak.org/setup/) for your distribution, then
+download the matching `.flatpak` from a published
+[Cressida release](https://github.com/Ly-sec/Cressida/releases). Check it
+against `SHA256SUMS` and install it:
+
+```sh
+flatpak install --user ./cressida-VERSION-x86_64.flatpak
+flatpak run dev.lysec.Cressida
+```
+
+The installer can fetch the required Freedesktop 26.08 runtime from Flathub. The
+bundle itself comes from the release, not a Flathub application listing. Install
+a newer release bundle to update Cressida.
+
+The package permits Wayland, network, graphics, desktop audio, keyring,
+notification and tray access. Files are selected through desktop portals; it
+does not grant access to your entire home directory. Settings and account data
+are stored separately under `~/.var/app/dev.lysec.Cressida/`. Host applications'
+local RPC connections may need a socket bridge into the sandbox.
+
+To remove the package while retaining its data:
+
+```sh
+flatpak uninstall --user dev.lysec.Cressida
+```
 
 ## Nix
 

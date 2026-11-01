@@ -6,7 +6,8 @@
         "slug": "docs"
       },
       {
-        "slug": "docs/installation"
+        "slug": "docs/installation",
+        "label": "Install Cressida: AppImage, Flatpak and source"
       },
       {
         "slug": "docs/nix",

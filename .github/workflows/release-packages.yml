@@ -1,0 +1,59 @@
+name: Release packages
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packages:
+    if: github.repository == 'Ly-sec/Cressida'
+    name: AppImage and Flatpak (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate the release tag
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: python3 .github/workflows/scripts/release_archive.py --check "$RELEASE_REF"
+      - name: Install native package tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder appstream appstream-compose curl file patch xz-utils weston libgl1-mesa-dri libegl1 libgles2
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: stable
+          cache: false
+      - name: Build both release packages
+        env:
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_ARCH: ${{ matrix.arch }}
+        run: bash .github/workflows/scripts/build-release-packages.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-packages-${{ matrix.arch }}
+          path: |
+            dist/*.AppImage
+            dist/*.flatpak
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: package-diagnostics-${{ matrix.arch }}
+          path: ci-logs/packages/
+          if-no-files-found: ignore
+          retention-days: 7

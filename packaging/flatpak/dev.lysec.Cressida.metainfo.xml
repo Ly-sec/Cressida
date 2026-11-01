@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.lysec.Cressida</id>
+  <name>Cressida</name>
+  <summary>A native Discord client for Wayland desktops</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="dev.lysec"><name>Lysec</name></developer>
+  <description>
+    <p>Keep up with conversations, share images and join voice channels through a native Linux interface.</p>
+    <p>Cressida requires a Wayland desktop. Voice and screen sharing use the desktop audio service and portals.</p>
+  </description>
+  <launchable type="desktop-id">dev.lysec.Cressida.desktop</launchable>
+  <url type="homepage">https://github.com/Ly-sec/Cressida</url>
+  <url type="bugtracker">https://github.com/Ly-sec/Cressida/issues</url>
+  <provides><binary>cressida</binary></provides>
+  <content_rating type="oars-1.1"/>
+</component>

@@ -30,8 +30,12 @@ jobs:
     needs: validate
     uses: ./.github/workflows/ci.yml
 
-  draft:
+  packages:
     needs: checks
+    uses: ./.github/workflows/release-packages.yml
+
+  draft:
+    needs: [checks, packages]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -40,10 +44,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Download native release packages
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: release-packages-*
+          path: dist/
+          merge-multiple: true
       - name: Create source archive and checksum
         env:
           RELEASE_REF: ${{ github.ref }}
-        run: python3 .github/workflows/scripts/release_archive.py "$RELEASE_REF"
+        run: |
+          python3 .github/workflows/scripts/release_archive.py "$RELEASE_REF"
+          python3 .github/workflows/scripts/release_checksums.py "$RELEASE_REF"
       - name: Create or refresh the draft release
         env:
           GH_TOKEN: ${{ github.token }}

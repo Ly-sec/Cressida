@@ -810,8 +810,42 @@ namespace app {
           throw std::runtime_error("Emoji-fit preview must cover replies, inline/jumbo messages and reactions");
         std::clog << "Offline emoji-fit preview passed\n";
       }
-      if (m_demo && m_demoOverlay == "unread-badge-cycle") {
+      if (m_demo && m_demoOverlay.starts_with("unread-badge-cycle")) {
         const auto step = m_demoInteractionStep++;
+        const auto checkRow = [&](const std::string& channel, bool unread) {
+          const auto row = std::ranges::find_if(m_hits, [&](const auto& hit) {
+            return hit.action == Action::Channel && hit.id == channel;
+          });
+          if (row == m_hits.end())
+            throw std::runtime_error("The unread mute replay requires a visible channel row");
+          const auto entry = std::ranges::find(m_channels, channel, &api::Channel::id);
+          bool name = false, marker = false;
+          const auto inspect = [&](auto&& self, const Node& node, float x, float y) -> void {
+            x += node.x();
+            y += node.y();
+            if (x >= layout::Sidebar::railWidth && x < chatLeft() && node.type() == NodeType::Text) {
+              const auto& text = static_cast<const TextNode&>(node);
+              if (text.text() == entry->name) {
+                if (text.fontWeight() != FontWeight::Normal || text.color() != (unread ? foreground : muted))
+                  throw std::runtime_error("Channel unread styling uses color independently of server mute");
+                name = true;
+              }
+            }
+            if (node.type() == NodeType::Rect
+                && x == layout::Sidebar::unreadX
+                && node.width() == layout::Sidebar::unreadWidth
+                && node.height() == layout::Sidebar::unreadHeight
+                && y >= row->y
+                && y < row->y + row->height)
+              marker = true;
+            for (const auto& child : node.children())
+              self(self, *child, x, y);
+          };
+          inspect(inspect, *m_scene, 0, 0);
+          if (!name || marker != unread)
+            throw std::runtime_error("Only channel mute suppresses that channel's ordinary unread marker");
+        };
+        checkRow(step == 1 ? "1200" : "103", step != 3);
         const auto at = std::ranges::find(m_hits, Action::JumpChannelMention, &Hit::action);
         if (step == 0 || step == 2) {
           if (at == m_hits.end() || at->id != "1200")
@@ -819,8 +853,12 @@ namespace app {
           const auto hit = *at;
           if (step == 0)
             activate(hit);
-          else
+          else {
+            api::UserUpdates muted;
+            muted.mutedChannels["103"] = true;
+            m_userDirectory.apply(muted);
             m_unreadTimeline.acknowledged("1200", "9000");
+          }
         } else if (step == 1) {
           if (at != m_hits.end() || m_unreadTimeline.mentions("1200") != 2 || m_channelId != "101")
             throw std::runtime_error("Revealing a channel hides its floating badge without reading/selecting it");
@@ -1632,25 +1670,25 @@ namespace app {
                    : m_demo && view && std::string_view(view) == "server-settings-expressions-cycle" ? 26
                    : m_demo && view && std::string_view(view) == "server-settings-management-cycle"  ? 12
                    : m_demo && view && std::string_view(view) == "server-settings-cycle"             ? 42
-                   : m_demo && view && std::string_view(view).starts_with("floating-cycle")   ? floatingReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("typing-cycle")     ? typingReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("rail-drag")        ? 10
-                   : m_demo && view && std::string_view(view).starts_with("folder-animation") ? 9
-                   : m_demo && view && std::string_view(view) == "folder-menu-cycle"          ? 13
-                   : m_demo && view && std::string_view(view) == "server-menu-cycle"          ? 20
-                   : m_demo && view && std::string_view(view) == "channel-menu-cycle"         ? 31
-                   : m_demo && view && std::string_view(view) == "channel-cycle"              ? 18
-                   : m_demo && view && std::string_view(view) == "forum-cycle"                ? 12
-                   : m_demo && view && std::string_view(view) == "thread-cycle"               ? 10
-                   : m_demo && view && std::string_view(view) == "guild-tag-cycle"            ? 10
-                   : m_demo && view && std::string_view(view).starts_with("cosmetics-cycle")  ? cosmeticsReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("dm-profile-cycle") ? dmProfileReplayFrames
-                   : m_demo && view && std::string_view(view) == "profile-card-cycle"         ? 8
-                   : m_demo && view && std::string_view(view) == "role-style-cycle"           ? 7
-                   : m_demo && view && std::string_view(view) == "unread-badge-cycle"         ? 4
-                   : m_demo && view && std::string_view(view) == "unread-cycle"               ? 10
-                   : m_demo && view && std::string_view(view) == "jump-latest-cycle"          ? 8
-                   : m_demo && view && std::string_view(view) == "connection-cycle"           ? 8
+                   : m_demo && view && std::string_view(view).starts_with("floating-cycle")     ? floatingReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("typing-cycle")       ? typingReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("rail-drag")          ? 10
+                   : m_demo && view && std::string_view(view).starts_with("folder-animation")   ? 9
+                   : m_demo && view && std::string_view(view) == "folder-menu-cycle"            ? 13
+                   : m_demo && view && std::string_view(view) == "server-menu-cycle"            ? 20
+                   : m_demo && view && std::string_view(view) == "channel-menu-cycle"           ? 31
+                   : m_demo && view && std::string_view(view) == "channel-cycle"                ? 18
+                   : m_demo && view && std::string_view(view) == "forum-cycle"                  ? 12
+                   : m_demo && view && std::string_view(view) == "thread-cycle"                 ? 10
+                   : m_demo && view && std::string_view(view) == "guild-tag-cycle"              ? 10
+                   : m_demo && view && std::string_view(view).starts_with("cosmetics-cycle")    ? cosmeticsReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("dm-profile-cycle")   ? dmProfileReplayFrames
+                   : m_demo && view && std::string_view(view) == "profile-card-cycle"           ? 8
+                   : m_demo && view && std::string_view(view) == "role-style-cycle"             ? 7
+                   : m_demo && view && std::string_view(view).starts_with("unread-badge-cycle") ? 4
+                   : m_demo && view && std::string_view(view) == "unread-cycle"                 ? 10
+                   : m_demo && view && std::string_view(view) == "jump-latest-cycle"            ? 8
+                   : m_demo && view && std::string_view(view) == "connection-cycle"             ? 8
                    : interactionCycle ? (std::string_view(view) == "video-cycle" ? 512 : 64)
                                       : 1)
             : 0,
@@ -3164,9 +3202,12 @@ namespace app {
           if (view == "emoji-scroll-cycle")
             m_demoOverlay = view;
         } else if (
-            view == "unread" || view == "unread-badges" || view == "unread-badges-light" || view == "unread-badge-cycle"
+            view == "unread"
+            || view == "unread-badges"
+            || view == "unread-badges-light"
+            || view.starts_with("unread-badge-cycle")
         ) {
-          if (view == "unread-badges-light")
+          if (view.ends_with("light"))
             m_preferences.theme = "light";
           m_privateChannels = {{"900", "Maya", 1}, {"901", "Studio", 3}};
           m_unreadTimeline.snapshot(
@@ -3188,17 +3229,25 @@ namespace app {
           m_folders = {{"", "", 0, {"1"}}, {"50", "Creative spaces", 0x8A76C7, {"2", "3"}}};
           m_messages.back().content = "Hi <@11>, check <#102>. `literal <@11>`";
           m_messages.back().mentions = {{"11", "Maya"}};
-          if (view == "unread-badge-cycle") {
+          if (view.starts_with("unread-badge-cycle")) {
             m_demoOverlay = view;
+            api::UserUpdates muted;
+            muted.guildNotifications["1"].muted = true;
+            m_userDirectory.apply(muted);
             for (int i = 0; i < 40; ++i)
               m_channels.push_back({std::to_string(1100 + i), "quiet-channel-" + std::to_string(i + 1)});
             m_channels.push_back({"1200", "mentioned-channel"});
             auto cursors = std::map<std::string, api::UnreadCursor>{
-                {"102", {"8999", "9000", 1}}, {"104", {"8999", "9000", 12}}, {"1200", {"8999", "9000", 2}}
+                {"102", {"8999", "9000", 1}},
+                {"103", {"8999", "9000"}},
+                {"104", {"8999", "9000", 12}},
+                {"1200", {"8999", "9000", 2}}
             };
             m_unreadTimeline.snapshot(std::move(cursors), "reset");
             m_unreadGuilds["1200"] = "1";
             m_unreadChannels.insert("1200");
+            m_unreadGuilds["103"] = "1";
+            m_unreadChannels.insert("103");
           }
         } else if (
             view.starts_with("dm-home")
@@ -4022,7 +4071,7 @@ namespace app {
         const bool selected = channel.id == m_channelId;
         const int mentions = m_unreadTimeline.mentions(channel.id);
         const bool unread = (m_unreadChannels.contains(channel.id) || m_unreadDMs.contains(channel.id))
-            && (((m_dmMode || !m_userDirectory.muted(m_guildId)) && !channelMuted(channel.id)) || mentions > 0);
+            && (!channelMuted(channel.id) || mentions > 0);
         const float rowX = layout::Sidebar::railWidth + layout::Sidebar::rowInset;
         const float rowWidth = sidebarWidth - layout::Sidebar::rowInset * 2;
         const bool over =
@@ -4107,7 +4156,7 @@ namespace app {
                                                + 32
                                        )
                                      : 0;
-          const auto weight = selected || unread ? FontWeight::SemiBold : FontWeight::Normal;
+          const auto weight = selected ? FontWeight::SemiBold : FontWeight::Normal;
           const float available = std::max(1.0F, right - 136);
           const bool tagFits = tag && available >= tagWidth + (Style::spaceSection - Style::spaceXxs);
           const float nameWidth = std::max(1.0F, available - (tagFits ? tagWidth + Style::spaceCompact : 0));
@@ -4165,7 +4214,7 @@ namespace app {
               + hoverShift;
           const float labelRight = rowX + rowWidth - layout::Sidebar::rowInset;
           const float labelWidth = std::max(0.0F, labelRight - labelX - (badgeWidth ? badgeWidth + Style::spaceSm : 0));
-          const auto weight = selected || unread ? FontWeight::SemiBold : FontWeight::Normal;
+          const auto weight = selected ? FontWeight::SemiBold : FontWeight::Normal;
           const auto metrics =
               m_window.target().renderer().measureText(channel.name, Style::fontSizeBody, weight, labelWidth, 1);
           label(

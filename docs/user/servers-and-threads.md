@@ -18,6 +18,11 @@ icons and folders. Large counts use `99+`; hover a count to see its full value.
 Muted channels and categories appear dimmer, while hovered, selected and
 mentioned items remain readable.
 
+Server mute and channel mute work separately. Muting a server hides its ordinary
+unread dot in the rail; unread channel names still use the brighter text color.
+Mute a channel or category to suppress its ordinary unread styling. Mention
+counts remain available when a server or channel is muted.
+
 Automatic read receipts are grouped while you read active conversations. Local
 unread indicators update immediately. Explicit **Mark as Read** actions are sent
 immediately.

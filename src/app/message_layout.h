@@ -120,6 +120,10 @@ namespace app {
     std::string url;
   };
   std::vector<MessageLinkArea> messageLinkAreas(const MessageLayout& layout);
+  std::vector<layout::Frame> messageSelectionAreas(
+      const MessageLayout& message, std::size_t first, std::size_t last, const MessageMeasure& measure,
+      bool showSpoilers
+  );
   bool messageLinkHovered(const std::vector<MessageLinkArea>& areas, std::size_t run, float x, float y);
   struct MessageSpanArea {
     float x, y, width, height;

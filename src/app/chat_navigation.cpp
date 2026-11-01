@@ -8,6 +8,76 @@
 #include <utility>
 
 namespace app {
+  void ClientApplication::drawChatSelection(
+      Node& parent, const MessageLayout& message, const std::string& id, float x, float y, std::size_t offset
+  ) {
+    const auto text = m_messageSelectionText.find(id);
+    if (m_selectedMessage != id
+        || !m_chatEdit.selected()
+        || text == m_messageSelectionText.end()
+        || text->second != m_selectedText)
+      return;
+    const auto first = std::min(m_chatEdit.caret, m_chatEdit.anchor);
+    const auto last = std::max(m_chatEdit.caret, m_chatEdit.anchor);
+    if (last <= offset)
+      return;
+    const auto measure = [&](std::string_view value, const MessageStyle& style) {
+      return m_window.target()
+          .renderer()
+          .measureText(
+              messageMarkup(value, style), style.size, FontWeight::Normal, 0, 1, TextAlign::Start, {},
+              TextEllipsize::End, true
+          )
+          .width;
+    };
+    for (const auto& area : messageSelectionAreas(
+             message, first > offset ? first - offset : 0, last - offset, measure, spoilersVisible(id)
+         ))
+      rectangle(
+          parent, x + area.x, y + area.y, area.width, area.height, withAlpha(theme::accent, Style::textHighlightAlpha)
+      );
+  }
+
+  void ClientApplication::chatSelectionText(
+      Node& parent, const MessageRun& run, const std::string& message, float x, float y, float absoluteX,
+      float absoluteY, FontWeight weight, bool markup, bool header
+  ) {
+    if (run.width <= 0 || run.text.empty())
+      return;
+    if (header) {
+      const auto text = m_messageSelectionText.find(message);
+      if (m_selectedMessage == message
+          && m_chatEdit.selected()
+          && text != m_messageSelectionText.end()
+          && text->second == m_selectedText) {
+        const auto from = std::max(std::min(m_chatEdit.caret, m_chatEdit.anchor), run.offset);
+        const auto to = std::min(std::max(m_chatEdit.caret, m_chatEdit.anchor), run.offset + run.text.size());
+        if (to > from) {
+          const auto prefix = [&](std::size_t end) {
+            const auto value = std::string_view(run.text).substr(0, end - run.offset);
+            return std::clamp(
+                m_window.target()
+                    .renderer()
+                    .measureText(
+                        markup ? messageMarkup(value, run.style) : std::string(value), run.style.size, weight, 0, 1,
+                        TextAlign::Start, {}, TextEllipsize::End, markup
+                    )
+                    .width,
+                0.0F, run.width
+            );
+          };
+          const float left = prefix(from), right = prefix(to);
+          rectangle(parent, x + left, y, right - left, run.height, withAlpha(theme::accent, Style::textHighlightAlpha));
+        }
+      }
+      const float top = std::max(m_messageViewportTop, absoluteY);
+      const float bottom = std::min(m_messageViewportBottom, absoluteY + run.height);
+      if (bottom > top)
+        m_hits.push_back({absoluteX, top, run.width, bottom - top, Action::SelectMessage, message});
+    }
+    m_textAreas.push_back({run, message, absoluteX, absoluteY, weight, markup, header});
+  }
+
   const char* ClientApplication::channelGlyph(const std::string& guild, const api::Channel& channel) const {
     const auto source = std::ranges::find(m_guilds, guild, &api::Guild::id);
     if (source != m_guilds.end() && source->rulesChannelId == channel.id)

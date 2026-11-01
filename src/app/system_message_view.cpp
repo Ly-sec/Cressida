@@ -69,6 +69,36 @@ namespace app {
     const auto move = [&](float x, float y) {
       m_window.motion(x, y + m_window.titlebarHeight() - layout::Window::titlebarHeight);
     };
+    const auto area = [&](auto predicate) {
+      const auto found = std::ranges::find_if(m_textAreas, predicate);
+      require(found != m_textAreas.end(), "Selectable message fragments retain native pointer bounds");
+      return *found;
+    };
+    const auto name = [&] {
+      return area([](const auto& text) { return text.message == "9401" && text.header && text.run.offset == 0; });
+    };
+    const auto time = [&] {
+      return area([](const auto& text) { return text.message == "9401" && text.header && text.run.offset > 0; });
+    };
+    const auto body = [&](bool last) {
+      std::vector<TextArea> fragments;
+      for (const auto& text : m_textAreas)
+        if (text.message == "9401" && !text.header)
+          fragments.push_back(text);
+      require(!fragments.empty(), "The message body retains selectable fragments");
+      return last ? fragments.back() : fragments.front();
+    };
+    const auto press = [&](const TextArea& text, bool right = false) {
+      const float x = text.x + (right ? text.run.width : 0);
+      const float y = text.y + text.run.height / 2;
+      move(x, y);
+      m_window.click(x, y + m_window.titlebarHeight() - layout::Window::titlebarHeight, 272);
+    };
+    const auto dragTo = [&](const TextArea& text) {
+      move(text.x + text.run.width + Style::spaceXxs, text.y + text.run.height / 2);
+      m_window.released();
+      require(m_dialogKind.empty(), "Dragging selectable names never opens a profile");
+    };
     const auto hoverCaption = [&](std::size_t index) {
       const auto caption = formatMessageTimestamp(m_messages[index].timestamp, m_preferences.twelveHourClock);
       const auto* text = findText(caption);
@@ -148,7 +178,98 @@ namespace app {
       break;
     case 10:
       require(m_tooltip.empty(), "Moving away clears the timestamp tooltip");
-      std::clog << "Offline message dates and timestamp hover check passed\n";
+      press(name());
+      require(m_dialogKind.empty(), "A name press defers its profile until release");
+      dragTo(name());
+      break;
+    case 11:
+      require(m_chatEdit.selection(m_selectedText) == name().run.text, "Dragging a name copies its complete text");
+      press(time());
+      dragTo(time());
+      break;
+    case 12:
+      require(m_chatEdit.selection(m_selectedText) == time().run.text, "Dragging a timestamp copies its display text");
+      press(name());
+      dragTo(body(true));
+      break;
+    case 13:
+      require(
+          m_chatEdit.selection(m_selectedText)
+              == name().run.text + " " + time().run.text + "\n" + m_messages.front().content,
+          "One drag selects the author, timestamp and body without an invisible paragraph terminator"
+      );
+      press(body(true), true);
+      move(name().x, name().y + name().run.height / 2);
+      m_window.released();
+      require(
+          m_chatEdit.selection(m_selectedText)
+              == name().run.text + " " + time().run.text + "\n" + m_messages.front().content,
+          "Dragging backwards from the body through the header keeps the same copied text"
+      );
+      press(body(false));
+      dragTo(body(true));
+      break;
+    case 14:
+      require(
+          m_chatEdit.selection(m_selectedText) == m_messages.front().content,
+          "Starting in the body continues to copy only body text"
+      );
+      press(name());
+      require(m_dialogKind.empty(), "A profile does not open on pointer press");
+      m_window.released();
+      break;
+    case 15:
+      require(m_dialogKind == "profile", "A simple name click still opens the profile on release");
+      closeDialog();
+      break;
+    case 16:
+      press(name());
+      m_window.focusChanged(false);
+      m_window.released();
+      require(m_dialogKind.empty() && !m_dragMessage, "Focus loss cancels the pending profile gesture");
+      m_window.focusChanged(true);
+      m_messages.front().content = "Select this <#102> channel and the remaining words.";
+      std::erase_if(m_channels, [](const auto& channel) { return channel.id == "102"; });
+      m_channels.push_back(
+          {.id = "102", .name = "🌙-chat", .type = 0, .overwrites = std::vector<api::PermissionOverwrite>{}}
+      );
+      m_guildChannels[m_guildId] = m_channels;
+      m_roleDirectory.apply(
+          {false,
+           {{.guild = m_guildId,
+             .roles = {{.id = m_guildId, .name = "@everyone", .permissions = std::to_string(api::viewChannel)}},
+             .members = {{m_account.id, {}}}}}}
+      );
+      m_messageLayouts.clear();
+      break;
+    case 17: {
+      const auto chip = area([](const auto& text) { return text.message == "9401" && text.run.channelChip; });
+      press(chip);
+      require(m_chatTextClick && m_chatTextClick->action == Action::OpenUrl, "Channel navigation waits for release");
+      dragTo(chip);
+      break;
+    }
+    case 18: {
+      const auto chip = area([](const auto& text) { return text.message == "9401" && text.run.channelChip; });
+      require(m_chatEdit.selection(m_selectedText) == chip.run.text, "A channel chip contributes its readable name");
+      require(m_channelId != "102", "Dragging a channel chip never follows its link");
+      press(body(false));
+      dragTo(body(true));
+      break;
+    }
+    case 19: {
+      require(
+          m_chatEdit.selection(m_selectedText) == "Select this #🌙-chat channel and the remaining words.",
+          "Selection crosses channel mentions and spaces without losing surrounding text"
+      );
+      const auto chip = area([](const auto& text) { return text.message == "9401" && text.run.channelChip; });
+      press(chip);
+      m_window.released();
+      break;
+    }
+    case 20:
+      require(m_channelId == "102", "A simple channel chip click still navigates on release");
+      std::clog << "Offline message dates, timestamp hover and header/channel selection check passed\n";
       break;
     }
     m_window.invalidate();
@@ -192,7 +313,11 @@ namespace app {
       );
     }
     m_messageText[message.id] = layout.plainText;
+    const auto timestamp = formatMessageTimestamp(message.timestamp, m_preferences.twelveHourClock);
+    const auto caption = timestamp + (message.deleted ? " · Deleted" : "");
+    m_messageSelectionText[message.id] = layout.plainText + (caption.empty() ? "" : " " + caption);
     m_hits.push_back({absoluteX, absoluteY, width, layout.height, Action::SelectMessage, message.id});
+    drawChatSelection(parent, layout, message.id, layout::Chat::authorGutter, y);
     if (automod) {
       Hit hit{
           absoluteX,
@@ -235,30 +360,10 @@ namespace app {
           );
         }
       }
+      chatSelectionText(parent, run, message.id, x, top, absoluteX + run.x, absoluteY + run.y);
       if (run.channelChip) {
         drawChannelLink(parent, run, message.id, x, top, absoluteX + run.x, absoluteY + run.y);
         continue;
-      }
-      if (m_selectedMessage == message.id && m_selectedText == layout.plainText && m_chatEdit.selected()) {
-        const auto from = std::max(std::min(m_chatEdit.caret, m_chatEdit.anchor), run.offset);
-        const auto to = std::min(std::max(m_chatEdit.caret, m_chatEdit.anchor), run.offset + run.text.size());
-        if (to > from) {
-          const auto measure = [&](std::string_view text) {
-            return m_window.target()
-                .renderer()
-                .measureText(
-                    messageMarkup(text, run.style), run.style.size, FontWeight::Normal, 0, 1, TextAlign::Start, {},
-                    TextEllipsize::End, true
-                )
-                .width;
-          };
-          const float offset = run.image.empty() ? measure(std::string_view(run.text).substr(0, from - run.offset)) : 0;
-          const float length =
-              run.image.empty() ? measure(std::string_view(run.text).substr(from - run.offset, to - from)) : run.width;
-          rectangle(
-              parent, x + offset, top, length, run.height, withAlpha(accent, Style::textHighlightAlpha), Style::radiusXs
-          );
-        }
       }
       if (!run.image.empty()) {
         if (!emojiImage(parent, x, top, run.width, run.image))
@@ -275,7 +380,6 @@ namespace app {
             parent, x, top, run.width + Style::spaceXxs, messageMarkup(run.text, run.style, false), run.style.size,
             automod && !run.style.muted ? foreground : muted, FontWeight::Normal, 1, true
         );
-      m_textAreas.push_back({run, message.id, absoluteX + run.x, absoluteY + run.y});
       const auto& user = automod ? run.style.userMention : message.authorId;
       if ((run.style.mention || !run.style.userMention.empty()) && !user.empty()) {
         Hit hit{absoluteX + run.x, absoluteY + run.y, run.width, run.height, Action::UserProfile, user};
@@ -288,19 +392,30 @@ namespace app {
       }
     }
     drawMessageStrikes(parent, layout, layout::Chat::authorGutter, y, automod ? foreground : muted);
-    const auto timestamp = formatMessageTimestamp(message.timestamp, m_preferences.twelveHourClock);
     if (!layout.runs.empty() && !timestamp.empty()) {
       const auto headerEnd = automod
           ? std::ranges::find_if(layout.runs, [&](const auto& run) { return run.y >= automod->authorTop; })
           : layout.runs.end();
       const auto& last = *(headerEnd == layout.runs.begin() ? headerEnd : std::prev(headerEnd));
-      const auto caption = timestamp + (message.deleted ? " · Deleted" : "");
       const auto timestampWidth = m_window.target().renderer().measureText(caption, Style::fontSizeDetail).width;
       const float timestampX = layout::Chat::authorGutter + last.x + last.width + Style::spaceCompact;
+      const float timestampY = y + last.y + Style::spaceXs;
+      const float available =
+          std::max(0.0F, std::min(timestampWidth + Style::spaceXxs, layout::Chat::authorGutter + width - timestampX));
+      MessageRun time{
+          .text = caption,
+          .width = available,
+          .style = {.size = Style::fontSizeDetail},
+          .offset = layout.plainText.size() + 1,
+          .height = Style::fontSizeDetail + Style::spaceXs
+      };
+      chatSelectionText(
+          parent, time, message.id, timestampX, timestampY, absoluteX - layout::Chat::authorGutter + timestampX,
+          absoluteY + last.y + Style::spaceXs, FontWeight::Normal, false, true
+      );
       timestampLabel(
-          parent, timestampX, y + last.y + Style::spaceXs,
-          std::max(0.0F, std::min(timestampWidth + Style::spaceXxs, layout::Chat::authorGutter + width - timestampX)),
-          caption, message.timestamp, Style::fontSizeDetail, message.deleted ? theme::danger : muted
+          parent, timestampX, timestampY, available, caption, message.timestamp, Style::fontSizeDetail,
+          message.deleted ? theme::danger : muted
       );
     }
     if (automod) {
@@ -474,8 +589,9 @@ namespace app {
     const auto strikes = messageStrikeAreas(message);
     require(!links.empty() && !spoilers.empty() && !strikes.empty(), "The Markdown fixture contains all span types");
     const auto textArea = [&](std::size_t index) {
+      const auto header = m_messageSelectionText.at("9401").size() - message.plainText.size();
       const auto found = std::ranges::find_if(m_textAreas, [&](const auto& area) {
-        return area.message == "9401" && area.run.offset == message.runs[index].offset;
+        return area.message == "9401" && !area.header && area.run.offset == header + message.runs[index].offset;
       });
       require(found != m_textAreas.end(), "The formatted text is mounted");
       return *found;
@@ -885,8 +1001,9 @@ namespace app {
       require(region != areas.end(), "The fixture has multiple linked words on one line");
       const auto& first = preview.runs[region->first];
       const auto& second = preview.runs[region->first + 1];
+      const auto header = m_messageSelectionText.at("9203").size() - preview.plainText.size();
       const auto target = std::ranges::find_if(m_textAreas, [&](const auto& area) {
-        return area.message == "9203" && area.run.offset == first.offset;
+        return area.message == "9203" && !area.header && area.run.offset == header + first.offset;
       });
       require(target != m_textAreas.end(), "The native preview text is mounted");
       const float gapX = target->x + (first.width + second.x - first.x) / 2;

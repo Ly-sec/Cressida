@@ -653,14 +653,24 @@ namespace app {
         if (step == 0) {
           if (m_unreadTimeline.unread())
             throw std::runtime_error("Mention previews must remain highlighted after reading");
-          const auto a = std::ranges::find(m_textAreas.rbegin(), m_textAreas.rend(), "9101", &TextArea::message);
-          const auto b = std::ranges::find(m_textAreas, "9102", &TextArea::message);
-          const auto c = std::ranges::find(m_textAreas, "9103", &TextArea::message);
+          const auto a = std::ranges::find_if(m_textAreas.rbegin(), m_textAreas.rend(), [](const auto& area) {
+            return area.message == "9101" && !area.header;
+          });
+          const auto b = std::ranges::find_if(m_textAreas, [](const auto& area) {
+            return area.message == "9102" && !area.header;
+          });
+          const auto c = std::ranges::find_if(m_textAreas, [](const auto& area) {
+            return area.message == "9103" && !area.header;
+          });
+          const auto aY =
+              m_messageTops.at("9101") + layout::Chat::headerHeight + m_messageLayouts.at("9101").layout.runs.back().y;
+          const auto bY = m_messageTops.at("9102") + m_messageLayouts.at("9102").layout.runs.front().y;
+          const auto cY = m_messageTops.at("9103") + m_messageLayouts.at("9103").layout.runs.front().y;
           if (a == m_textAreas.rend()
               || b == m_textAreas.end()
               || c == m_textAreas.end()
-              || std::abs((b->y - a->y) - (c->y - b->y)) > .1F
-              || std::abs((c->y - b->y) - a->run.height) > .1F)
+              || std::abs((bY - aY) - (cY - bY)) > .1F
+              || std::abs((cY - bY) - a->run.height) > .1F)
             throw std::runtime_error("Wrapped lines and consecutive messages must use the same line spacing");
           api::parseMessagePatch({{"mentions", nlohmann::json::array()}, {"edited_timestamp", "2026-10-17T09:42:00Z"}})
               .apply(m_messages[1]);
@@ -1054,10 +1064,26 @@ namespace app {
       m_window.invalidate();
       if (m_dragDraft)
         positionCaret(x, y, true);
-      if (m_dragMessage)
+      if (m_dragMessage) {
+        if (m_chatTextClick && std::hypot(x - m_chatPressX, y - m_chatPressY) < Style::dragStartThreshold)
+          return;
+        m_chatTextClick.reset();
         positionChatSelection(x, y);
+      }
     };
     m_window.released = [this] {
+      const auto textClick = std::exchange(m_chatTextClick, {});
+      const bool openText = textClick
+          && m_dragMessage
+          && textClick->contains(m_pointerX, m_pointerY)
+          && !m_chatEdit.selected()
+          && m_messageSelectionText.contains(m_selectedMessage)
+          && m_messageSelectionText.at(m_selectedMessage) == m_selectedText
+          && std::ranges::any_of(m_hits, [&](const auto& hit) {
+                              return hit.action == textClick->action
+                                  && hit.id == textClick->id
+                                  && hit.contains(m_pointerX, m_pointerY);
+                            });
       if (sharingRelease())
         return;
       finishRailDrag();
@@ -1069,9 +1095,12 @@ namespace app {
       if ((!m_viewImage.empty() || m_videoExpanded) && !m_contextOpen)
         m_controlInput.pointerLeave();
       m_dragDraft = m_dragMessage = m_dragImage = false;
+      if (openText)
+        activate(*textClick);
       updateCursor();
     };
     m_window.pointerLeft = [this] {
+      m_chatTextClick.reset();
       sharingRelease();
       finishRailDrag(true);
       finishSidebarResize();
@@ -1082,6 +1111,7 @@ namespace app {
       m_window.invalidate();
     };
     m_window.click = [this](float x, float y, std::uint32_t) {
+      m_chatTextClick.reset();
       y += layout::Window::titlebarHeight - m_window.titlebarHeight();
       m_pointerX = x;
       m_pointerY = y;
@@ -1173,6 +1203,30 @@ namespace app {
           const auto hit = *it;
           if (beginRailDrag(hit))
             return;
+          if ((hit.action == Action::UserProfile || hit.action == Action::OpenUrl)
+              && m_dialogKind.empty()
+              && !settingsVisible()
+              && !m_contextOpen
+              && !m_inboxOpen
+              && !m_emojiMenu
+              && !m_gifMenu
+              && !m_presenceMenu
+              && !userAccountDialogOpen()) {
+            const auto text = std::ranges::find_if(m_textAreas, [&](const auto& area) {
+              return Hit{area.x, area.y, area.run.width, area.run.height}.contains(x, y)
+                  && (hit.action == Action::OpenUrl
+                          ? area.run.style.link == hit.id
+                          : area.run.style.userMention == hit.id || (area.header && area.run.offset == 0));
+            });
+            if (text != m_textAreas.end()) {
+              const auto id = text->message;
+              activate({hit.x, hit.y, hit.width, hit.height, Action::SelectMessage, id});
+              m_chatTextClick = hit;
+              m_chatPressX = x;
+              m_chatPressY = y;
+              return;
+            }
+          }
           activate(hit);
           return;
         }
@@ -1199,6 +1253,7 @@ namespace app {
       m_pointerX = x;
       m_pointerY = y;
       finishSidebarResize();
+      m_chatTextClick.reset();
       m_dragDraft = m_dragMessage = false;
       if (m_inboxOpen && m_inboxBounds.contains(x, y))
         return;
@@ -3883,6 +3938,7 @@ namespace app {
     m_messageTops.clear();
     m_textAreas.clear();
     m_messageText.clear();
+    m_messageSelectionText.clear();
     if (m_viewImage.empty())
       m_viewerImages.clear();
     beginControls();
@@ -5045,12 +5101,36 @@ namespace app {
                 if (hasFirstLineInk)
                   continuationLineCenter = (firstTop + firstBottom) / 2 + continuationTextOffset;
               }
+              const auto selectionAuthor = continuation ? std::string{} : userName(message.authorId, message.author);
+              auto selectionTimestamp = continuation
+                  ? formatMessageClock(message.timestamp, m_preferences.twelveHourClock)
+                  : formatMessageTimestamp(message.timestamp, m_preferences.twelveHourClock);
+              if (!continuation && message.deleted)
+                selectionTimestamp += selectionTimestamp.empty() ? "Deleted" : " · Deleted";
+              const auto selectionHeader = selectionAuthor
+                  + (selectionAuthor.empty() || selectionTimestamp.empty() ? "" : " ")
+                  + selectionTimestamp
+                  + "\n";
+              const auto selectionOffset = selectionHeader.size();
+              m_messageSelectionText[message.id] = selectionHeader + layout.plainText;
+              const auto selectHeader = [&](const std::string& text, float x, float atY, float width, float size,
+                                            std::size_t offset, FontWeight weight = FontWeight::Normal) {
+                MessageRun run{
+                    .text = text,
+                    .width = width,
+                    .style = {.size = size},
+                    .offset = offset,
+                    .height = std::min(layout::Chat::headerHeight, size + Style::spaceXs)
+                };
+                chatSelectionText(
+                    *messageContent, run, message.id, x, atY, left + layout::Chat::inset + x, top + atY, weight, false,
+                    true
+                );
+              };
               if (!continuation) {
-                const auto author = userName(message.authorId, message.author);
+                const auto& author = selectionAuthor;
                 const auto authorTag = m_userDirectory.guildTag(message.authorId, message.authorTag);
-                auto timestamp = formatMessageTimestamp(message.timestamp, m_preferences.twelveHourClock);
-                if (message.deleted)
-                  timestamp += timestamp.empty() ? "Deleted" : " · Deleted";
+                const auto& timestamp = selectionTimestamp;
                 const float timestampWidth =
                     m_window.target().renderer().measureText(timestamp, Style::fontSizeDetail).width;
                 const float headerWidth =
@@ -5095,6 +5175,17 @@ namespace app {
                     *messageContent, 0, y + Style::borderWidth, layout::Avatar::chat, message.avatar, author,
                     message.authorId, "",
                     layout::Frame{0, y, bodyWidth - Style::spaceGroup, std::max(0.0F, groupBottom - y)}
+                );
+                const float nameInset = m_preferences.roleColors
+                        && m_preferences.roleColorMode == 1
+                        && !m_dmMode
+                        && m_roleDirectory.colors(m_guildId, message.authorId, message.memberRoles)
+                    ? Style::spaceMd
+                    : 0;
+                selectHeader(
+                    author, layout::Chat::authorGutter + nameInset, y,
+                    std::max(0.0F, std::min(authorWidth, nameMax) - nameInset), Style::fontSizeCaption, 0,
+                    FontWeight::SemiBold
                 );
                 roleLabel(
                     *messageContent, 50, y, nameMax, author, Style::fontSizeCaption, foreground, FontWeight::SemiBold,
@@ -5152,24 +5243,30 @@ namespace app {
                   timestampX += appSpace;
                 }
                 const float timestampAvailable = 50 + textWidth - timestampX;
-                if (!timestamp.empty() && timestampAvailable > 0)
+                if (!timestamp.empty() && timestampAvailable > 0) {
+                  const float timestampY = y + Style::spaceXxs + Style::borderWidth;
+                  const float width = std::min(timestampWidth + Style::spaceXxs, timestampAvailable);
+                  selectHeader(
+                      timestamp, timestampX, timestampY, width, Style::fontSizeDetail,
+                      author.size() + (author.empty() ? 0 : 1)
+                  );
                   timestampLabel(
-                      *messageContent, timestampX, y + (Style::spaceXxs + Style::borderWidth),
-                      std::min(timestampWidth + Style::spaceXxs, timestampAvailable), timestamp, message.timestamp,
+                      *messageContent, timestampX, timestampY, width, timestamp, message.timestamp,
                       Style::fontSizeDetail, message.deleted ? theme::danger : muted
                   );
-              } else if (messageHovered) {
-                const auto timestamp = formatMessageClock(message.timestamp, m_preferences.twelveHourClock);
+                }
+              } else if (messageHovered || (m_dragMessage && m_selectedMessage == message.id)) {
+                const auto& timestamp = selectionTimestamp;
                 const auto metrics = m_window.target().renderer().measureText(timestamp, Style::fontSizeFine);
+                const float timestampY = y
+                    + layout::Chat::centeredTextTop(
+                                             continuationLineCenter, metrics.top, metrics.inkTop, metrics.inkBottom
+                    );
+                const float width = m_preferences.twelveHourClock ? layout::Chat::authorGutter - Style::spaceXxs
+                                                                  : layout::Chat::continuationTimestampWidth;
+                selectHeader(timestamp, 0, timestampY, width, Style::fontSizeFine, 0);
                 timestampLabel(
-                    *messageContent, 0,
-                    y
-                        + layout::Chat::centeredTextTop(
-                            continuationLineCenter, metrics.top, metrics.inkTop, metrics.inkBottom
-                        ),
-                    m_preferences.twelveHourClock ? layout::Chat::authorGutter - Style::spaceXxs
-                                                  : layout::Chat::continuationTimestampWidth,
-                    timestamp, message.timestamp, Style::fontSizeFine, muted
+                    *messageContent, 0, timestampY, width, timestamp, message.timestamp, Style::fontSizeFine, muted
                 );
               }
               const float bodyY = y + (continuation ? 0 : 18);
@@ -5320,6 +5417,10 @@ namespace app {
                          area.width, area.height, Action::RevealSpoiler, message.id}
                     );
                   }
+                drawChatSelection(
+                    *messageContent, layout, message.id, layout::Chat::authorGutter, bodyY + continuationTextOffset,
+                    selectionOffset
+                );
                 std::size_t runIndex = 0;
                 for (const auto& run : layout.runs) {
                   auto style = run.style;
@@ -5331,27 +5432,17 @@ namespace app {
                   const bool hidden = run.style.spoiler && !spoilersVisible(message.id);
                   if (hidden)
                     continue;
+                  auto selectionRun = run;
+                  selectionRun.offset += selectionOffset;
+                  chatSelectionText(
+                      *messageContent, selectionRun, message.id, rx, ry + continuationTextOffset,
+                      left + layout::Chat::inset + rx, top + ry + continuationTextOffset
+                  );
                   if (run.channelChip) {
                     drawChannelLink(
-                        *messageContent, run, message.id, rx, ry, left + layout::Chat::inset + rx, top + ry
+                        *messageContent, selectionRun, message.id, rx, ry, left + layout::Chat::inset + rx, top + ry
                     );
                     continue;
-                  }
-                  if (m_selectedMessage == message.id && m_selectedText == layout.plainText && m_chatEdit.selected()) {
-                    const auto from = std::max(std::min(m_chatEdit.caret, m_chatEdit.anchor), run.offset);
-                    const auto to =
-                        std::min(std::max(m_chatEdit.caret, m_chatEdit.anchor), run.offset + run.text.size());
-                    if (to > from) {
-                      const auto offset = run.image.empty()
-                          ? measure(std::string_view(run.text).substr(0, from - run.offset), run.style)
-                          : 0;
-                      const auto length = run.image.empty()
-                          ? measure(std::string_view(run.text).substr(from - run.offset, to - from), run.style)
-                          : run.width;
-                      rectangle(
-                          *messageContent, rx + offset, ry, length, run.height, withAlpha(accent, .3F), Style::radiusXs
-                      );
-                    }
                   }
                   if (run.image.empty())
                     label(
@@ -5365,7 +5456,6 @@ namespace app {
                     );
                   else if (!emojiImage(*messageContent, rx, ry, run.width, run.image))
                     label(*messageContent, rx, ry, 22, "…", Style::fontSizeBody, muted);
-                  m_textAreas.push_back({run, message.id, left + Style::spaceXl + rx, top + ry});
                   if (!run.style.userMention.empty())
                     m_hits.push_back(
                         {left + Style::spaceXl + rx, top + ry, run.width, run.height, Action::UserProfile,
@@ -8032,6 +8122,12 @@ namespace app {
   }
 
   void ClientApplication::positionChatSelection(float x, float y) {
+    const auto text = m_messageSelectionText.find(m_selectedMessage);
+    if (text == m_messageSelectionText.end() || text->second != m_selectedText) {
+      m_dragMessage = false;
+      m_chatTextClick.reset();
+      return;
+    }
     float nearest = std::numeric_limits<float>::max();
     const TextArea* area = nullptr;
     for (const auto& item : m_textAreas)
@@ -8047,18 +8143,22 @@ namespace app {
     if (!area)
       return;
     const auto& run = area->run;
+    if (run.channelChip || !run.image.empty() || x <= area->x || x >= area->x + run.width) {
+      m_chatEdit.caret = run.offset + (x >= area->x + run.width / 2 ? run.text.size() : 0);
+      m_window.invalidate();
+      return;
+    }
     auto positions = TextEdit::stops(run.text);
     float distance = std::numeric_limits<float>::max();
     for (auto offset : positions) {
-      const float width = run.image.empty()
-          ? m_window.target()
-                .renderer()
-                .measureText(
-                    messageMarkup(std::string_view(run.text).substr(0, offset), run.style), run.style.size,
-                    FontWeight::Normal, 0, 1, TextAlign::Start, {}, TextEllipsize::End, true
-                )
-                .width
-          : (offset ? run.width : 0);
+      const auto prefix = std::string_view(run.text).substr(0, offset);
+      const float width = m_window.target()
+                              .renderer()
+                              .measureText(
+                                  area->markup ? messageMarkup(prefix, run.style) : std::string(prefix), run.style.size,
+                                  area->weight, 0, 1, TextAlign::Start, {}, TextEllipsize::End, area->markup
+                              )
+                              .width;
       const float delta = std::abs(x - area->x - width);
       if (delta < distance) {
         distance = delta;
@@ -8875,7 +8975,7 @@ namespace app {
     case Action::SelectMessage:
       m_fieldFocused = false;
       m_selectedMessage = hit.id;
-      m_selectedText = m_messageText[hit.id];
+      m_selectedText = m_messageSelectionText[hit.id];
       m_dragMessage = true;
       positionChatSelection(m_pointerX, m_pointerY);
       m_chatEdit.anchor = m_chatEdit.caret;

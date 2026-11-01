@@ -41,6 +41,18 @@ AM/PM times, enable **Use 12-hour clock** in
 Bot authors show an **APP** chip beside their name and role icon. The chip
 remains visible when role icons are turned off.
 
+## Copy text
+
+Drag across a message's author name, timestamp or text, then press **Ctrl+C** to
+copy the selection. You can include the header and body in the same drag. Inline
+channel mentions are selectable too, with their readable channel names included
+in the copied text. Selection highlights include the spaces between words.
+
+Clicking an author name still opens their profile, and clicking a channel
+mention still opens that channel. Dragging selects text instead of following
+those links. The message menu's **Copy Text** action continues to copy just the
+body.
+
 ## Delete a message
 
 Right-click a message and choose **Delete Message**, then confirm **Delete**.

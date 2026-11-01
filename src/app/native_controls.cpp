@@ -172,6 +172,8 @@ namespace app {
   }
   void ClientApplication::windowFocusChanged(bool focused) {
     if (!focused) {
+      m_chatTextClick.reset();
+      m_dragMessage = false;
       if (m_voiceMenuInput)
         closeContext();
       sharingRelease();

@@ -25,6 +25,29 @@ int main(int argc, char** argv) {
     const app::MessageMeasure editMeasure = [](std::string_view text, const app::MessageStyle& style) {
       return static_cast<float>(text.size()) * style.size * .5F;
     };
+    const auto selectable = app::layoutMessage("one two three\nfour five", 500, editMeasure);
+    const auto selected = app::messageSelectionAreas(selectable, 0, selectable.plainText.size(), editMeasure, false);
+    require(selected.size() == 2, "Selection joins words and intervening spaces once per visual line");
+    require(
+        selected.front().x == selectable.runs.front().x
+            && selected.front().width == editMeasure("one two three", selectable.runs.front().style),
+        "A selected line covers every space through the final selected glyph"
+    );
+    const auto partialSelection = app::messageSelectionAreas(selectable, 1, 10, editMeasure, false);
+    require(
+        partialSelection.size() == 1
+            && partialSelection.front().x == editMeasure("o", selectable.runs.front().style)
+            && partialSelection.front().width == editMeasure("ne two th", selectable.runs.front().style),
+        "Partial selections retain precise start and end positions across word boundaries"
+    );
+    const auto concealed = app::layoutMessage("before ||hidden|| after", 500, editMeasure);
+    const auto concealedSelection =
+        app::messageSelectionAreas(concealed, 0, concealed.plainText.size(), editMeasure, false);
+    require(concealedSelection.size() == 2, "A selection never bridges concealed spoiler text");
+    require(
+        app::messageSelectionAreas(concealed, 0, concealed.plainText.size(), editMeasure, true).size() == 1,
+        "Revealed spoilers share the surrounding line selection"
+    );
     const auto alerts = api::parseMessages(nlohmann::json::parse(R"JSON([{
       "id":"9201","channel_id":"101","type":24,"author":{"id":"11","username":"Maya"},
       "embeds":[{"type":"auto_moderation_message","description":"A blocked phrase in context",

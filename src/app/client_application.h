@@ -84,7 +84,7 @@ namespace app {
     static constexpr int composerReplyReplayFrames = 10;
     static constexpr int embedReplayFrames = 23;
     static constexpr int botMessagesReplayFrames = 8;
-    static constexpr int timestampReplayFrames = 11;
+    static constexpr int timestampReplayFrames = 21;
     static constexpr int loginReplayFrames = 18;
     static constexpr int startupReplayFrames = 14;
     static constexpr int startupTransitionReplayFrames = 6;
@@ -958,6 +958,13 @@ namespace app {
     void sidebarDemoFrame();
     void positionCaret(float x, float y, bool extend);
     void positionChatSelection(float x, float y);
+    void chatSelectionText(
+        Node& parent, const MessageRun& run, const std::string& message, float x, float y, float absoluteX,
+        float absoluteY, FontWeight weight = FontWeight::Normal, bool markup = true, bool header = false
+    );
+    void drawChatSelection(
+        Node& parent, const MessageLayout& message, const std::string& id, float x, float y, std::size_t offset = 0
+    );
     void upsertMessage(api::Message message);
     void saveSelection();
     std::string userName(const std::string& id, const std::string& fallback) const;
@@ -1666,9 +1673,13 @@ namespace app {
       MessageRun run;
       std::string message;
       float x, y;
+      FontWeight weight = FontWeight::Normal;
+      bool markup = true, header = false;
     };
     std::vector<TextArea> m_textAreas;
-    std::map<std::string, std::string> m_messageText;
+    std::map<std::string, std::string> m_messageText, m_messageSelectionText;
+    std::optional<Hit> m_chatTextClick;
+    float m_chatPressX = 0, m_chatPressY = 0;
     std::vector<std::size_t> m_draftOffsets;
     std::vector<TextCursorStop> m_draftStops;
     float m_attachmentScroll = 0, m_attachmentX = 0, m_attachmentY = 0, m_attachmentWidth = 0;

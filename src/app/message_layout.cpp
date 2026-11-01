@@ -34,6 +34,41 @@ namespace app {
       result = "<tt>" + result + "</tt>";
     return result;
   }
+  std::vector<layout::Frame> messageSelectionAreas(
+      const MessageLayout& message, std::size_t first, std::size_t last, const MessageMeasure& measure,
+      bool showSpoilers
+  ) {
+    std::vector<layout::Frame> areas;
+    std::size_t previousEnd = 0;
+    bool previous = false;
+    for (const auto& run : message.runs) {
+      const auto from = std::max(first, run.offset);
+      const auto to = std::min(last, run.offset + run.text.size());
+      if (to <= from || (run.style.spoiler && !showSpoilers)) {
+        previous = false;
+        continue;
+      }
+      const bool atomic = !run.image.empty() || run.channelChip.has_value();
+      const auto prefix = [&](std::size_t end) {
+        return std::clamp(measure(std::string_view(run.text).substr(0, end - run.offset), run.style), 0.0F, run.width);
+      };
+      const float left = atomic ? 0 : prefix(from), right = atomic ? run.width : prefix(to);
+      const bool whitespace = previous
+          && previousEnd <= from
+          && from <= message.plainText.size()
+          && std::string_view(message.plainText).substr(previousEnd, from - previousEnd).find_first_not_of(" \t")
+              == std::string_view::npos;
+      if (whitespace && !areas.empty() && areas.back().y == run.y && areas.back().height == run.height) {
+        auto& area = areas.back();
+        area.width = std::max(area.x + area.width, run.x + right) - area.x;
+      } else
+        areas.push_back({run.x + left, run.y, right - left, run.height});
+      previousEnd = to;
+      previous = true;
+    }
+    return areas;
+  }
+
   std::vector<MessageLinkArea> messageLinkAreas(const MessageLayout& layout) {
     std::vector<MessageLinkArea> areas;
     const MessageRun* previous = nullptr;

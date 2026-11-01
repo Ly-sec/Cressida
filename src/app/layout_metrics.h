@@ -202,6 +202,43 @@ namespace app::layout {
     static constexpr float panelPreferredWidth = 380;
     static constexpr float panelMinimumWidth = 250;
   };
+  struct SidebarActivity {
+    static constexpr float height = Style::spaceXl;
+    static constexpr float inset = Style::spaceXs;
+    static constexpr float padding = Style::spaceSm;
+    static constexpr float gap = Style::spaceXs;
+    static constexpr float glyphSize = Style::glyphSizeTiny;
+    static constexpr float halo = Style::borderWidth + Style::spaceXxs;
+    static constexpr float revealClearance = height + inset + halo;
+    static constexpr float captionSize = Style::fontSizeMini;
+  };
+  inline Frame sidebarChannelViewport(float channelTop, float accountTop, float sidebarWidth) {
+    const float top = channelTop - Style::spaceXs;
+    return {
+        Sidebar::railWidth + Sidebar::rowInset, top, std::max(0.0F, sidebarWidth - Sidebar::rowInset * 2),
+        std::max(0.0F, accountTop - Floating::gap - top)
+    };
+  }
+  inline Frame sidebarActivityFrame(const Frame& viewport, float captionWidth, bool above) {
+    using A = SidebarActivity;
+    const float width = std::min(viewport.width, std::ceil(captionWidth) + A::glyphSize + A::gap + A::padding * 2);
+    const float height = std::max(0.0F, std::min(A::height, viewport.height / 2 - A::inset));
+    return {
+        viewport.x + (viewport.width - width) / 2,
+        above ? viewport.y + A::inset : viewport.y + viewport.height - A::inset - height, width, height
+    };
+  }
+  inline float sidebarActivityReveal(
+      float rowTop, float rowHeight, float channelTop, const Frame& viewport, float offset, float maximum
+  ) {
+    const float first = viewport.y - channelTop + SidebarActivity::revealClearance;
+    const float last = viewport.y + viewport.height - channelTop - SidebarActivity::revealClearance;
+    if (rowTop - offset < first)
+      offset = rowTop - first;
+    else if (rowTop + rowHeight - offset > last)
+      offset = rowTop + rowHeight - last;
+    return std::clamp(offset, 0.0F, std::max(0.0F, maximum));
+  }
   struct Window {
     static constexpr float titlebarHeight = Style::windowTitlebarHeight;
     static constexpr int minimumWidth = Style::windowMinimumWidth;
@@ -268,7 +305,6 @@ namespace app::layout {
     static constexpr float avatarSize = Style::space2Xl;
     static constexpr float emojiSize = Style::spaceXl;
     static constexpr float scrollbarGutter = Style::scrollbarHoverWidth + Style::scrollbarHitSlop + Style::scrollbarGap;
-    static constexpr float footerHeight = Style::controlHeightSm + padding * 2;
     static constexpr float filterHeight = Style::controlHeightSm + Style::spaceSm;
     static constexpr float tooltipWidth = Style::embedMaximumWidth;
     static constexpr float tooltipIcon = Style::spaceSection;
@@ -317,7 +353,7 @@ namespace app::layout {
     };
   }
   struct ReactionBrowserFrames {
-    Frame dialog, close, emojis, people, normal, super, first, previous, next, refresh, page;
+    Frame dialog, close, emojis, people, normal, super;
   };
   inline ReactionBrowserFrames reactionBrowserFrames(float width, float height, bool filters = true) {
     using R = Reactions;
@@ -329,11 +365,9 @@ namespace app::layout {
     const float emojiWidth = std::min(Style::spaceSection * 3 + Style::spaceSm, w / 3);
     const float filterHeight = filters ? R::filterHeight : 0;
     const float listTop = y + R::headerHeight;
-    const float listHeight = std::max(0.0F, h - R::headerHeight - R::footerHeight);
+    const float listHeight = std::max(0.0F, h - R::headerHeight - R::padding);
     const float peopleX = x + R::padding + emojiWidth + Style::spaceSm;
     const float peopleWidth = std::max(0.0F, x + w - R::padding - peopleX);
-    const float buttonWidth = std::max(0.0F, (peopleWidth - Style::spaceSm * 2) / 3);
-    const float footerTop = y + h - R::footerHeight + R::padding;
     return {
         {x, y, w, h},
         {x + w - R::padding - Style::controlHeightSm, y + R::padding / 2, Style::controlHeightSm,
@@ -342,12 +376,7 @@ namespace app::layout {
         {peopleX, listTop + filterHeight, peopleWidth, std::max(0.0F, listHeight - filterHeight)},
         {peopleX, listTop, peopleWidth / 2 - Style::spaceXxs, Style::controlHeightSm},
         {peopleX + peopleWidth / 2 + Style::spaceXxs, listTop, peopleWidth / 2 - Style::spaceXxs,
-         Style::controlHeightSm},
-        {peopleX, footerTop, buttonWidth, Style::controlHeightSm},
-        {peopleX + buttonWidth + Style::spaceSm, footerTop, buttonWidth, Style::controlHeightSm},
-        {peopleX + (buttonWidth + Style::spaceSm) * 2, footerTop, buttonWidth, Style::controlHeightSm},
-        {x + R::padding, footerTop, emojiWidth, Style::controlHeightSm},
-        {peopleX, footerTop - Style::spaceLg, peopleWidth, Style::spaceLg}
+         Style::controlHeightSm}
     };
   }
   struct Typing {

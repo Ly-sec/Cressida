@@ -1434,6 +1434,8 @@ namespace app {
       page.next = event.reactorNext;
       page.more = event.reactorMore;
       page.touched = std::chrono::steady_clock::now();
+      page.failures = event.error.empty() ? 0 : std::min(page.failures + 1, reactorRetryExponent);
+      acceptReactionBrowserPage(action);
       m_window.invalidate();
       return;
     }

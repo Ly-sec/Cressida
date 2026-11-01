@@ -40,7 +40,8 @@
         "slug": "docs/direct-messages"
       },
       {
-        "slug": "docs/servers-and-threads"
+        "slug": "docs/servers-and-threads",
+        "label": "Servers, unread activity and threads"
       },
       {
         "slug": "docs/media"

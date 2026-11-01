@@ -21,6 +21,17 @@ namespace {
 int main(int argc, char** argv) {
   try {
     require(argc == 2, "Animation fixture directory required");
+    const auto fullRange = media::decodeAnimation(read(std::filesystem::path(argv[1]) / "full-range.mp4"));
+    require(fullRange && fullRange->frames.size() == 6, "Decode real full-range video frames");
+    for (const auto& frame : fullRange->frames)
+      for (int band = 0; band < 4; ++band) {
+        const int gray[] = {16, 64, 192, 240};
+        const auto at = (12 * fullRange->width + band * 8 + 4) * 4;
+        require(
+            std::abs(int(frame.rgba.at(at)) - gray[band]) <= 3,
+            "Full-range playback preserves dark and light tones without expanding their range"
+        );
+      }
     for (const auto* name :
          {"detail.gif", "detail.apng", "detail.webp", "detail.mp4", "detail.webm", "detail-long.gif",
           "detail-long.apng", "detail-long.webp", "detail-long.mp4", "detail-long.webm"}) {

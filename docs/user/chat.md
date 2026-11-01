@@ -69,10 +69,11 @@ Choose an emoji in the left column to see the people who used it. The selected
 emoji stays highlighted when you move the pointer away. The list shows their
 display names and usernames; click a person to open their profile. When an emoji
 has super reactions, **Normal** and **Super** show the two lists separately. The
-two columns scroll independently. Use **First**, **Previous** and **Next** to
-browse pages of up to 100 people. **Refresh** reloads the list, and **Try
-again** retries a failed read. Live reaction changes update the counts and
-refresh the open list after a short pause.
+two columns scroll independently. More people load automatically as you scroll
+down. Earlier entries stay accessible when you scroll back. Failed reads retry
+automatically with increasing delays while the window is open, keeping entries
+already loaded. Closing the window cancels its retries. Live reaction changes
+update the counts and refresh the open list after a short pause.
 
 Use **Tab** and **Shift+Tab** to move through visible controls, **Page Up** and
 **Page Down** to scroll the people list, and **Escape** to close the window.

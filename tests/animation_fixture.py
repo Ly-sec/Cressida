@@ -15,6 +15,13 @@ with tempfile.TemporaryDirectory(prefix="cressida-animation-") as directory:
             "-video_size", "32x24", "-framerate", "10", "-i", "pipe:0", "-an", "-c:v", codec,
             "-threads", "1", *codec_options, "-y", str(root / ("clip." + extension)),
         ], input=frames, check=True, timeout=15)
+    # Full-range H.264 exposes range metadata. Preserve gray levels during playback.
+    gray_row = b"".join(bytes((gray, gray, gray, 255)) * 8 for gray in (16, 64, 192, 240))
+    subprocess.run([
+        sys.argv[1], "-v", "error", "-nostdin", "-f", "rawvideo", "-pixel_format", "rgba",
+        "-video_size", "32x24", "-framerate", "10", "-i", "pipe:0", "-an", "-c:v", "libx264",
+        "-crf", "0", "-pix_fmt", "yuvj420p", "-color_range", "pc", "-threads", "1", "-y", str(root / "full-range.mp4"),
+    ], input=gray_row * 24 * 6, check=True, timeout=15)
     # Portraits and non-vector-aligned rows exercise conversion buffer boundaries.
     # Include odd native widths and tall portrait canvases.
     for width, height in [(10, 2), (26, 2), (18, 30), (34, 50), (17, 23), (31, 47), (174, 512)]:

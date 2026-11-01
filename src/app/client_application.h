@@ -87,6 +87,7 @@ namespace app {
     static constexpr int botMessagesReplayFrames = 8;
     static constexpr int timestampReplayFrames = 25;
     static constexpr int reactionBrowserReplayFrames = 16;
+    static constexpr int sidebarActivityReplayFrames = 13;
     static constexpr int loginReplayFrames = 18;
     static constexpr int startupReplayFrames = 14;
     static constexpr int startupTransitionReplayFrames = 6;
@@ -960,6 +961,8 @@ namespace app {
     bool sidebarResizeAt(float x, float y) const;
     void finishSidebarResize();
     void sidebarDemoFrame();
+    void prepareSidebarActivityDemo();
+    void demoSidebarActivityStep();
     void positionCaret(float x, float y, bool extend);
     void positionChatSelection(float x, float y, bool anchor = false);
     std::string messageSelectionHeader(const api::Message& message, bool continuation) const;
@@ -1031,6 +1034,8 @@ namespace app {
     bool reactionBrowserKey(const Key& key);
     void loadReactionBrowser(bool retry = false);
     api::Interaction reactionBrowserQuery() const;
+    void acceptReactionBrowserPage(const api::Interaction& action);
+    void scheduleReactionBrowserRetry(std::chrono::milliseconds delay);
     const api::Message* reactionBrowserMessage() const;
     void demoReactionBrowserStep();
     void prepareReactionBrowserDemo();
@@ -1354,12 +1359,14 @@ namespace app {
     std::set<std::string> m_pendingInteractions, m_revealedBlocked;
     std::map<std::string, api::MessageReference> m_replies;
     std::string m_reactionMessage, m_reactionChannel;
+    static constexpr unsigned reactorRetryExponent = 5;
     struct ReactorPage {
       std::vector<api::Account> users;
       std::string error;
       bool pending = false, loaded = false;
       bool more = false;
       std::string next;
+      unsigned failures = 0;
       std::uint64_t revision = 0;
       std::chrono::steady_clock::time_point touched{};
     };
@@ -1376,11 +1383,13 @@ namespace app {
       std::string channel, message, emoji;
       bool burst = false, changed = false;
       std::vector<std::string> cursors{""};
-      std::size_t cursor = 0, firstPage = 0;
+      std::size_t cursor = 0, loaded = 0;
+      bool more = true;
       float emojiScroll = 0, peopleScroll = 0;
     } m_reactionBrowser;
     Node* m_reactionBrowserRoot = nullptr;
-    Timer m_reactionRefreshTimer;
+    Timer m_reactionRefreshTimer, m_reactionRetryTimer;
+    std::chrono::steady_clock::time_point m_reactionRetryAt{};
     layout::Frame m_reactionEmojiBounds{}, m_reactionPeopleBounds{};
     std::map<std::string, float> m_messageTops;
     std::vector<layout::Frame> m_floatingFrames;

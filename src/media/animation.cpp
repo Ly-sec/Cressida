@@ -1,6 +1,7 @@
 #include "media/animation.h"
 
 #include "media/lottie.h"
+#include "media/pixel_conversion.h"
 
 #include <algorithm>
 #include <cmath>
@@ -393,10 +394,10 @@ namespace media {
         Frame frame{{}, std::chrono::milliseconds(fallback > 0 ? std::clamp<std::int64_t>(fallback, 20, 10000) : 100)};
         decoder.scale = sws_getCachedContext(
             decoder.scale, decoder.frame->width, decoder.frame->height,
-            static_cast<AVPixelFormat>(decoder.frame->format), result->width, result->height, AV_PIX_FMT_RGBA,
-            SWS_BILINEAR, nullptr, nullptr, nullptr
+            scalingFormat(static_cast<AVPixelFormat>(decoder.frame->format)), result->width, result->height,
+            AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr, nullptr, nullptr
         );
-        if (!decoder.scale)
+        if (!rgbaColorspace(decoder.scale, *decoder.frame))
           return {};
         dest.resize(result->width, result->height);
         dest.convert(decoder.scale, decoder.frame, frame.rgba);

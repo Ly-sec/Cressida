@@ -9,6 +9,7 @@
 #include "app/message_mentions.h"
 #include "app/message_preferences.h"
 #include "app/reply_preview.h"
+#include "app/sidebar_activity.h"
 #include "app/single_instance.h"
 #include "app/stream_popout.h"
 #include "app/system_message.h"
@@ -25,6 +26,8 @@
 #include "render/scene/input_area.h"
 #include "render/scene/rect_node.h"
 #include "render/scene/text_node.h"
+#include "ui/controls/button.h"
+#include "ui/controls/label.h"
 #include "ui/controls/scrollbar.h"
 #include "ui/palette.h"
 
@@ -614,6 +617,10 @@ namespace app {
           && m_demoOverlay.starts_with("reaction-browser-cycle")
           && m_demoInteractionStep < reactionBrowserReplayFrames)
         demoReactionBrowserStep();
+      if (m_demo
+          && m_demoOverlay.starts_with("sidebar-activity-cycle")
+          && m_demoInteractionStep < sidebarActivityReplayFrames)
+        demoSidebarActivityStep();
       if (m_demo && m_demoOverlay.starts_with("markdown-cycle") && m_demoInteractionStep < markdownReplayFrames)
         demoMarkdownStep();
       if (m_demo
@@ -883,7 +890,9 @@ namespace app {
             m_unreadTimeline.acknowledged("1200", "9000");
           }
         } else if (step == 1) {
-          if (at != m_hits.end() || m_unreadTimeline.mentions("1200") != 2 || m_channelId != "101")
+          if ((at != m_hits.end() && at->id == "1200")
+              || m_unreadTimeline.mentions("1200") != 2
+              || m_channelId != "101")
             throw std::runtime_error("Revealing a channel hides its floating badge without reading/selecting it");
           m_scrolling.stop(m_channelScroll);
           m_channelScroll = 0;
@@ -1267,6 +1276,10 @@ namespace app {
       if (m_inboxOpen && m_inboxBounds.contains(x, y))
         return;
       closeInbox();
+      if (std::ranges::any_of(m_hits, [&](const auto& hit) {
+            return hit.action == Action::JumpChannelMention && hit.contains(x, y);
+          }))
+        return;
       if (m_dialogKind.empty() && !settingsVisible())
         for (auto hit = m_hits.rbegin(); hit != m_hits.rend(); ++hit)
           if (hit->action == Action::ToggleReaction && hit->contains(x, y)) {
@@ -1766,21 +1779,23 @@ namespace app {
                    : m_demo && view && std::string_view(view) == "server-settings-expressions-cycle" ? 26
                    : m_demo && view && std::string_view(view) == "server-settings-management-cycle"  ? 12
                    : m_demo && view && std::string_view(view) == "server-settings-cycle"             ? 42
-                   : m_demo && view && std::string_view(view).starts_with("floating-cycle")     ? floatingReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("typing-cycle")       ? typingReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("rail-drag")          ? 10
-                   : m_demo && view && std::string_view(view).starts_with("folder-animation")   ? 9
-                   : m_demo && view && std::string_view(view) == "folder-menu-cycle"            ? 13
-                   : m_demo && view && std::string_view(view) == "server-menu-cycle"            ? 20
-                   : m_demo && view && std::string_view(view) == "channel-menu-cycle"           ? 31
-                   : m_demo && view && std::string_view(view) == "channel-cycle"                ? 18
-                   : m_demo && view && std::string_view(view).starts_with("forum-cycle")        ? 12
-                   : m_demo && view && std::string_view(view) == "thread-cycle"                 ? 10
-                   : m_demo && view && std::string_view(view) == "guild-tag-cycle"              ? 10
-                   : m_demo && view && std::string_view(view).starts_with("cosmetics-cycle")    ? cosmeticsReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("dm-profile-cycle")   ? dmProfileReplayFrames
-                   : m_demo && view && std::string_view(view) == "profile-card-cycle"           ? 8
-                   : m_demo && view && std::string_view(view) == "role-style-cycle"             ? 7
+                   : m_demo && view && std::string_view(view).starts_with("floating-cycle")   ? floatingReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("typing-cycle")     ? typingReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("rail-drag")        ? 10
+                   : m_demo && view && std::string_view(view).starts_with("folder-animation") ? 9
+                   : m_demo && view && std::string_view(view) == "folder-menu-cycle"          ? 13
+                   : m_demo && view && std::string_view(view) == "server-menu-cycle"          ? 20
+                   : m_demo && view && std::string_view(view) == "channel-menu-cycle"         ? 31
+                   : m_demo && view && std::string_view(view) == "channel-cycle"              ? 18
+                   : m_demo && view && std::string_view(view).starts_with("forum-cycle")      ? 12
+                   : m_demo && view && std::string_view(view) == "thread-cycle"               ? 10
+                   : m_demo && view && std::string_view(view) == "guild-tag-cycle"            ? 10
+                   : m_demo && view && std::string_view(view).starts_with("cosmetics-cycle")  ? cosmeticsReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("dm-profile-cycle") ? dmProfileReplayFrames
+                   : m_demo && view && std::string_view(view) == "profile-card-cycle"         ? 8
+                   : m_demo && view && std::string_view(view) == "role-style-cycle"           ? 7
+                   : m_demo && view && std::string_view(view).starts_with("sidebar-activity-cycle")
+                   ? sidebarActivityReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("unread-badge-cycle") ? 4
                    : m_demo && view && std::string_view(view) == "unread-cycle"                 ? 10
                    : m_demo && view && std::string_view(view) == "jump-latest-cycle"            ? 8
@@ -1887,6 +1902,8 @@ namespace app {
       throw std::runtime_error("Bot identity and message deletion replay did not complete");
     if (m_demoOverlay.starts_with("timestamps-cycle") && m_demoInteractionStep != timestampReplayFrames)
       throw std::runtime_error("Message timestamp replay did not complete");
+    if (m_demoOverlay.starts_with("sidebar-activity-cycle") && m_demoInteractionStep != sidebarActivityReplayFrames)
+      throw std::runtime_error("Sidebar activity replay did not complete");
     if (m_demoOverlay.starts_with("reaction-browser-cycle") && m_demoInteractionStep != reactionBrowserReplayFrames)
       throw std::runtime_error("Reaction browser replay did not complete");
     if (m_demoOverlay.starts_with("markdown-cycle") && m_demoInteractionStep != markdownReplayFrames)
@@ -1979,6 +1996,14 @@ namespace app {
           if (view.ends_with("narrow"))
             m_window.setUiScale(1.5F);
           prepareBotMessagesDemo();
+        }
+        if (view.starts_with("sidebar-activity-cycle")) {
+          m_demoOverlay = view;
+          if (view.ends_with("light"))
+            m_preferences.theme = "light";
+          if (view.ends_with("narrow"))
+            m_window.setUiScale(1.5F);
+          prepareSidebarActivityDemo();
         }
         if (view.starts_with("reaction-browser-cycle")) {
           m_demoOverlay = view;
@@ -4158,16 +4183,34 @@ namespace app {
              Action::ChannelListMenu,
              {}}
         );
-      int mentionsBelow = 0;
-      std::string nextMention;
+      const auto channelViewport = layout::sidebarChannelViewport(channelTop, accountTop, sidebarWidth);
+      SidebarActivity activity{.top = channelViewport.y, .bottom = channelViewport.y + channelViewport.height};
+      for (const auto& row : visibleChannels) {
+        const auto& channel = *row.channel;
+        if (channel.kind() == api::ChannelType::GuildCategory)
+          continue;
+        activity.add(
+            channel.id, channelTop + row.top - m_channelScroll, row.height,
+            channel.id != m_channelId && m_unreadTimeline.cursor(channel.id).has_value(),
+            m_unreadTimeline.mentions(channel.id), channelMuted(channel.id)
+        );
+      }
+      const auto activityFrame = [&](const SidebarActivityEdge& edge, bool above) {
+        const float width = m_window.target()
+                                .renderer()
+                                .measureText(edge.caption(), layout::SidebarActivity::captionSize, FontWeight::Bold)
+                                .width;
+        return layout::sidebarActivityFrame(channelViewport, width, above);
+      };
+      const auto aboveActivity = activityFrame(activity.above, true);
+      const auto belowActivity = activityFrame(activity.below, false);
+      const auto channelPointer = std::pair{m_pointerX, m_pointerY};
+      if ((!activity.above.empty() && aboveActivity.contains(m_pointerX, m_pointerY))
+          || (!activity.below.empty() && belowActivity.contains(m_pointerX, m_pointerY)))
+        m_pointerX = m_pointerY = -w;
       for (const auto& row : visibleChannels) {
         const float y = channelTop + row.top - m_channelScroll;
         const auto& channel = *row.channel;
-        if (channel.type != 4 && y + row.height > sidebarBottom && m_unreadTimeline.mentions(channel.id) > 0) {
-          mentionsBelow = std::min(1000000, mentionsBelow + m_unreadTimeline.mentions(channel.id));
-          if (nextMention.empty())
-            nextMention = channel.id;
-        }
         if (y < channelTop - Style::spaceXs || y + row.height > sidebarBottom) {
           if (channel.type == 2)
             drawVoiceMembers(root, channel, y + layout::Sidebar::rowStep, channelTop - Style::spaceXs, sidebarBottom);
@@ -4373,26 +4416,70 @@ namespace app {
         if (channel.type == 2)
           drawVoiceMembers(root, channel, y + layout::Sidebar::rowStep, channelTop - Style::spaceXs, sidebarBottom);
       }
-      if (mentionsBelow > 0) {
-        const auto text = (mentionsBelow > 99 ? "99+" : std::to_string(mentionsBelow))
-            + std::string(mentionsBelow == 1 ? " NEW MENTION" : " NEW MENTIONS");
-        const auto metrics = m_window.target().renderer().measureText(text, Style::fontSizeMini, FontWeight::Bold);
-        const float width = std::ceil(metrics.width) + 24,
-                    x = layout::Sidebar::railWidth + sidebarWidth / 2 - width / 2,
-                    y = accountTop - (Style::spaceSection - Style::spaceXxs);
-        rectangle(
-            root, x - (Style::spaceXxs + Style::borderWidth), y - (Style::spaceXxs + Style::borderWidth),
-            width + Style::spaceCompact, 34, sidebar, 17
+      m_pointerX = channelPointer.first;
+      m_pointerY = channelPointer.second;
+      const auto activityPill = [&](const SidebarActivityEdge& edge, const layout::Frame& frame, bool above) {
+        using A = layout::SidebarActivity;
+        if (edge.empty() || frame.height < A::captionSize + Style::spaceXs)
+          return;
+        const auto id = std::string("sidebar-activity:") + (above ? "above" : "below");
+        std::unique_ptr<Node> saved;
+        if (auto old = m_detachedInputs.find(id); old != m_detachedInputs.end()) {
+          saved = std::move(old->second);
+          m_detachedInputs.erase(old);
+        }
+        auto button =
+            saved ? std::unique_ptr<Button>(static_cast<Button*>(saved.release())) : std::make_unique<Button>();
+        m_widgets[id] = button.get();
+        button->setText(edge.caption());
+        button->setGlyph(above ? "chevron-up" : "chevron-down");
+        button->setFontSize(A::captionSize);
+        button->setGlyphSize(A::glyphSize);
+        button->label()->setFontWeight(FontWeight::Bold);
+        button->setGap(A::gap);
+        button->setPadding(0, A::padding);
+        button->setPosition(frame.x, frame.y);
+        button->setFrameSize(frame.width, frame.height);
+        button->setControlHeight(frame.height);
+        button->setRadius(frame.height / 2);
+        auto colors = Button::defaultPalette(ButtonVariant::Ghost);
+        const auto fill = edge.mentions > 0 ? destructive : raised;
+        const auto ink = edge.mentions > 0 ? readableTextColorForBackground(fill) : foreground;
+        colors.normal = {ColorSpec{.fixed = fill}, clearColorSpec(), ColorSpec{.fixed = ink}};
+        colors.pressed = colors.hover;
+        colors.disabled = colors.normal;
+        button->setCustomPalette(std::move(colors));
+        const bool enabled = !startupCovered()
+            && m_dialogKind.empty()
+            && !m_contextOpen
+            && !m_presenceMenu
+            && !m_emojiMenu
+            && !m_gifMenu
+            && !m_inboxOpen
+            && !m_selectRequest
+            && !m_shareOpen
+            && m_viewImage.empty()
+            && !m_videoExpanded
+            && !m_resizingSidebar;
+        button->setEnabled(enabled);
+        const Hit hit{frame.x, frame.y, frame.width, frame.height, Action::JumpChannelMention, edge.target()};
+        button->setOnClick([this, hit, guild = m_guildId, direct = m_dmMode, session = m_session] {
+          if (session == m_session && guild == m_guildId && direct == m_dmMode)
+            activate(hit);
+        });
+        button->setTooltip(
+            edge.mentions > 0 ? std::to_string(edge.mentions) + (above ? " mentions above" : " mentions below")
+                              : (above ? "Unread channels above" : "Unread channels below")
         );
         rectangle(
-            root, x, y, width, 28, hovered(x, y, width, 28) ? lerpColor(destructive, background, .12F) : destructive, 14
+            root, frame.x - A::halo, frame.y - A::halo, frame.width + A::halo * 2, frame.height + A::halo * 2, sidebar,
+            frame.height / 2 + A::halo
         );
-        label(
-            root, x + Style::spaceMd, y + (28 - (metrics.bottom - metrics.top)) / 2, width - Style::spaceXl, text,
-            Style::fontSizeMini, rgbHex(0xFFFFFF), FontWeight::Bold
-        );
-        m_hits.push_back({x, y, width, 28, Action::JumpChannelMention, nextMention});
-      }
+        root.addChild(std::move(button));
+        m_hits.push_back(hit);
+      };
+      activityPill(activity.above, aboveActivity, true);
+      activityPill(activity.below, belowActivity, false);
       if (m_channels.empty())
         label(
             root, 100, channelTop + (Style::spaceSm + Style::borderWidth), sidebarWidth - Style::spaceGroup,
@@ -8875,22 +8962,33 @@ namespace app {
       voiceAction(hit.id);
       break;
     case Action::JumpChannelMention: {
-      for (const auto& row : channelListRows(
-               m_channels, m_collapsedCategories, m_channelId, m_channelListPreferences,
-               [&](const auto& id) { return channelMuted(id); },
-               [&](const auto& channel) { return m_unreadTimeline.mentions(channel); },
-               [&](const auto& channel) { return m_dmMode || serverChannelVisible(channel); },
-               [this](const auto& channel) { return voiceMembersHeight(channel); }
-           )) {
+      auto channels = m_channels;
+      if (m_dmMode && !m_dmSearch.empty())
+        std::erase_if(channels, [&](const auto& channel) { return !dmMatches(channelName(channel)); });
+      const auto rows = channelListRows(
+          channels, m_collapsedCategories, m_channelId, m_channelListPreferences,
+          [&](const auto& id) { return channelMuted(id); },
+          [&](const auto& id) { return m_unreadTimeline.mentions(id); },
+          [&](const auto& channel) { return m_dmMode || serverChannelVisible(channel); },
+          [this](const auto& channel) { return voiceMembersHeight(channel); }
+      );
+      const float height = m_window.height() + layout::Window::titlebarHeight - m_window.titlebarHeight();
+      const float listTop = m_dmMode ? layout::DmSidebar::channelsTop : layout::Sidebar::channelsTop;
+      const float accountTop =
+          layout::accountFrame(height, chatLeft()).y - (voiceBarVisible() ? layout::Voice::reserve : 0);
+      const auto viewport = layout::sidebarChannelViewport(listTop, accountTop, channelSidebarWidth());
+      const float content = rows.empty() ? 0 : rows.back().top + rows.back().advance;
+      const float maximum = std::max(0.0F, content - (accountTop - listTop - Style::cardPadding));
+      for (const auto& row : rows)
         if (row.channel->id == hit.id) {
+          const int mentions = m_unreadTimeline.mentions(hit.id);
+          if (mentions == 0 && (!m_unreadTimeline.cursor(hit.id) || channelMuted(hit.id)))
+            break;
           m_scrolling.stop(m_channelScroll);
-          // Reveal the row above the floating badge, without selecting or ACKing it.
-          const float h = m_window.height() + layout::Window::titlebarHeight - m_window.titlebarHeight();
-          const float listTop = m_dmMode ? layout::DmSidebar::channelsTop : layout::Sidebar::channelsTop;
-          m_channelScroll = std::max(0.0F, listTop + row.top - (h - 160));
+          m_channelScroll =
+              layout::sidebarActivityReveal(row.top, row.height, listTop, viewport, m_channelScroll, maximum);
           break;
         }
-      }
       break;
     }
     case Action::Folder:

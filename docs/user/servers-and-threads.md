@@ -23,6 +23,13 @@ unread dot in the rail; unread channel names still use the brighter text color.
 Mute a channel or category to suppress its ordinary unread styling. Mention
 counts remain available when a server or channel is muted.
 
+When unread channels are above or below the visible sidebar, a **NEW UNREAD
+MESSAGES** pill appears at that edge. Mentions take priority and show a count,
+including mentions in muted channels. Click the pill to reveal the nearest
+channel with that activity. This scrolls the sidebar without opening the channel
+or marking it as read. Channels hidden by a collapsed category or **Hide Muted**
+do not contribute ordinary unread activity.
+
 Automatic read receipts are grouped while you read active conversations. Local
 unread indicators update immediately. Explicit **Mark as Read** actions are sent
 immediately.

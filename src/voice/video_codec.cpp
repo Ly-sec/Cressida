@@ -1,5 +1,7 @@
 #include "voice/video_codec.h"
 
+#include "media/pixel_conversion.h"
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/hwcontext.h>
@@ -484,7 +486,9 @@ namespace voice {
       Frame downloaded;
       AVFrame* decoded = frame.value;
       if (frame.value->format == m->hardwareFormat && m->hardwareFormat != AV_PIX_FMT_NONE) {
-        if (!downloaded.value || av_hwframe_transfer_data(downloaded.value, frame.value, 0) < 0) {
+        if (!downloaded.value
+            || av_hwframe_transfer_data(downloaded.value, frame.value, 0) < 0
+            || av_frame_copy_props(downloaded.value, frame.value) < 0) {
           error = "A hardware video frame could not be downloaded.";
           break;
         }
@@ -508,10 +512,10 @@ namespace voice {
       std::uint8_t* destination[] = {output->rgba.data()};
       const int strides[] = {output->stride};
       m->scale = sws_getCachedContext(
-          m->scale, decoded->width, decoded->height, static_cast<AVPixelFormat>(decoded->format), output->width,
-          output->height, AV_PIX_FMT_RGBA, SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
+          m->scale, decoded->width, decoded->height, media::scalingFormat(static_cast<AVPixelFormat>(decoded->format)),
+          output->width, output->height, AV_PIX_FMT_RGBA, SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
       );
-      if (!m->scale
+      if (!media::rgbaColorspace(m->scale, *decoded)
           || sws_scale(m->scale, decoded->data, decoded->linesize, 0, decoded->height, destination, strides)
               != output->height)
         output.reset();

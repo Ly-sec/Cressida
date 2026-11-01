@@ -22,6 +22,7 @@ namespace app {
     constexpr auto reactorReuse = std::chrono::seconds(30);
     constexpr auto reactorHoverDelay = std::chrono::milliseconds(200);
     constexpr auto reactorLeaveDelay = std::chrono::milliseconds(250);
+    constexpr auto reactorRetryDelay = std::chrono::milliseconds(1000);
     constexpr auto reactorRefreshDelay = std::chrono::milliseconds(250);
     int normalReactions(const api::Reaction& reaction) { return std::max(0, reaction.count - reaction.burstCount); }
   } // namespace
@@ -46,6 +47,7 @@ namespace app {
 
   void ClientApplication::closeReactionBrowser() {
     m_reactionRefreshTimer.stop();
+    m_reactionRetryTimer.stop();
     if (!m_reactionBrowser.message.empty()) {
       const auto prefix = std::to_string(static_cast<int>(api::InteractionKind::ListReactions))
           + ":"
@@ -120,7 +122,14 @@ namespace app {
     } else if ((m_reactionBrowser.burst ? reaction->burstCount : normalReactions(*reaction)) == 0)
       m_reactionBrowser.burst = !m_reactionBrowser.burst;
     m_reactionBrowser.changed = false;
-    requestReactors(reactionBrowserQuery(), retry);
+    const auto query = reactionBrowserQuery();
+    const auto cached = m_reactorPages.find(interactionKey(query));
+    if (retry
+        || cached == m_reactorPages.end()
+        || !cached->second.loaded
+        || (m_reactionBrowser.loaded == 0 && std::chrono::steady_clock::now() - cached->second.touched >= reactorReuse))
+      requestReactors(query, retry);
+    acceptReactionBrowserPage(query);
   }
 
   void ClientApplication::invalidateReactors(const std::string& channel, const std::string& message) {
@@ -131,13 +140,51 @@ namespace app {
     if (m_dialogKind == "reactions" && m_reactionBrowser.channel == channel && m_reactionBrowser.message == message) {
       m_reactionBrowser.changed = true;
       m_reactionBrowser.cursors = {""};
-      m_reactionBrowser.cursor = m_reactionBrowser.firstPage = 0;
+      m_reactionBrowser.cursor = m_reactionBrowser.loaded = 0;
+      m_reactionBrowser.more = true;
+      m_reactionRetryTimer.stop();
       m_scrolling.stop(m_reactionBrowser.peopleScroll);
       m_reactionBrowser.peopleScroll = 0;
       m_reactionRefreshTimer.start(reactorRefreshDelay, [this] {
         loadReactionBrowser(true);
         m_window.invalidate();
       });
+    }
+  }
+
+  void ClientApplication::scheduleReactionBrowserRetry(std::chrono::milliseconds delay) {
+    if (m_dialogKind != "reactions" || !reactionBrowserMessage())
+      return;
+    const auto due = std::chrono::steady_clock::now() + delay;
+    if (m_reactionRetryTimer.active() && m_reactionRetryAt <= due)
+      return;
+    m_reactionRetryAt = due;
+    m_reactionRetryTimer.start(delay, [this] {
+      if (m_dialogKind == "reactions")
+        m_window.invalidate();
+    });
+  }
+
+  void ClientApplication::acceptReactionBrowserPage(const api::Interaction& action) {
+    auto& browser = m_reactionBrowser;
+    if (m_dialogKind != "reactions"
+        || browser.channel != action.channel
+        || browser.message != action.message
+        || browser.emoji != action.emoji
+        || browser.burst != action.burst)
+      return;
+    const auto cursor = std::ranges::find(browser.cursors, action.reactionAfter);
+    const auto found = m_reactorPages.find(interactionKey(action));
+    if (cursor == browser.cursors.end() || found == m_reactorPages.end() || !found->second.loaded)
+      return;
+    const auto index = static_cast<std::size_t>(cursor - browser.cursors.begin());
+    auto& page = found->second;
+    page.touched = std::chrono::steady_clock::now();
+    browser.loaded = std::max(browser.loaded, index * api::reactorPageSize + page.users.size());
+    if (index + 1 == browser.cursors.size()) {
+      browser.more = page.more && !page.next.empty() && page.next != action.reactionAfter;
+      if (browser.more)
+        browser.cursors.push_back(page.next);
     }
   }
 
@@ -148,19 +195,32 @@ namespace app {
         && m_reactionBrowser.emoji == action.emoji
         && m_reactionBrowser.burst == action.burst;
     if (m_messageLog.known(action.channel, action.message)
-        || !m_connected
         || m_channelId != action.channel
         || m_contextOpen
         || (!m_dialogKind.empty() && !browser)
         || settingsVisible()
         || !m_viewImage.empty())
       return;
+    if (!m_connected) {
+      if (browser)
+        scheduleReactionBrowserRetry(reactorRetryDelay);
+      return;
+    }
     const auto key = interactionKey(action);
     const auto now = std::chrono::steady_clock::now();
     if (const auto old = m_reactorPages.find(key); old != m_reactorPages.end()) {
       if (old->second.pending)
         return;
-      if (!retry && (!old->second.error.empty() || now - old->second.touched < reactorReuse))
+      if (!retry && !old->second.error.empty()) {
+        if (!browser)
+          return;
+        const auto delay = reactorRetryDelay * (1U << std::min(old->second.failures, reactorRetryExponent));
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(old->second.touched + delay - now);
+        if (remaining.count() >= 0) {
+          scheduleReactionBrowserRetry(remaining + std::chrono::milliseconds(1));
+          return;
+        }
+      } else if (!retry && now - old->second.touched < reactorReuse)
         return;
     }
     if (!m_reactorPages.contains(key) && m_reactorPages.size() >= reactorCacheLimit) {
@@ -170,12 +230,18 @@ namespace app {
     }
     action.revision = ++m_reactorSerial;
     auto& page = m_reactorPages[key];
+    const auto failures = page.failures;
     page = {};
+    page.failures = failures;
     page.revision = action.revision;
     page.touched = now;
     page.pending = m_demo || m_client.interact(action);
-    if (!page.pending)
-      page.error = "Could not load people who reacted. Try again.";
+    if (!page.pending) {
+      page.error = "Could not load people who reacted.";
+      page.failures = std::min(page.failures + 1, reactorRetryExponent);
+      if (browser)
+        scheduleReactionBrowserRetry(reactorRetryDelay);
+    }
     m_window.invalidate();
   }
 
@@ -396,62 +462,42 @@ namespace app {
       closeDialog();
       return;
     }
-    if (id == "retry") {
-      loadReactionBrowser(true);
-      m_window.invalidate();
-      return;
-    }
     if (id.starts_with("user:")) {
-      const auto key = interactionKey(reactionBrowserQuery());
-      const auto page = m_reactorPages.find(key);
       const auto user = id.substr(5);
-      if (page != m_reactorPages.end()
-          && std::ranges::any_of(page->second.users, [&](const auto& person) { return person.id == user; }))
-        showProfile(user);
+      for (const auto& cursor : m_reactionBrowser.cursors) {
+        auto query = reactionBrowserQuery();
+        query.reactionAfter = cursor;
+        const auto page = m_reactorPages.find(interactionKey(query));
+        if (page != m_reactorPages.end()
+            && std::ranges::any_of(page->second.users, [&](const auto& person) { return person.id == user; })) {
+          showProfile(user);
+          break;
+        }
+      }
       return;
     }
-    if (id == "next") {
-      const auto page = m_reactorPages.find(interactionKey(reactionBrowserQuery()));
-      if (page == m_reactorPages.end()
-          || page->second.pending
-          || !page->second.error.empty()
-          || !page->second.more
-          || page->second.next.empty())
+    if (id.starts_with("emoji:")) {
+      const auto* message = reactionBrowserMessage();
+      if (!message)
         return;
-      m_reactionBrowser.cursors.resize(m_reactionBrowser.cursor + 1);
-      m_reactionBrowser.cursors.push_back(page->second.next);
-      ++m_reactionBrowser.cursor;
-      if (m_reactionBrowser.cursors.size() > reactorCacheLimit) {
-        m_reactionBrowser.cursors.erase(m_reactionBrowser.cursors.begin());
-        --m_reactionBrowser.cursor;
-        ++m_reactionBrowser.firstPage;
-      }
-    } else if (id == "previous") {
-      if (m_reactionBrowser.cursor == 0)
+      const auto found = std::ranges::find_if(message->reactions, [&](const auto& reaction) {
+        return api::reactionKey(reaction) == id.substr(6);
+      });
+      if (found == message->reactions.end())
         return;
-      --m_reactionBrowser.cursor;
-    } else {
-      if (id.starts_with("emoji:")) {
-        const auto* message = reactionBrowserMessage();
-        if (!message)
-          return;
-        const auto found = std::ranges::find_if(message->reactions, [&](const auto& reaction) {
-          return api::reactionKey(reaction) == id.substr(6);
-        });
-        if (found == message->reactions.end())
-          return;
-        m_reactionBrowser.emoji = api::reactionKey(*found);
-        m_reactionBrowser.burst = normalReactions(*found) == 0 && found->burstCount > 0;
-      } else if (id == "normal" || id == "super")
-        m_reactionBrowser.burst = id == "super";
-      else if (id != "first" && id != "refresh" && id != "retry")
-        return;
-      m_reactionBrowser.cursors = {""};
-      m_reactionBrowser.cursor = m_reactionBrowser.firstPage = 0;
-    }
+      m_reactionBrowser.emoji = api::reactionKey(*found);
+      m_reactionBrowser.burst = normalReactions(*found) == 0 && found->burstCount > 0;
+    } else if (id == "normal" || id == "super")
+      m_reactionBrowser.burst = id == "super";
+    else
+      return;
+    m_reactionRetryTimer.stop();
+    m_reactionBrowser.cursors = {""};
+    m_reactionBrowser.cursor = m_reactionBrowser.loaded = 0;
+    m_reactionBrowser.more = true;
     m_scrolling.stop(m_reactionBrowser.peopleScroll);
     m_reactionBrowser.peopleScroll = 0;
-    loadReactionBrowser(id == "refresh" || id == "retry");
+    loadReactionBrowser();
     m_window.invalidate();
   }
 
@@ -613,17 +659,52 @@ namespace app {
             Style::fontSizeCaption, button->label()->color()
         );
       }
-    const auto page = m_reactorPages.find(interactionKey(reactionBrowserQuery()));
-    const ReactorPage* data = !message || !chosen || page == m_reactorPages.end() ? nullptr : &page->second;
-    const bool pending = m_reactionBrowser.changed || (data && data->pending);
-    const auto count = data ? data->users.size() : 0;
+    auto& browser = m_reactionBrowser;
     auto& people = *pane(frames.people);
-    const float fullHeight = count * R::rowHeight;
-    m_scrolling.limit(m_reactionBrowser.peopleScroll, std::max(0.0F, fullHeight - frames.people.height));
+    const bool available = message && chosen && !browser.changed;
+    const bool incomplete = available && browser.more;
+    const float fullHeight = (browser.loaded + (incomplete ? 1 : 0)) * R::rowHeight;
+    m_scrolling.limit(browser.peopleScroll, std::max(0.0F, fullHeight - frames.people.height));
     const float rowWidth = std::max(0.0F, frames.people.width - R::scrollbarGutter);
-    if (data)
-      for (std::size_t i = 0; i < data->users.size(); ++i) {
-        const auto& person = data->users[i];
+    const auto firstRow = static_cast<std::size_t>(std::max(0.0F, browser.peopleScroll) / R::rowHeight);
+    const auto lastRow = std::min(
+        browser.loaded,
+        static_cast<std::size_t>(std::ceil((browser.peopleScroll + frames.people.height) / R::rowHeight))
+    );
+    if (available) {
+      // Keep names bounded in the page cache. Retain cursors so scrolling back can reload evicted pages.
+      const auto firstPage = firstRow / api::reactorPageSize;
+      const auto lastPage =
+          std::min(browser.cursors.size() - 1, (lastRow + api::reactorPageSize - 1) / api::reactorPageSize);
+      for (auto index = std::min(firstPage, lastPage); index <= lastPage; ++index) {
+        if (index * api::reactorPageSize > browser.loaded)
+          break;
+        if (index * api::reactorPageSize == browser.loaded
+            && browser.peopleScroll + frames.people.height + R::rowHeight < browser.loaded * R::rowHeight)
+          break;
+        browser.cursor = index;
+        loadReactionBrowser();
+      }
+    }
+    if (available)
+      for (auto i = firstRow; i < lastRow; ++i) {
+        auto query = reactionBrowserQuery();
+        query.reactionAfter = browser.cursors.at(i / api::reactorPageSize);
+        const auto cached = m_reactorPages.find(interactionKey(query));
+        const auto offset = i % api::reactorPageSize;
+        if (cached == m_reactorPages.end() || offset >= cached->second.users.size()) {
+          if (i == firstRow || offset == 0)
+            label(
+                people, Style::spaceSm, i * R::rowHeight - browser.peopleScroll + Style::spaceSm,
+                std::max(0.0F, rowWidth - Style::spaceLg),
+                cached != m_reactorPages.end() && !cached->second.error.empty()
+                    ? "Could not load people. Retrying shortly…"
+                    : "Loading people who reacted…",
+                Style::fontSizeCaption, theme::muted, FontWeight::Normal, 0
+            );
+          continue;
+        }
+        const auto& person = cached->second.users[offset];
         const float y = i * R::rowHeight - m_reactionBrowser.peopleScroll;
         if (y + R::rowHeight <= 0 || y >= frames.people.height)
           continue;
@@ -667,32 +748,18 @@ namespace app {
     };
     scrollbar("emoji-scrollbar", frames.emojis, emojiHeight, m_reactionBrowser.emojiScroll);
     scrollbar("people-scrollbar", frames.people, fullHeight, m_reactionBrowser.peopleScroll);
-    if (count == 0) {
-      const auto text = !message         ? "This message is no longer available."
-          : message->reactions.empty()   ? "No reactions remain."
-          : pending                      ? "Loading people who reacted…"
-          : data && !data->error.empty() ? "Could not load people who reacted."
-          : data && data->loaded         ? "No people on this page."
-                                         : "People could not be loaded.";
+    if (browser.loaded == 0 || incomplete) {
+      const auto text = !message                 ? "This message is no longer available."
+          : message->reactions.empty()           ? "No reactions remain."
+          : browser.loaded == 0 && !browser.more ? "No people who reacted."
+          : m_reactionRetryTimer.active()        ? "Could not load people. Retrying shortly…"
+                                                 : "Loading people who reacted…";
+      const float y = browser.loaded * R::rowHeight - browser.peopleScroll;
       label(
-          people, Style::spaceSm, Style::spaceLg, std::max(0.0F, rowWidth - Style::spaceLg), text,
+          people, Style::spaceSm, y + Style::spaceSm, std::max(0.0F, rowWidth - Style::spaceLg), text,
           Style::fontSizeCaption, theme::muted, FontWeight::Normal, 0
       );
-      if (message && !message->reactions.empty() && !pending && (!data || !data->error.empty()))
-        control(
-            people, "retry", {Style::spaceSm, R::rowHeight * 2, rowWidth - Style::spaceLg, Style::controlHeightSm},
-            "Try again", "retry"
-        );
     }
-    label(
-        modal, frames.page.x, frames.page.y, frames.page.width,
-        "Page " + std::to_string(m_reactionBrowser.firstPage + m_reactionBrowser.cursor + 1), Style::fontSizeDetail,
-        theme::muted
-    );
-    control(modal, "refresh", frames.refresh, "Refresh", "refresh", message && !pending && !message->reactions.empty());
-    control(modal, "first", frames.first, "First", "first", m_reactionBrowser.firstPage + m_reactionBrowser.cursor > 0);
-    control(modal, "previous", frames.previous, "Previous", "previous", m_reactionBrowser.cursor > 0);
-    control(modal, "next", frames.next, "Next", "next", data && data->more && !pending && data->error.empty());
     m_tooltip.clear();
   }
 
@@ -842,19 +909,57 @@ namespace app {
       };
       inspect(inspect, *m_reactionBrowserRoot, 0, 0);
       require(firstImage, "The first emoji row mounts its image inside the attached viewport");
-      clickWidget("next");
+      m_scrolling.stop(m_reactionBrowser.peopleScroll);
+      m_reactionBrowser.peopleScroll = api::reactorPageSize * layout::Reactions::rowHeight;
       break;
     }
     case 4:
-      require(reactionBrowserQuery().reactionAfter == "1099", "Next uses the last page's opaque user cursor");
-      response(3);
+      require(reactionBrowserQuery().reactionAfter == "1099", "Scrolling to the end uses the last page's user cursor");
+      response(0, "Synthetic later-page failure");
       break;
     case 5:
-      require(!static_cast<Button*>(m_widgets.at("reactions:next"))->enabled(), "Short pages disable Next");
-      clickWidget("previous");
+      require(
+          m_reactionBrowser.loaded == 100 && m_reactionRetryTimer.active(),
+          "Later-page failure keeps the preceding people and schedules automatic retry"
+      );
+      {
+        const auto revision = m_reactorPages.at(interactionKey(reactionBrowserQuery())).revision;
+        loadReactionBrowser();
+        require(
+            m_reactorPages.at(interactionKey(reactionBrowserQuery())).revision == revision,
+            "Repainting cannot bypass the retry delay"
+        );
+        m_reactionRetryTimer.stop();
+        m_reactorPages.at(interactionKey(reactionBrowserQuery())).touched -= std::chrono::minutes(1);
+        loadReactionBrowser();
+        response(3);
+      }
+      require(m_reactionBrowser.loaded == 103 && !m_reactionBrowser.more, "A short page ends the continuous list");
+      require(!m_widgets.contains("reactions:next"), "The list has no paging footer");
+      {
+        auto first = reactionBrowserQuery();
+        first.reactionAfter.clear();
+        const auto people = m_reactorPages.at(interactionKey(first)).users;
+        m_reactorPages.erase(interactionKey(first));
+        m_reactionBrowser.cursor = 0;
+        loadReactionBrowser();
+        require(
+            m_reactorPages.at(interactionKey(first)).pending && m_reactionBrowser.loaded == 103,
+            "Scrolling back can reload an evicted page without losing the list extent"
+        );
+        first.revision = m_reactorPages.at(interactionKey(first)).revision;
+        api::Event restored;
+        restored.interaction = first;
+        restored.reactors = people;
+        restored.reactorNext = "1099";
+        restored.reactorMore = true;
+        interactionResult(restored);
+      }
+      m_scrolling.stop(m_reactionBrowser.peopleScroll);
+      m_reactionBrowser.peopleScroll = 0;
       break;
     case 6:
-      require(reactionBrowserQuery().reactionAfter.empty(), "Previous returns to the first cached page");
+      require(m_widgets.at("reactions:user:1000")->parent(), "Scrolling back retains the earlier people");
       clickWidget("emoji:❤️");
       break;
     case 7:
@@ -862,7 +967,13 @@ namespace app {
       response(0, "Synthetic read failure");
       break;
     case 8: {
-      clickWidget("retry");
+      require(m_reactionRetryTimer.active(), "A failed read schedules automatic retry");
+      m_reactionRetryTimer.stop();
+      m_reactorPages.at(interactionKey(reactionBrowserQuery())).touched -= std::chrono::minutes(1);
+      loadReactionBrowser();
+      require(
+          m_reactorPages.at(interactionKey(reactionBrowserQuery())).pending, "An expired delay retries without a button"
+      );
       auto stale = reactionBrowserQuery();
       stale.revision = m_reactorPages.at(interactionKey(stale)).revision;
       invalidateReactors(stale.channel, stale.message);
@@ -929,6 +1040,7 @@ namespace app {
       require(
           m_dialogKind.empty()
               && !m_reactionRefreshTimer.active()
+              && !m_reactionRetryTimer.active()
               && m_drafts.at(m_channelId) == "Retained reactions draft"
               && m_reactorPages.size() <= reactorCacheLimit,
           "Dismissal preserves the draft and retires browser reads and timers"

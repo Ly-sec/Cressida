@@ -149,7 +149,9 @@ Native x86_64 and aarch64 runners build the client with pinned dependencies in
 the Freedesktop 26.08 SDK. The workflow exports a Flatpak bundle and deploys the
 same native payload into an AppImage with its runtime libraries. Neither package
 requires Nix. Package builds omit test targets; private headless replays check
-both packaged formats after the main test suite passes.
+both packaged formats after the main test suite passes. All manifest modules
+install libraries into `/app/lib`, keeping dependency lookup and the packaged
+runtime consistent across architectures and builder versions.
 
 The release job attaches both `.AppImage` and `.flatpak` files for each
 architecture, a `cressida-VERSION.tar.xz` source archive and `SHA256SUMS`

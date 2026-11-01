@@ -307,8 +307,17 @@ namespace app {
       require(!m_replies.contains(m_channelId), "Escape uses the same cancel action as the close glyph");
       focusedComposer();
       reply();
+      require(
+          m_replies.at(m_channelId).mention && m_preferences.replyMention,
+          "New replies remember the enabled mention choice after cancellation"
+      );
     } else if (step == 2) {
       geometry();
+      click(Action::ToggleReplyMention);
+      require(
+          !m_replies.at(m_channelId).mention && !m_preferences.replyMention,
+          "The mention control remembers switching notifications off again"
+      );
       click(Action::CancelReply);
       require(!m_replies.contains(m_channelId), "The actual close glyph cancels the reply");
       focusedComposer();
@@ -371,6 +380,7 @@ namespace app {
       activate({.action = Action::CloseSettings});
     } else if (step == 5) {
       reply();
+      require(!m_replies.at(m_channelId).mention, "New replies retain the disabled mention choice after navigation");
       activate({.action = Action::ToggleEmoji});
     } else if (step == 6) {
       require(m_emojiMenu && m_replies.contains(m_channelId), "The picker covers an existing reply");

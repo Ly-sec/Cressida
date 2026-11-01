@@ -41,6 +41,29 @@ int main() {
   };
   try {
     {
+      const auto replyPath = std::filesystem::path(directory) / "reply.json";
+      app::SessionStore store(replyPath);
+      require(!store.preferences("123").replyMention, "Reply mentions default off before an explicit choice");
+      app::Preferences preferences;
+      preferences.replyMention = true;
+      store.savePreferences("123", preferences);
+      app::SessionStore restarted(replyPath);
+      require(
+          restarted.preferences("123").replyMention
+              && !restarted.preferences("456").replyMention
+              && !restarted.startupPreferences().replyMention,
+          "Reply mention choices survive restart and remain private to each account"
+      );
+      preferences.replyMention = false;
+      restarted.savePreferences("123", preferences);
+      require(!store.preferences("123").replyMention, "Turning reply mentions off replaces the saved choice");
+      std::ofstream(replyPath) << R"({"123":{"preferences":{"reply_mention":"yes","theme":"light"}}})";
+      require(
+          !store.preferences("123").replyMention && store.preferences("123").theme == "light",
+          "Malformed reply mention preferences retain their default without losing other settings"
+      );
+    }
+    {
       const auto rpcPath = std::filesystem::path(directory) / "rpc.json";
       app::SessionStore store(rpcPath);
       require(store.preferences("123").rpcEnabled, "Local application RPC is enabled by default");

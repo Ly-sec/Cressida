@@ -17,6 +17,7 @@
     "--talk-name=org.freedesktop.StatusNotifierWatcher"
   ],
   "build-options": {
+    "libdir": "/app/lib",
     "cflags": "-O2 -g",
     "cxxflags": "-O2 -g",
     "env": {
@@ -104,7 +105,8 @@
         "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
       ],
       "post-install": [
-        "install -Dm644 COPYING /app/share/licenses/qrencode/COPYING"
+        "install -Dm644 COPYING /app/share/licenses/qrencode/COPYING",
+        "pkg-config --exists libqrencode"
       ]
     },
     {
@@ -227,7 +229,8 @@
       "post-install": [
         "install -Dm644 ../LICENSE /app/share/licenses/libplacebo/LICENSE",
         "install -Dm644 ../3rdparty/fast_float/LICENSE-MIT /app/share/licenses/fast_float/LICENSE-MIT",
-        "install -Dm644 ../3rdparty/glad/LICENSE /app/share/licenses/glad/LICENSE"
+        "install -Dm644 ../3rdparty/glad/LICENSE /app/share/licenses/glad/LICENSE",
+        "pkg-config --exists libplacebo"
       ]
     },
     {

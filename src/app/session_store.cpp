@@ -259,6 +259,8 @@ namespace app {
       result.showImages = value.value("images", true);
       result.autoplayGifs = value.value("autoplay_gifs", true);
       result.emojiImageLinks = value.value("emoji_image_links", false);
+      if (const auto at = value.find("reply_mention"); at != value.end() && at->is_boolean())
+        result.replyMention = at->get<bool>();
       if (const auto at = value.find("randomize_media_filenames"); at != value.end() && at->is_boolean())
         result.randomizeMediaFilenames = at->get<bool>();
       if (const auto at = value.find("twelve_hour_clock"); at != value.end() && at->is_boolean())
@@ -471,6 +473,7 @@ namespace app {
           {"images", preferences.showImages},
           {"autoplay_gifs", preferences.autoplayGifs},
           {"emoji_image_links", preferences.emojiImageLinks},
+          {"reply_mention", preferences.replyMention},
           {"randomize_media_filenames", preferences.randomizeMediaFilenames},
           {"twelve_hour_clock", preferences.twelveHourClock},
           {"voice",

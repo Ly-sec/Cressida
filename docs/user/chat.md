@@ -165,7 +165,10 @@ sign-out.
 ## Reply to someone
 
 Hover a message and choose **Reply**. The composer shows who you are replying
-to. The mention control switches the reply notification on or off.
+to. The **@ ON** / **@ OFF** control switches the reply notification on or off.
+Cressida remembers your last choice for new replies on that account, including
+after restarting. It starts off until you change it; explicit mentions in your
+message are independent of this control.
 
 Channel and user mentions in reply previews show readable names, including your
 local aliases for people.

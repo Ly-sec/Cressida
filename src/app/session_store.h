@@ -19,6 +19,7 @@ namespace app {
     bool compact = false, showEmbeds = true, showImages = true;
     bool autoplayGifs = true;
     bool emojiImageLinks = false;
+    bool replyMention = false;
     bool roleColors = true, animateRoleColors = true;
     bool showGuildTags = true;
     bool showAvatarDecorations = true;

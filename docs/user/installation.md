@@ -29,15 +29,8 @@ autostart configuration.
 
 ## Nix
 
-From the extracted Cressida source directory, run:
-
-```sh
-nix run path:.
-```
-
-This uses the project's Nix configuration. Your Nix installation must support
-flakes and the `nix-command` feature. The application still needs your Wayland
-desktop and its services.
+Follow [Install with a Nix flake](nix.md) to add Cressida to your NixOS or Home
+Manager configuration, install the package and manage updates.
 
 ## Guix
 

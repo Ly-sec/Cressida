@@ -9,6 +9,10 @@
         "slug": "docs/installation"
       },
       {
+        "slug": "docs/nix",
+        "label": "Install with a Nix flake"
+      },
+      {
         "slug": "docs/manual-installation"
       },
       {

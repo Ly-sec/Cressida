@@ -12,8 +12,10 @@ Install a C compiler, a C++23 compiler and a compatible standard library.
 accepting the `-std=c++23` flag alone is not enough.
 
 You also need Meson 1.2 or newer, Ninja, pkg-config/pkgconf, `wayland-scanner`
-and recent `wayland-protocols`. Nix users can enter the supplied environment
-with `nix develop path:.` from the client source directory.
+and recent `wayland-protocols`. Nix users can enter the supplied development
+environment with `nix develop` from the client source directory. To install the
+application through a configuration flake, follow the
+[Nix installation guide](nix.md).
 
 ## Libraries
 

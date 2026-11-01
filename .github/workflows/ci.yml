@@ -16,6 +16,22 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  changes:
+    name: Select portability checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      dave: ${{ steps.filter.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check encryption and build changes
+        id: filter
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 .github/workflows/scripts/dave_changes.py
+
   quality:
     name: Formatting and automation
     runs-on: ubuntu-24.04
@@ -69,27 +85,40 @@ jobs:
 
   dave:
     name: Portable DAVE
+    needs: changes
+    if: needs.changes.outputs.dave == 'true'
     uses: ./.github/workflows/ci-dave.yml
 
   required:
     name: CI passed
     if: always()
-    needs: [quality, build, musl, dave]
+    needs: [changes, quality, build, musl, dave]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every check to pass
         env:
+          CHANGES: ${{ needs.changes.result }}
+          DAVE_REQUIRED: ${{ needs.changes.outputs.dave }}
           QUALITY: ${{ needs.quality.result }}
           BUILD: ${{ needs.build.result }}
           MUSL: ${{ needs.musl.result }}
           DAVE: ${{ needs.dave.result }}
         run: |
+          echo "Portability selection: $CHANGES (required=$DAVE_REQUIRED)"
           echo "Formatting and automation: $QUALITY"
           echo "Build and test: $BUILD"
           echo "Alpine musl build and test: $MUSL"
           echo "Portable DAVE: $DAVE"
-          if test "$QUALITY" != success || test "$BUILD" != success || test "$MUSL" != success || test "$DAVE" != success; then
+          if test "$CHANGES" != success || test "$QUALITY" != success || test "$BUILD" != success || test "$MUSL" != success; then
             echo "::error::A prerequisite job did not succeed. Open the formatting and build job logs for the underlying error."
             exit 1
           fi
+          if test "$DAVE_REQUIRED" = true && test "$DAVE" = success; then
+            exit 0
+          fi
+          if test "$DAVE_REQUIRED" = false && test "$DAVE" = skipped; then
+            exit 0
+          fi
+          echo "::error::Portable DAVE did not match the selected check policy. Open the portability job logs."
+          exit 1

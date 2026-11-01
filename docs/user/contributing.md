@@ -37,6 +37,15 @@ With the supplied Nix environment, `just check` builds and tests the locked
 check package. Normal Nix installations omit tests. `just test release`
 explicitly enables tests in a local release build.
 
+CI runs formatting, automation checks, Nix builds and tests on both supported
+architectures, plus the Alpine compatibility build. The additional Arch, Fedora
+and Ubuntu encryption checks run when encryption sources or tests, bundled MLS
+code, shared media headers, build configuration or their CI automation changes.
+UI-only and documentation-only changes skip those three checks. Manual CI runs
+and release checks always include them; an unavailable or potentially incomplete
+changed-file comparison also runs them. The required **CI passed** check accepts
+an intentional skip and still rejects failed or cancelled checks.
+
 ## Check UI changes
 
 Use synthetic demo data rather than personal account content:

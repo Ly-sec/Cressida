@@ -99,7 +99,8 @@
         "label": "Building with system packages"
       },
       {
-        "slug": "docs/contributing"
+        "slug": "docs/contributing",
+        "label": "Contributing and CI checks"
       },
       {
         "slug": "docs/packaging",

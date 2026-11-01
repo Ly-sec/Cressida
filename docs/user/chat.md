@@ -125,7 +125,10 @@ caret position to your desktop.
 
 Type `@` to choose a member, role, everyone or here. Type `:` followed by at
 least two characters to search emoji. Suggestions can include Unicode and server
-emoji.
+emoji. Searches ignore letter case. The list shows up to 50 matches; type more
+of the name to narrow the results. With **Emoji image links** enabled,
+suggestions also include custom emoji that need an image-link fallback, just
+like the emoji picker.
 
 - Use **Up** and **Down** to move through suggestions.
 - Press **Enter** or **Tab** to insert the selected suggestion.

@@ -295,7 +295,7 @@ namespace app {
     } else {
       const auto emoji = [&](const std::string& key, const std::string& origin) {
         const auto* value = m_emojiCatalog.find(key);
-        if (!value || !value->available)
+        if (!value)
           return;
         auto score = matchScore(value->name, search);
         for (const auto& alias : value->aliases)
@@ -630,6 +630,72 @@ namespace app {
       require(!m_completionItems.empty(), "Unicode emoji names and aliases are searchable");
       onKey({XKB_KEY_Tab});
       require(!m_drafts[m_channelId].starts_with(":"), "Unicode emoji are inserted as native characters");
+
+      const auto guild = m_guilds.front().id;
+      const auto savedFallback = m_preferences.emojiImageLinks;
+      const auto savedPremium = m_account.premiumType;
+      std::vector<api::Emoji> fixtures;
+      for (const auto& key : m_emojiCatalog.guild(guild))
+        fixtures.push_back(*m_emojiCatalog.find(key));
+      api::Emoji still{.id = "890000000000000001", .name = "completion_wave", .guild = guild};
+      auto moving = still, unavailable = still;
+      moving.id = "890000000000000002";
+      moving.name = "completion_wiggle";
+      moving.animated = true;
+      unavailable.id = "890000000000000003";
+      unavailable.name = "completion_winter";
+      unavailable.available = false;
+      fixtures.insert(fixtures.end(), {still, moving, unavailable});
+      const auto crowdCount = layout::Completion::maximumResults + 10;
+      for (std::size_t i = 0; i < crowdCount; ++i) {
+        auto emoji = still;
+        emoji.id = std::to_string(890000000000000100ULL + i);
+        emoji.name = "completion_crowd_" + std::to_string(i);
+        fixtures.push_back(std::move(emoji));
+      }
+      m_emojiCatalog.setGuild(guild, std::move(fixtures));
+      m_account.premiumType = 0;
+      m_preferences.emojiImageLinks = true;
+      setDraft(":CoMpLeTiOn_w");
+      updateCompletion();
+      require(m_completionItems.size() == 3, "Image-link suggestions include unavailable and animated emoji");
+      m_preferences.emojiImageLinks = false;
+      m_completionDirty = true;
+      updateCompletion();
+      require(
+          m_completionItems.size() == 1 && m_completionItems.front().id == still.id,
+          "Without image links, only supported native emoji are suggested"
+      );
+      m_account.premiumType = 2;
+      m_completionDirty = true;
+      updateCompletion();
+      require(m_completionItems.size() == 2, "Premium animation does not make unavailable native emoji usable");
+      m_preferences.emojiImageLinks = true;
+      setDraft(":COMPLETION_WINTER");
+      updateCompletion();
+      onKey({XKB_KEY_Tab});
+      require(
+          m_drafts[m_channelId] == unavailable.token() + " "
+              && m_emojiCatalog.messageContent(m_drafts[m_channelId], guild, 2, true)
+                  == api::emojiImageLink(unavailable) + " ",
+          "Selecting an unavailable suggestion retains its token and uses the send-time image fallback"
+      );
+      setDraft(":completion_crowd_");
+      updateCompletion();
+      require(m_completionItems.size() == layout::Completion::maximumResults, "Broad queries retain bounded results");
+      const auto lastName = "completion_crowd_" + std::to_string(crowdCount - 1);
+      require(
+          std::ranges::none_of(m_completionItems, [&](const auto& item) { return item.name == ":" + lastName + ":"; }),
+          "The broad-query fixture includes a match beyond the suggestion cutoff"
+      );
+      setDraft(":" + lastName);
+      updateCompletion();
+      require(
+          m_completionItems.size() == 1 && m_completionItems.front().name == ":" + lastName + ":",
+          "Narrowing a query searches the whole catalog, including matches outside the earlier result limit"
+      );
+      m_preferences.emojiImageLinks = savedFallback;
+      m_account.premiumType = savedPremium;
     } else {
       setDraft("@ma");
       updateCompletion();

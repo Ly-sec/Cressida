@@ -4701,6 +4701,7 @@ namespace app {
                       {.emojiImageLinks = m_preferences.emojiImageLinks,
                        .compact = true,
                        .unicodeEmoji = [this](std::string_view text) { return m_emojiCatalog.isUnicode(text); },
+                       .channelMention = [this](auto guild, auto channel) { return channelMention(guild, channel); },
                        .roleMention =
                            [this](auto role) {
                              return m_roleDirectory.roleName(m_dmMode ? "" : m_guildId, std::string(role));

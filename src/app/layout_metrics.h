@@ -257,6 +257,99 @@ namespace app::layout {
     static constexpr float unreadTimelineTop = 166;
     static constexpr float minimumHistoryFetchDistance = 240;
   };
+  struct Reactions {
+    static constexpr float maximumWidth = Style::embedMaximumWidth + Style::spaceSection * 4;
+    static constexpr float maximumHeight = Style::profileCardWidth * 2 + Style::spaceSection * 2;
+    static constexpr float margin = Style::spaceLg;
+    static constexpr float padding = Style::spaceLg;
+    static constexpr float headerHeight = Style::controlHeightLg + padding;
+    static constexpr float rowHeight = Style::spaceGroup;
+    static constexpr float emojiRowHeight = Style::spaceSection;
+    static constexpr float avatarSize = Style::space2Xl;
+    static constexpr float emojiSize = Style::spaceXl;
+    static constexpr float scrollbarGutter = Style::scrollbarHoverWidth + Style::scrollbarHitSlop + Style::scrollbarGap;
+    static constexpr float footerHeight = Style::controlHeightSm + padding * 2;
+    static constexpr float filterHeight = Style::controlHeightSm + Style::spaceSm;
+    static constexpr float tooltipWidth = Style::embedMaximumWidth;
+    static constexpr float tooltipIcon = Style::spaceSection;
+    static constexpr float tooltipPadding = Style::spaceMd;
+    static constexpr float tooltipGap = Style::spaceXs;
+    static constexpr float tooltipLinkHeight = Style::fontSizeDescription + Style::spaceSm;
+  };
+  inline float reactionTooltipWidth(float width, float caption, float link) {
+    using R = Reactions;
+    return std::max(
+        0.0F,
+        std::min(
+            {R::tooltipWidth, width - R::margin * 2,
+             std::max(caption, link) + R::tooltipIcon + Style::spaceMd + R::tooltipPadding * 2}
+        )
+    );
+  }
+  struct ReactionTooltipFrames {
+    Frame card, icon, text, link;
+  };
+  inline ReactionTooltipFrames
+  reactionTooltipFrames(float width, float height, const Frame& anchor, float w, float captionHeight) {
+    using R = Reactions;
+    const float h = std::max(
+        0.0F,
+        std::min(
+            height - Window::titlebarHeight - R::margin * 2,
+            std::max(R::tooltipIcon, captionHeight + R::tooltipGap + R::tooltipLinkHeight) + R::tooltipPadding * 2
+        )
+    );
+    const float x =
+        std::clamp(anchor.x + anchor.width / 2 - w / 2, R::margin, std::max(R::margin, width - w - R::margin));
+    const float top = Window::titlebarHeight + R::margin;
+    const float preferred = anchor.y - h - Style::spaceSm >= top ? anchor.y - h - Style::spaceSm
+                                                                 : anchor.y + anchor.height + Style::spaceSm;
+    const float y = std::clamp(preferred, top, std::max(top, height - h - R::margin));
+    const float textX = x + R::tooltipPadding + R::tooltipIcon + Style::spaceMd;
+    const float textWidth = std::max(0.0F, x + w - R::tooltipPadding - textX);
+    const float textHeight =
+        std::max(0.0F, std::min(captionHeight, h - R::tooltipPadding * 2 - R::tooltipGap - R::tooltipLinkHeight));
+    return {
+        {x, y, w, h},
+        {x + R::tooltipPadding, y + R::tooltipPadding, R::tooltipIcon, R::tooltipIcon},
+        {textX, y + R::tooltipPadding, textWidth, textHeight},
+        {textX, y + R::tooltipPadding + textHeight + R::tooltipGap, textWidth, R::tooltipLinkHeight}
+    };
+  }
+  struct ReactionBrowserFrames {
+    Frame dialog, close, emojis, people, normal, super, first, previous, next, refresh, page;
+  };
+  inline ReactionBrowserFrames reactionBrowserFrames(float width, float height, bool filters = true) {
+    using R = Reactions;
+    const float availableHeight = std::max(0.0F, height - Window::titlebarHeight - R::margin * 2);
+    const float w = std::max(0.0F, std::min(R::maximumWidth, width - R::margin * 2));
+    const float h = std::min(R::maximumHeight, availableHeight);
+    const float x = (width - w) / 2;
+    const float y = Window::titlebarHeight + R::margin + (availableHeight - h) / 2;
+    const float emojiWidth = std::min(Style::spaceSection * 3 + Style::spaceSm, w / 3);
+    const float filterHeight = filters ? R::filterHeight : 0;
+    const float listTop = y + R::headerHeight;
+    const float listHeight = std::max(0.0F, h - R::headerHeight - R::footerHeight);
+    const float peopleX = x + R::padding + emojiWidth + Style::spaceSm;
+    const float peopleWidth = std::max(0.0F, x + w - R::padding - peopleX);
+    const float buttonWidth = std::max(0.0F, (peopleWidth - Style::spaceSm * 2) / 3);
+    const float footerTop = y + h - R::footerHeight + R::padding;
+    return {
+        {x, y, w, h},
+        {x + w - R::padding - Style::controlHeightSm, y + R::padding / 2, Style::controlHeightSm,
+         Style::controlHeightSm},
+        {x + R::padding, listTop, emojiWidth, listHeight},
+        {peopleX, listTop + filterHeight, peopleWidth, std::max(0.0F, listHeight - filterHeight)},
+        {peopleX, listTop, peopleWidth / 2 - Style::spaceXxs, Style::controlHeightSm},
+        {peopleX + peopleWidth / 2 + Style::spaceXxs, listTop, peopleWidth / 2 - Style::spaceXxs,
+         Style::controlHeightSm},
+        {peopleX, footerTop, buttonWidth, Style::controlHeightSm},
+        {peopleX + buttonWidth + Style::spaceSm, footerTop, buttonWidth, Style::controlHeightSm},
+        {peopleX + (buttonWidth + Style::spaceSm) * 2, footerTop, buttonWidth, Style::controlHeightSm},
+        {x + R::padding, footerTop, emojiWidth, Style::controlHeightSm},
+        {peopleX, footerTop - Style::spaceLg, peopleWidth, Style::spaceLg}
+    };
+  }
   struct Typing {
     static constexpr float height = Style::spaceXl;
     static constexpr std::size_t dotCount = 3;

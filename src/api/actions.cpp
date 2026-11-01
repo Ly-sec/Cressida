@@ -366,7 +366,7 @@ namespace api {
     if (!value.is_array())
       return result;
     for (const auto& item : value) {
-      if (result.size() == 100)
+      if (result.size() == reactorPageSize)
         break;
       if (!item.is_object()
           || !item.contains("id")
@@ -378,6 +378,25 @@ namespace api {
           && std::ranges::none_of(result, [&](const auto& old) { return old.id == account.id; }))
         result.push_back(std::move(account));
     }
+    return result;
+  }
+  std::optional<ReactorResult> parseReactorPage(const nlohmann::json& value, std::string_view after) {
+    if (!value.is_array() || value.size() > reactorPageSize || (!after.empty() && !validSnowflake(std::string(after))))
+      return {};
+    ReactorResult result;
+    result.users = parseReactors(value);
+    if (result.users.size() != value.size())
+      return {};
+    const auto later = [](std::string_view left, std::string_view right) {
+      return left.size() != right.size() ? left.size() > right.size() : left > right;
+    };
+    for (const auto& user : result.users) {
+      if (!after.empty() && !later(user.id, after))
+        return {};
+      if (later(user.id, result.next))
+        result.next = user.id;
+    }
+    result.more = value.size() == reactorPageSize;
     return result;
   }
   nlohmann::json messageBody(
@@ -783,7 +802,11 @@ namespace api {
           return {};
         request.path += "/reactions/" + encode(action.emoji);
         if (action.kind == Kind::ListReactions) {
-          request.path += std::string("?limit=100&type=") + (action.burst ? "1" : "0");
+          if (!action.reactionAfter.empty() && !validSnowflake(action.reactionAfter))
+            return {};
+          request.path += "?limit=" + std::to_string(reactorPageSize) + "&type=" + (action.burst ? "1" : "0");
+          if (!action.reactionAfter.empty())
+            request.path += "&after=" + action.reactionAfter;
           request.method = "GET";
         } else {
           request.path += "/@me";

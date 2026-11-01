@@ -1,5 +1,6 @@
 #include "app/automod_message.h"
 #include "app/client_application.h"
+#include "app/interaction_key.h"
 #include "app/system_message.h"
 #include "app/theme.h"
 #include "core/files/resource_paths.h"
@@ -14,33 +15,6 @@
 
 namespace app {
   using namespace theme;
-  namespace {
-    std::string interactionKey(const api::Interaction& action) {
-      auto key = std::to_string(static_cast<int>(action.kind))
-          + ":"
-          + action.channel
-          + ":"
-          + action.message
-          + ":"
-          + action.user
-          + ":"
-          + action.emoji
-          + (action.burst ? ":burst" : ":normal");
-      if (action.kind == api::InteractionKind::UserProfile
-          || action.kind == api::InteractionKind::GuildProfile
-          || action.kind == api::InteractionKind::JoinGuild
-          || action.kind == api::InteractionKind::CreateThread
-          || action.kind == api::InteractionKind::CreateForumPost)
-        key += ":" + action.guild + ":" + std::to_string(action.revision);
-      if (action.kind == api::InteractionKind::MessageButton || action.kind == api::InteractionKind::SubmitModal)
-        key += ":" + action.customId + ":" + action.nonce;
-      if (static_cast<int>(action.kind) >= static_cast<int>(api::InteractionKind::CreateChannel))
-        key += ":" + action.guild + ":" + std::to_string(action.revision);
-      if (action.kind == api::InteractionKind::EditChannel || action.kind == api::InteractionKind::GrantChannelAccess)
-        key += ":" + std::to_string(action.revision);
-      return key;
-    }
-  } // namespace
   api::Account ClientApplication::lookupUser(const std::string& id) const {
     if (m_account.id == id)
       return m_account;
@@ -57,6 +31,10 @@ namespace app {
     for (const auto& user : m_userDirectory.relatedUsers())
       if (user.id == id)
         return user;
+    for (const auto& [key, page] : m_reactorPages)
+      for (const auto& user : page.users)
+        if (user.id == id)
+          return user;
     return {id, "Unknown user"};
   }
   bool ClientApplication::blockedMessage(const api::Message& message) const {
@@ -222,6 +200,8 @@ namespace app {
       m_contextUser = message->authorId;
       if (!message->deleted) {
         add(Action::AddReaction, "Add Reaction");
+        if (!message->reactions.empty())
+          add(Action::ViewReactions, "View Reactions");
         separator();
       }
       if (!message->deleted
@@ -605,6 +585,17 @@ namespace app {
     closeContext();
   }
   bool ClientApplication::overlayClick(float x, float y) {
+    if (reactionBrowserClick(x, y))
+      return true;
+    if (m_reactionTooltip && !m_hoverReactionKey.empty() && m_reactionTooltipBounds.contains(x, y)) {
+      for (auto hit = m_hits.rbegin(); hit != m_hits.rend(); ++hit)
+        if (hit->action == Action::ViewReactions && hit->contains(x, y)) {
+          const auto selected = *hit;
+          activate(selected);
+          break;
+        }
+      return true;
+    }
     if (m_dialogKind == "sidebar-invite" && m_channelInvite.dropdown) {
       if (m_channelInvite.dropdownBounds.contains(x, y))
         return false;
@@ -680,6 +671,8 @@ namespace app {
     return false;
   }
   bool ClientApplication::overlayKey(const Key& key) {
+    if (reactionBrowserKey(key))
+      return true;
     if (voiceMenuKey(key))
       return true;
     if (channelInviteKey(key))
@@ -930,6 +923,9 @@ namespace app {
     request.channel = m_contextChannel;
     request.message = m_contextMessage;
     switch (action) {
+    case Action::ViewReactions:
+      showReactions(m_contextMessage);
+      break;
     case Action::RemoveEmbeds:
       if (m_contextChannel == m_channelId)
         removeMessageEmbeds(m_contextMessage, m_window.shiftPressed());
@@ -1064,6 +1060,7 @@ namespace app {
   void ClientApplication::showProfile(const std::string& user) {
     if (!api::validSnowflake(user))
       return;
+    closeReactionBrowser();
     closeContext();
     closeGifPicker();
     closeEmojiPicker();
@@ -1101,6 +1098,7 @@ namespace app {
       m_dialogError = m_status;
   }
   void ClientApplication::closeDialog() {
+    closeReactionBrowser();
     closeSelectDropdown();
     cancelSlashCommand(false);
     m_serverInvitePending.clear();
@@ -1184,6 +1182,9 @@ namespace app {
     closeDialog();
     m_pendingInteractions.clear();
     m_reactorHoverTimer.stop();
+    m_reactorLeaveTimer.stop();
+    m_reactionTooltip.reset();
+    m_reactionTooltipBounds = {};
     m_reactorPages.clear();
     m_hoverReactionKey.clear();
     m_frequentReactions = {"❤️", "👍", "😂", "🔥"};
@@ -1281,6 +1282,10 @@ namespace app {
     }
     if (m_dialogKind.empty())
       return;
+    if (m_dialogKind == "reactions") {
+      drawReactionBrowser(root, w, h);
+      return;
+    }
     if (m_dialogKind.starts_with("sidebar-")) {
       drawSidebarDialog(root, w, h);
       return;
@@ -1426,6 +1431,8 @@ namespace app {
       page.loaded = event.error.empty();
       page.error = event.error;
       page.users = event.reactors;
+      page.next = event.reactorNext;
+      page.more = event.reactorMore;
       page.touched = std::chrono::steady_clock::now();
       m_window.invalidate();
       return;
@@ -1602,119 +1609,6 @@ namespace app {
       closeDialog();
     m_status.clear();
   }
-  void ClientApplication::invalidateReactors(const std::string& channel, const std::string& message) {
-    const auto prefix =
-        std::to_string(static_cast<int>(api::InteractionKind::ListReactions)) + ":" + channel + ":" + message + ":";
-    std::erase_if(m_reactorPages, [&](const auto& item) { return item.first.starts_with(prefix); });
-    m_hoverReactionKey.clear();
-  }
-  void ClientApplication::requestReactors(api::Interaction action) {
-    if (m_demo
-        || m_messageLog.known(action.channel, action.message)
-        || !m_connected
-        || m_channelId != action.channel
-        || m_contextOpen
-        || !m_dialogKind.empty()
-        || settingsVisible()
-        || !m_viewImage.empty())
-      return;
-    const auto key = interactionKey(action);
-    const auto now = std::chrono::steady_clock::now();
-    if (const auto old = m_reactorPages.find(key); old != m_reactorPages.end())
-      if (old->second.pending || now - old->second.touched < std::chrono::seconds(30))
-        return;
-    if (!m_reactorPages.contains(key) && m_reactorPages.size() >= 128) {
-      const auto oldest =
-          std::ranges::min_element(m_reactorPages, {}, [](const auto& item) { return item.second.touched; });
-      m_reactorPages.erase(oldest);
-    }
-    action.revision = ++m_reactorSerial;
-    auto& page = m_reactorPages[key];
-    page = {};
-    page.revision = action.revision;
-    page.touched = now;
-    page.pending = m_client.interact(action);
-    if (!page.pending)
-      page.error = "Could not load reactions.";
-    m_window.invalidate();
-  }
-  void ClientApplication::hoverReaction(const api::Message& message, const api::Reaction& reaction, const Hit& chip) {
-    if (m_contextOpen
-        || !m_dialogKind.empty()
-        || settingsVisible()
-        || !m_viewImage.empty()
-        || chip.y < 114
-        || chip.y + chip.height > m_composerTop
-        || !chip.contains(m_pointerX, m_pointerY))
-      return;
-    m_reactionHoveredThisFrame = true;
-    api::Interaction action{
-        .kind = api::InteractionKind::ListReactions,
-        .channel = message.channelId,
-        .message = message.id,
-        .emoji = api::reactionKey(reaction)
-    };
-    const auto key = interactionKey(action);
-    if (m_hoverReactionKey != key) {
-      m_hoverReactionKey = key;
-      m_reactorHoverTimer.start(std::chrono::milliseconds(200), [this, action, burst = reaction.burstCount > 0, key] {
-        if (m_hoverReactionKey != key)
-          return;
-        requestReactors(action);
-        if (burst) {
-          auto super = action;
-          super.burst = true;
-          requestReactors(std::move(super));
-        }
-      });
-    }
-    std::vector<api::Account> people;
-    bool pending = false, failed = false, loaded = false;
-    for (bool burst : {false, true}) {
-      if (burst && reaction.burstCount == 0)
-        continue;
-      action.burst = burst;
-      const auto found = m_reactorPages.find(interactionKey(action));
-      if (found == m_reactorPages.end()) {
-        pending = true;
-        continue;
-      }
-      const auto& page = found->second;
-      pending |= page.pending;
-      failed |= !page.error.empty();
-      loaded |= page.loaded;
-      for (const auto& person : page.users)
-        if (std::ranges::none_of(people, [&](const auto& old) { return old.id == person.id; }))
-          people.push_back(person);
-    }
-    if (people.empty())
-      m_tooltip = pending ? "Loading people who reacted…"
-          : failed        ? "Could not load people who reacted."
-          : loaded        ? "No reactions remain."
-                          : "Loading people who reacted…";
-    else {
-      const auto shown = std::min<std::size_t>(people.size(), 8);
-      std::string names;
-      for (std::size_t i = 0; i < shown; ++i) {
-        if (i)
-          names += i + 1 == shown ? " and " : ", ";
-        names += people[i].id == m_account.id ? "You" : userName(people[i].id, people[i].name);
-      }
-      // A person can have both normal and super reactions. Only report the
-      // number of distinct people actually returned; do not invent a total.
-      if (people.size() > shown)
-        names += " and " + std::to_string(people.size() - shown) + " more";
-      m_tooltip = names + " reacted with " + (reaction.id.empty() ? reaction.name : ":" + reaction.name + ":");
-      if (people.size() >= 100)
-        m_tooltip += " (showing the first people who reacted)";
-      if (pending)
-        m_tooltip += "\nLoading more reactions…";
-      else if (failed)
-        m_tooltip += "\nSome reactions could not be loaded.";
-    }
-    m_tooltipX = chip.x + chip.width / 2;
-    m_tooltipY = chip.y;
-  }
   float ClientApplication::reactionStrip(
       Node* parent, const api::Message& message, float x, float y, float width, bool addButton
   ) {
@@ -1802,6 +1696,14 @@ namespace app {
     if (profileAction(hit))
       return true;
     switch (hit.action) {
+    case Action::ViewReactions: {
+      const auto split = hit.id.find('\n');
+      showReactions(hit.id.substr(0, split), split == std::string::npos ? "" : hit.id.substr(split + 1));
+      break;
+    }
+    case Action::ReactionBrowserAction:
+      reactionBrowserAction(hit.id);
+      break;
     case Action::UserProfile:
       showProfile(hit.id);
       break;

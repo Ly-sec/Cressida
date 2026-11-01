@@ -152,6 +152,8 @@ namespace api {
     std::optional<api::Interaction> interaction;
     std::optional<ReactionUpdate> reaction;
     std::vector<Account> reactors;
+    std::string reactorNext;
+    bool reactorMore = false;
     std::vector<Account> memberMatches;
     std::optional<UserProfile> profile;
     std::optional<GuildProfile> guildProfile;

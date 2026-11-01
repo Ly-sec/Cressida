@@ -1,4 +1,5 @@
 #include "app/client_application.h"
+#include "app/message_time.h"
 #include "app/theme.h"
 #include "render/scene/text_node.h"
 
@@ -8,15 +9,80 @@
 #include <utility>
 
 namespace app {
+  std::string ClientApplication::messageSelectionHeader(const api::Message& message, bool continuation) const {
+    const auto author = continuation ? std::string{} : userName(message.authorId, message.author);
+    auto timestamp = continuation ? formatMessageClock(message.timestamp, m_preferences.twelveHourClock)
+                                  : formatMessageTimestamp(message.timestamp, m_preferences.twelveHourClock);
+    if (!continuation && message.deleted)
+      timestamp += timestamp.empty() ? "Deleted" : " · Deleted";
+    return author + (author.empty() || timestamp.empty() ? "" : " ") + timestamp + "\n";
+  }
+
+  void ClientApplication::updateChatSelectionDocument(ChatSelectionDocument document) {
+    if (!m_selectedMessage.empty() && m_selectedText == m_chatSelectionDocument.text) {
+      const auto caret = document.rebase(m_chatEdit.caret, m_chatSelectionDocument);
+      const auto anchor = document.rebase(m_chatEdit.anchor, m_chatSelectionDocument);
+      if (caret
+          && anchor
+          && document.retains(
+              std::min(m_chatEdit.caret, m_chatEdit.anchor), std::max(m_chatEdit.caret, m_chatEdit.anchor),
+              m_chatSelectionDocument
+          )) {
+        m_chatEdit.caret = *caret;
+        m_chatEdit.anchor = *anchor;
+        m_selectedText = document.text;
+      } else {
+        m_selectedMessage.clear();
+        m_selectedText.clear();
+        m_chatEdit = {};
+        m_dragMessage = false;
+        m_chatTextClick.reset();
+      }
+    }
+    m_chatSelectionDocument = std::move(document);
+  }
+
+  void ClientApplication::updateChatSelectionScroll() {
+    constexpr auto interval = std::chrono::milliseconds(40);
+    const bool before = m_pointerY < m_messageViewportTop + Style::spaceLg;
+    const bool after = m_pointerY > m_messageViewportBottom - Style::spaceLg;
+    if (!m_dragMessage
+        || m_chatTextClick
+        || !m_dialogKind.empty()
+        || settingsVisible()
+        || m_contextOpen
+        || m_pointerX < conversationLeft()
+        || (!before && !after)
+        || (before && m_messageScroll >= m_messageMaxScroll)
+        || (after && m_messageScroll <= 0)) {
+      m_chatSelectionScrollTimer.stop();
+      return;
+    }
+    if (!m_chatSelectionScrollTimer.active())
+      m_chatSelectionScrollTimer.start(interval, [this] {
+        if (!m_dragMessage)
+          return;
+        m_scrolling.stop(m_messageScroll);
+        m_messageScroll = std::clamp(
+            m_messageScroll
+                + (m_pointerY < m_messageViewportTop + Style::spaceLg ? 1 : -1) * Style::scrollWheelStep / 2,
+            0.0F, m_messageMaxScroll
+        );
+        m_chatSelectionScrolled = true;
+        m_window.invalidate();
+      });
+  }
+
   void ClientApplication::drawChatSelection(
       Node& parent, const MessageLayout& message, const std::string& id, float x, float y, std::size_t offset
   ) {
-    const auto text = m_messageSelectionText.find(id);
-    if (m_selectedMessage != id
+    const auto* section = m_chatSelectionDocument.find(id);
+    if (m_selectedMessage.empty()
         || !m_chatEdit.selected()
-        || text == m_messageSelectionText.end()
-        || text->second != m_selectedText)
+        || !section
+        || m_chatSelectionDocument.text != m_selectedText)
       return;
+    offset += section->offset;
     const auto first = std::min(m_chatEdit.caret, m_chatEdit.anchor);
     const auto last = std::max(m_chatEdit.caret, m_chatEdit.anchor);
     if (last <= offset)
@@ -44,17 +110,18 @@ namespace app {
   ) {
     if (run.width <= 0 || run.text.empty())
       return;
+    const auto* section = m_chatSelectionDocument.find(message);
+    if (!section)
+      return;
+    auto selectable = run;
+    selectable.offset += section->offset;
     if (header) {
-      const auto text = m_messageSelectionText.find(message);
-      if (m_selectedMessage == message
-          && m_chatEdit.selected()
-          && text != m_messageSelectionText.end()
-          && text->second == m_selectedText) {
-        const auto from = std::max(std::min(m_chatEdit.caret, m_chatEdit.anchor), run.offset);
-        const auto to = std::min(std::max(m_chatEdit.caret, m_chatEdit.anchor), run.offset + run.text.size());
+      if (!m_selectedMessage.empty() && m_chatEdit.selected() && m_chatSelectionDocument.text == m_selectedText) {
+        const auto from = std::max(std::min(m_chatEdit.caret, m_chatEdit.anchor), selectable.offset);
+        const auto to = std::min(std::max(m_chatEdit.caret, m_chatEdit.anchor), selectable.offset + run.text.size());
         if (to > from) {
           const auto prefix = [&](std::size_t end) {
-            const auto value = std::string_view(run.text).substr(0, end - run.offset);
+            const auto value = std::string_view(run.text).substr(0, end - selectable.offset);
             return std::clamp(
                 m_window.target()
                     .renderer()
@@ -75,7 +142,7 @@ namespace app {
       if (bottom > top)
         m_hits.push_back({absoluteX, top, run.width, bottom - top, Action::SelectMessage, message});
     }
-    m_textAreas.push_back({run, message, absoluteX, absoluteY, weight, markup, header});
+    m_textAreas.push_back({selectable, message, absoluteX, absoluteY, weight, markup, header});
   }
 
   const char* ClientApplication::channelGlyph(const std::string& guild, const api::Channel& channel) const {
@@ -290,10 +357,14 @@ namespace app {
     if (!run.channelChip)
       return;
     const bool over = !run.style.link.empty() && hovered(absoluteX, absoluteY, run.width, run.height);
-    const bool selected = m_selectedMessage == message
+    const auto* section = m_chatSelectionDocument.find(message);
+    const auto offset = run.offset + (section ? section->offset : 0);
+    const bool selected = !m_selectedMessage.empty()
+        && section
+        && m_selectedText == m_chatSelectionDocument.text
         && m_chatEdit.selected()
-        && std::min(m_chatEdit.caret, m_chatEdit.anchor) < run.offset + run.text.size()
-        && std::max(m_chatEdit.caret, m_chatEdit.anchor) > run.offset;
+        && std::min(m_chatEdit.caret, m_chatEdit.anchor) < offset + run.text.size()
+        && std::max(m_chatEdit.caret, m_chatEdit.anchor) > offset;
     const auto surface = lerpColor(
         theme::background, theme::accent,
         selected   ? layout::ChannelLink::selectionTint

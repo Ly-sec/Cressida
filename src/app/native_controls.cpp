@@ -67,6 +67,10 @@ namespace app {
         || m_contextOpen
         || (!m_dialogKind.empty() && m_dialogKind != "profile"))
       return;
+    if (m_reactionTooltip && !m_hoverReactionKey.empty()) {
+      drawReactionTooltip(root, w, h);
+      return;
+    }
     auto& renderer = m_window.target().renderer();
     const auto natural = renderer.measureText(
         m_tooltip, Style::fontSizeDescription, FontWeight::Normal, 0, 0, TextAlign::Start, {}, TextEllipsize::End
@@ -107,6 +111,9 @@ namespace app {
     m_animationTimer.stop();
     m_gifSearchTimer.stop();
     m_reactorHoverTimer.stop();
+    m_reactorLeaveTimer.stop();
+    m_reactionRefreshTimer.stop();
+    m_chatSelectionScrollTimer.stop();
     // Destroy tracked input areas while their dispatcher and callback state live.
     m_buildingScene = true;
     m_controlInput.setSceneRoot(nullptr);
@@ -172,8 +179,14 @@ namespace app {
   }
   void ClientApplication::windowFocusChanged(bool focused) {
     if (!focused) {
+      m_reactorLeaveTimer.stop();
+      m_reactorHoverTimer.stop();
+      m_hoverReactionKey.clear();
+      m_reactionTooltip.reset();
+      m_reactionTooltipBounds = {};
       m_chatTextClick.reset();
       m_dragMessage = false;
+      m_chatSelectionScrollTimer.stop();
       if (m_voiceMenuInput)
         closeContext();
       sharingRelease();

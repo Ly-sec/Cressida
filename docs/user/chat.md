@@ -46,12 +46,37 @@ remains visible when role icons are turned off.
 Drag across a message's author name, timestamp or text, then press **Ctrl+C** to
 copy the selection. You can include the header and body in the same drag. Inline
 channel mentions are selectable too, with their readable channel names included
-in the copied text. Selection highlights include the spaces between words.
+in the copied text. Selection highlights include the spaces between words. Keep
+dragging across message boundaries to include more messages. Drag near the top
+or bottom of the conversation to scroll while selecting. After selecting chat
+text, **Ctrl+A** selects the whole loaded conversation. Messages outside the
+loaded history are not included. New arrivals preserve your existing selection.
 
 Clicking an author name still opens their profile, and clicking a channel
 mention still opens that channel. Dragging selects text instead of following
 those links. The message menu's **Copy Text** action continues to copy just the
 body.
+
+## See who reacted
+
+Hover a reaction badge to see a few names and the reaction count. Move onto the
+hover card and click its colored **View all** count to open the people list. The
+count underlines on hover and sits below the names or loading message. You can
+also right-click a reaction badge, or right-click its message and choose **View
+Reactions**.
+
+Choose an emoji in the left column to see the people who used it. The selected
+emoji stays highlighted when you move the pointer away. The list shows their
+display names and usernames; click a person to open their profile. When an emoji
+has super reactions, **Normal** and **Super** show the two lists separately. The
+two columns scroll independently. Use **First**, **Previous** and **Next** to
+browse pages of up to 100 people. **Refresh** reloads the list, and **Try
+again** retries a failed read. Live reaction changes update the counts and
+refresh the open list after a short pause.
+
+Use **Tab** and **Shift+Tab** to move through visible controls, **Page Up** and
+**Page Down** to scroll the people list, and **Escape** to close the window.
+Clicking a reaction badge still adds or removes your own reaction.
 
 ## Delete a message
 

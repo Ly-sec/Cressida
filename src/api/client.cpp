@@ -3414,9 +3414,14 @@ namespace api {
                   && (*response)["id"].is_string()
                   && (*response)["id"] == command.interaction->guild)
                 event.guilds = parseGuilds(Json::array({*response}));
-            } else if (command.interaction->kind == InteractionKind::ListReactions)
-              event.reactors = parseReactors(*response);
-            else if (command.interaction->kind == InteractionKind::RemoveEmbeds) {
+            } else if (command.interaction->kind == InteractionKind::ListReactions) {
+              auto page = parseReactorPage(*response, command.interaction->reactionAfter);
+              if (!page)
+                throw std::runtime_error("Invalid reaction people page");
+              event.reactors = std::move(page->users);
+              event.reactorNext = std::move(page->next);
+              event.reactorMore = page->more;
+            } else if (command.interaction->kind == InteractionKind::RemoveEmbeds) {
               const auto patch = removedEmbedsPatch(*command.interaction, *response);
               if (!patch)
                 throw std::runtime_error("Embed removal was not confirmed for this message");

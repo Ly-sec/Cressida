@@ -48,6 +48,7 @@ namespace app {
     m_controlInput.setFocus(nullptr);
     m_dragDraft = m_dragMessage = m_dragImage = false;
     m_chatTextClick.reset();
+    m_chatSelectionScrollTimer.stop();
     m_scrolling.stopAll();
     if (m_videoExpanded)
       setVideoExpanded(false);

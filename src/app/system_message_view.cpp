@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
+#include <xkbcommon/xkbcommon-keysyms.h>
 
 namespace app {
   float ClientApplication::timestampLabel(
@@ -269,7 +270,48 @@ namespace app {
     }
     case 20:
       require(m_channelId == "102", "A simple channel chip click still navigates on release");
-      std::clog << "Offline message dates, timestamp hover and header/channel selection check passed\n";
+      m_messages = {
+          {"9501", m_channelId, "Maya", "First selected message.", "2026-10-15T14:22:00Z", "11"},
+          {"9502", m_channelId, "Noah", "Second selected message.", "2026-10-15T14:23:00Z", "12"}
+      };
+      m_messageLayouts.clear();
+      break;
+    case 21: {
+      const auto first = area([](const auto& text) { return text.message == "9501" && !text.header; });
+      const auto last = std::ranges::find_if(m_textAreas.rbegin(), m_textAreas.rend(), [](const auto& text) {
+        return text.message == "9502" && !text.header;
+      });
+      require(last != m_textAreas.rend(), "Both messages expose selectable body fragments");
+      press(first);
+      dragTo(*last);
+      break;
+    }
+    case 22:
+      require(
+          m_chatEdit.selection(
+              m_selectedText
+          ) == "First selected message.\n" + messageSelectionHeader(m_messages[1], false) + "Second selected message.",
+          "One drag crosses message boundaries and includes the intervening author and time"
+      );
+      m_messages.push_back({"9503", m_channelId, "Maya", "A new arrival.", "2026-10-15T14:24:00Z", "11"});
+      m_messageLayouts.clear();
+      break;
+    case 23:
+      require(
+          m_chatEdit.selection(m_selectedText).starts_with("First selected message.")
+              && m_chatEdit.selection(m_selectedText).ends_with("Second selected message.")
+              && !m_chatEdit.selection(m_selectedText).contains("A new arrival."),
+          "Incoming messages preserve the existing selection endpoints"
+      );
+      m_window.key({.symbol = XKB_KEY_a, .control = true});
+      break;
+    case 24:
+      require(
+          m_chatEdit.selection(m_selectedText) == m_chatSelectionDocument.text
+              && m_selectedText.contains("A new arrival."),
+          "Select all copies the full loaded conversation after selecting chat text"
+      );
+      std::clog << "Offline message dates, header/channel selection and multi-message copying check passed\n";
       break;
     }
     m_window.invalidate();
@@ -589,7 +631,9 @@ namespace app {
     const auto strikes = messageStrikeAreas(message);
     require(!links.empty() && !spoilers.empty() && !strikes.empty(), "The Markdown fixture contains all span types");
     const auto textArea = [&](std::size_t index) {
-      const auto header = m_messageSelectionText.at("9401").size() - message.plainText.size();
+      const auto header = m_chatSelectionDocument.find("9401")->offset
+          + m_messageSelectionText.at("9401").size()
+          - message.plainText.size();
       const auto found = std::ranges::find_if(m_textAreas, [&](const auto& area) {
         return area.message == "9401" && !area.header && area.run.offset == header + message.runs[index].offset;
       });
@@ -1001,7 +1045,9 @@ namespace app {
       require(region != areas.end(), "The fixture has multiple linked words on one line");
       const auto& first = preview.runs[region->first];
       const auto& second = preview.runs[region->first + 1];
-      const auto header = m_messageSelectionText.at("9203").size() - preview.plainText.size();
+      const auto header = m_chatSelectionDocument.find("9203")->offset
+          + m_messageSelectionText.at("9203").size()
+          - preview.plainText.size();
       const auto target = std::ranges::find_if(m_textAreas, [&](const auto& area) {
         return area.message == "9203" && !area.header && area.run.offset == header + first.offset;
       });

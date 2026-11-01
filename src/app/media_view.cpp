@@ -346,7 +346,8 @@ namespace app {
               && (m_contextBounds.contains(m_pointerX, m_pointerY)
                   || (m_reactionSubmenu && m_reactionSubmenuBounds.contains(m_pointerX, m_pointerY)));
         if (!m_dialogKind.empty())
-          return (id == "invite:options"
+          return (m_dialogKind == "reactions" && id.starts_with("reactions:"))
+              || (id == "invite:options"
                   && m_channelInvite.dropdown
                   && m_channelInvite.dropdownBounds.contains(m_pointerX, m_pointerY))
               || (m_dialogBounds.contains(m_pointerX, m_pointerY)

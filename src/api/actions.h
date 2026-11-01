@@ -104,6 +104,7 @@ namespace api {
     std::optional<api::ApplicationCommand> command;
     std::optional<std::size_t> focusedOption;
     std::vector<Upload> commandUploads;
+    std::string reactionAfter;
   };
   std::optional<MessagePatch> removedEmbedsPatch(const Interaction& action, const nlohmann::json& response);
   std::optional<nlohmann::json>
@@ -123,6 +124,13 @@ namespace api {
   std::string reactionKey(const Reaction& reaction);
   nlohmann::json decodeRestBody(long status, std::string_view bytes);
   std::vector<Account> parseReactors(const nlohmann::json& value);
+  inline constexpr std::size_t reactorPageSize = 100;
+  struct ReactorResult {
+    std::vector<Account> users;
+    std::string next;
+    bool more = false;
+  };
+  std::optional<ReactorResult> parseReactorPage(const nlohmann::json& value, std::string_view after = {});
   // A private child channel requires a fresh parent snapshot so inherited permissions are preserved.
   nlohmann::json createChannelBody(const Interaction& action, const std::optional<nlohmann::json>& parent = {});
   nlohmann::json duplicateChannelBody(const nlohmann::json& source, const Interaction& action);

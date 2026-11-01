@@ -237,6 +237,38 @@ int main() {
         !interactionRequest({.kind = Kind::ListReactions, .channel = "10", .message = "20", .emoji = "../evil"}),
         "Read routes also reject emoji path injection"
     );
+    const auto nextPeople = interactionRequest(
+        {.kind = Kind::ListReactions, .channel = "10", .message = "20", .emoji = "wave:123", .reactionAfter = "999"}
+    );
+    require(
+        nextPeople && nextPeople->method == "GET" && nextPeople->path.ends_with("?limit=100&type=0&after=999"),
+        "Reaction browsing uses a validated continuation cursor and keeps reaction types independent"
+    );
+    require(
+        !interactionRequest(
+            {.kind = Kind::ListReactions,
+             .channel = "10",
+             .message = "20",
+             .emoji = "wave:123",
+             .reactionAfter = "1&type=1"}
+        ),
+        "Reactor cursors cannot inject another query parameter"
+    );
+    json pageUsers = json::array();
+    for (std::size_t i = 0; i < reactorPageSize; ++i)
+      pageUsers.push_back({{"id", std::to_string(1000 + i)}, {"username", "person"}});
+    const auto page = parseReactorPage(pageUsers, "999");
+    require(
+        page && page->users.size() == reactorPageSize && page->more && page->next == "1099",
+        "Full pages advance to the largest returned user ID"
+    );
+    require(!parseReactorPage(pageUsers, "1099"), "Repeated or backwards pages cannot loop indefinitely");
+    const auto emptyPage = parseReactorPage(json::array(), "1099");
+    require(emptyPage && emptyPage->users.empty() && !emptyPage->more, "Successful empty pages settle pagination");
+    require(
+        !parseReactorPage(json::object()) && !parseReactorPage(json::array({{{"id", "invalid"}}})),
+        "Malformed reactor reads are errors rather than false empty results"
+    );
     auto reactors = parseReactors(
         json::array(
             {{{"id", "1"}, {"username", "alex"}, {"global_name", "Alex"}},

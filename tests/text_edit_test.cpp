@@ -1,3 +1,4 @@
+#include "app/chat_selection.h"
 #include "app/text_edit.h"
 
 #include <iostream>
@@ -9,6 +10,38 @@ int main() {
       if (!value)
         throw std::runtime_error(message);
     };
+    app::ChatSelectionDocument conversation;
+    conversation.append("1", "Maya 10:00\nFirst 🌿 message.");
+    conversation.append("2", "Noah 10:01\nSecond message.");
+    const auto begin = conversation.text.find("First");
+    const auto end = conversation.text.size();
+    app::TextEdit range{.caret = end, .anchor = begin};
+    require(
+        range.selection(conversation.text) == "First 🌿 message.\nNoah 10:01\nSecond message.",
+        "Conversation selection includes message separators and UTF-8 names/text"
+    );
+    app::ChatSelectionDocument prepended;
+    prepended.append("0", "An older message.\n");
+    prepended.append("1", "Maya 10:00\nFirst 🌿 message.");
+    prepended.append("2", "Noah 10:01\nSecond message.");
+    prepended.append("3", "A new arrival.");
+    const auto movedBegin = prepended.rebase(begin, conversation), movedEnd = prepended.rebase(end, conversation);
+    require(
+        movedBegin && movedEnd && prepended.retains(begin, end, conversation),
+        "History prepends and incoming messages preserve the selected messages"
+    );
+    range.anchor = *movedBegin;
+    range.caret = *movedEnd;
+    require(
+        range.selection(prepended.text) == "First 🌿 message.\nNoah 10:01\nSecond message.",
+        "Rebased selection excludes unrelated prepends and arrivals"
+    );
+    app::ChatSelectionDocument edited;
+    edited.append("1", "Changed text");
+    require(
+        !edited.retains(begin, end, conversation) && !edited.rebase(begin, conversation),
+        "Deleted or changed selected messages revoke stale byte positions"
+    );
     app::TextEdit edit;
     std::string text = "one\ntwo 👩‍💻";
     edit.end(text);

@@ -8,6 +8,7 @@
 #include "app/channel_invite.h"
 #include "app/channel_menu.h"
 #include "app/chat_cache.h"
+#include "app/chat_selection.h"
 #include "app/desktop_notifications.h"
 #include "app/desktop_tray.h"
 #include "app/discord_link.h"
@@ -84,7 +85,8 @@ namespace app {
     static constexpr int composerReplyReplayFrames = 10;
     static constexpr int embedReplayFrames = 23;
     static constexpr int botMessagesReplayFrames = 8;
-    static constexpr int timestampReplayFrames = 21;
+    static constexpr int timestampReplayFrames = 25;
+    static constexpr int reactionBrowserReplayFrames = 16;
     static constexpr int loginReplayFrames = 18;
     static constexpr int startupReplayFrames = 14;
     static constexpr int startupTransitionReplayFrames = 6;
@@ -225,6 +227,8 @@ namespace app {
       ToggleReplyMention,
       AddReaction,
       ToggleReaction,
+      ViewReactions,
+      ReactionBrowserAction,
       EditMessage,
       RemoveEmbeds,
       SaveMessageEdit,
@@ -957,7 +961,10 @@ namespace app {
     void finishSidebarResize();
     void sidebarDemoFrame();
     void positionCaret(float x, float y, bool extend);
-    void positionChatSelection(float x, float y);
+    void positionChatSelection(float x, float y, bool anchor = false);
+    std::string messageSelectionHeader(const api::Message& message, bool continuation) const;
+    void updateChatSelectionDocument(ChatSelectionDocument document);
+    void updateChatSelectionScroll();
     void chatSelectionText(
         Node& parent, const MessageRun& run, const std::string& message, float x, float y, float absoluteX,
         float absoluteY, FontWeight weight = FontWeight::Normal, bool markup = true, bool header = false
@@ -1015,7 +1022,21 @@ namespace app {
     void chooseReaction(const std::string& emoji);
     void openReactionSubmenu(float rowCenter);
     void hoverReaction(const api::Message& message, const api::Reaction& reaction, const Hit& chip);
-    void requestReactors(api::Interaction action);
+    void requestReactors(api::Interaction action, bool retry = false);
+    void showReactions(const std::string& message, const std::string& emoji = {});
+    void closeReactionBrowser();
+    void drawReactionBrowser(Node& root, float width, float height);
+    void reactionBrowserAction(const std::string& id);
+    bool reactionBrowserClick(float x, float y);
+    bool reactionBrowserKey(const Key& key);
+    void loadReactionBrowser(bool retry = false);
+    api::Interaction reactionBrowserQuery() const;
+    const api::Message* reactionBrowserMessage() const;
+    void demoReactionBrowserStep();
+    void prepareReactionBrowserDemo();
+    void updateReactionHover();
+    void drawReactionTooltip(Node& root, float width, float height);
+    void drawReactionEmoji(Node& root, const api::Reaction& reaction, const layout::Frame& frame);
     void invalidateReactors(const std::string& channel, const std::string& message);
     void demoInteractionStep();
 
@@ -1337,6 +1358,8 @@ namespace app {
       std::vector<api::Account> users;
       std::string error;
       bool pending = false, loaded = false;
+      bool more = false;
+      std::string next;
       std::uint64_t revision = 0;
       std::chrono::steady_clock::time_point touched{};
     };
@@ -1345,6 +1368,20 @@ namespace app {
     std::string m_hoverReactionKey;
     Timer m_reactorHoverTimer;
     bool m_reactionHoveredThisFrame = false;
+    std::optional<api::Reaction> m_reactionTooltip;
+    Hit m_reactionHoverChip{};
+    layout::Frame m_reactionTooltipBounds{};
+    Timer m_reactorLeaveTimer;
+    struct ReactionBrowser {
+      std::string channel, message, emoji;
+      bool burst = false, changed = false;
+      std::vector<std::string> cursors{""};
+      std::size_t cursor = 0, firstPage = 0;
+      float emojiScroll = 0, peopleScroll = 0;
+    } m_reactionBrowser;
+    Node* m_reactionBrowserRoot = nullptr;
+    Timer m_reactionRefreshTimer;
+    layout::Frame m_reactionEmojiBounds{}, m_reactionPeopleBounds{};
     std::map<std::string, float> m_messageTops;
     std::vector<layout::Frame> m_floatingFrames;
     float m_tooltipX = 0, m_tooltipY = 0, m_composerTop = 0;
@@ -1668,6 +1705,9 @@ namespace app {
     TextEdit m_edit, m_chatEdit;
     bool m_dragDraft = false, m_dragMessage = false;
     std::string m_selectedMessage, m_selectedText;
+    ChatSelectionDocument m_chatSelectionDocument;
+    Timer m_chatSelectionScrollTimer;
+    bool m_chatSelectionScrolled = false;
     std::set<std::string> m_revealedSpoilers;
     struct TextArea {
       MessageRun run;

@@ -39,6 +39,7 @@
 namespace app {
   using namespace theme;
   namespace {
+    constexpr int memberJoinNoticeType = 7;
     constexpr std::string_view terminalSyntaxBody =
         "❯ sudo dnf in libdave-devel                                                     2.4s\n"
         "Updating and loading repositories:\n"
@@ -609,6 +610,10 @@ namespace app {
         demoBotMessagesStep();
       if (m_demo && m_demoOverlay.starts_with("timestamps-cycle") && m_demoInteractionStep < timestampReplayFrames)
         demoTimestampStep();
+      if (m_demo
+          && m_demoOverlay.starts_with("reaction-browser-cycle")
+          && m_demoInteractionStep < reactionBrowserReplayFrames)
+        demoReactionBrowserStep();
       if (m_demo && m_demoOverlay.starts_with("markdown-cycle") && m_demoInteractionStep < markdownReplayFrames)
         demoMarkdownStep();
       if (m_demo
@@ -1069,6 +1074,7 @@ namespace app {
           return;
         m_chatTextClick.reset();
         positionChatSelection(x, y);
+        updateChatSelectionScroll();
       }
     };
     m_window.released = [this] {
@@ -1078,7 +1084,7 @@ namespace app {
           && textClick->contains(m_pointerX, m_pointerY)
           && !m_chatEdit.selected()
           && m_messageSelectionText.contains(m_selectedMessage)
-          && m_messageSelectionText.at(m_selectedMessage) == m_selectedText
+          && m_chatSelectionDocument.text == m_selectedText
           && std::ranges::any_of(m_hits, [&](const auto& hit) {
                               return hit.action == textClick->action
                                   && hit.id == textClick->id
@@ -1095,6 +1101,7 @@ namespace app {
       if ((!m_viewImage.empty() || m_videoExpanded) && !m_contextOpen)
         m_controlInput.pointerLeave();
       m_dragDraft = m_dragMessage = m_dragImage = false;
+      m_chatSelectionScrollTimer.stop();
       if (openText)
         activate(*textClick);
       updateCursor();
@@ -1252,12 +1259,22 @@ namespace app {
       y += layout::Window::titlebarHeight - m_window.titlebarHeight();
       m_pointerX = x;
       m_pointerY = y;
+      if (m_dialogKind == "reactions")
+        return;
       finishSidebarResize();
       m_chatTextClick.reset();
       m_dragDraft = m_dragMessage = false;
       if (m_inboxOpen && m_inboxBounds.contains(x, y))
         return;
       closeInbox();
+      if (m_dialogKind.empty() && !settingsVisible())
+        for (auto hit = m_hits.rbegin(); hit != m_hits.rend(); ++hit)
+          if (hit->action == Action::ToggleReaction && hit->contains(x, y)) {
+            const auto id = hit->id;
+            const auto split = id.find('\n');
+            showReactions(id.substr(0, split), split == std::string::npos ? "" : id.substr(split + 1));
+            return;
+          }
       openContext(x, y);
     };
     m_window.key = [this](const Key& key) { onKey(key); };
@@ -1521,6 +1538,16 @@ namespace app {
         m_window.invalidate();
         return;
       }
+      if (m_dialogKind == "reactions") {
+        if (m_reactionEmojiBounds.contains(m_pointerX, m_pointerY))
+          scroll(m_reactionBrowser.emojiScroll, delta);
+        else if (m_reactionPeopleBounds.contains(m_pointerX, m_pointerY))
+          scroll(m_reactionBrowser.peopleScroll, delta);
+        m_window.invalidate();
+        return;
+      }
+      if (m_reactionTooltip && !m_hoverReactionKey.empty() && m_reactionTooltipBounds.contains(m_pointerX, m_pointerY))
+        return;
       if (m_dialogKind == "sidebar-create"
           && m_dialogAction
           && m_dialogAction->kind == api::InteractionKind::CreateChannel) {
@@ -1597,8 +1624,11 @@ namespace app {
         scroll(m_forumScroll, delta);
       else if (memberPaneWidth() > 0 && m_pointerX >= m_window.width() - memberPaneWidth()) {
         scroll(dmRecipient() ? m_dmProfile.scroll : m_memberScroll, delta);
-      } else
+      } else {
         scroll(m_messageScroll, -delta);
+        if (m_dragMessage)
+          m_chatSelectionScrolled = true;
+      }
       m_window.invalidate();
     };
     if (demoMode)
@@ -1692,6 +1722,8 @@ namespace app {
                    : m_demo && view && std::string_view(view).starts_with("embed-cycle")   ? embedReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("bot-messages-cycle")
                    ? botMessagesReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("reaction-browser-cycle")
+                   ? reactionBrowserReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("timestamps-cycle") ? timestampReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("login-cycle")      ? loginReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("startup-transition")
@@ -1855,6 +1887,8 @@ namespace app {
       throw std::runtime_error("Bot identity and message deletion replay did not complete");
     if (m_demoOverlay.starts_with("timestamps-cycle") && m_demoInteractionStep != timestampReplayFrames)
       throw std::runtime_error("Message timestamp replay did not complete");
+    if (m_demoOverlay.starts_with("reaction-browser-cycle") && m_demoInteractionStep != reactionBrowserReplayFrames)
+      throw std::runtime_error("Reaction browser replay did not complete");
     if (m_demoOverlay.starts_with("markdown-cycle") && m_demoInteractionStep != markdownReplayFrames)
       throw std::runtime_error("Markdown replay did not complete");
     if (m_demoOverlay.starts_with("reply-grouping") && m_demoInteractionStep != replyGroupingReplayFrames)
@@ -1945,6 +1979,14 @@ namespace app {
           if (view.ends_with("narrow"))
             m_window.setUiScale(1.5F);
           prepareBotMessagesDemo();
+        }
+        if (view.starts_with("reaction-browser-cycle")) {
+          m_demoOverlay = view;
+          if (view.ends_with("light"))
+            m_preferences.theme = "light";
+          if (view.ends_with("narrow"))
+            m_window.setUiScale(1.5F);
+          prepareReactionBrowserDemo();
         }
         if (view.starts_with("timestamps-cycle")) {
           m_demoOverlay = view;
@@ -3934,6 +3976,7 @@ namespace app {
     m_gifTargets.clear();
     m_stickerTargets.clear();
     m_reactionHoveredThisFrame = false;
+    m_reactionBrowserRoot = nullptr;
     m_contextTargets.clear();
     m_messageTops.clear();
     m_textAreas.clear();
@@ -3961,6 +4004,10 @@ namespace app {
 
     const auto pointer = std::pair{m_pointerX, m_pointerY};
     const bool mediaViewer = !m_viewImage.empty() || m_videoExpanded;
+    const bool reactionCovered = m_dialogKind == "reactions"
+        || (m_reactionTooltip
+            && !m_hoverReactionKey.empty()
+            && m_reactionTooltipBounds.contains(m_pointerX, m_pointerY));
     const bool voiceMenuCovered = m_contextOpen
         && m_voiceMenuInput
         && (m_contextBounds.contains(m_pointerX, m_pointerY)
@@ -3968,7 +4015,7 @@ namespace app {
     const auto preview = sharingPreviewFrame();
     const bool sharingCovered =
         m_shareOpen || m_sharingPreviewDragging || (preview && preview->card.contains(m_pointerX, m_pointerY));
-    if (mediaViewer || sharingCovered || voiceMenuCovered) {
+    if (mediaViewer || sharingCovered || voiceMenuCovered || reactionCovered) {
       if (sharingCovered)
         m_controlInput.pointerLeave();
       // Covered surfaces still paint; the visible overlay owns the pointer.
@@ -4564,6 +4611,7 @@ namespace app {
         std::map<std::string_view, const api::Message*> replySources;
         for (const auto& message : timeline)
           replySources.emplace(message.id, &message);
+        ChatSelectionDocument selectionDocument;
         for (std::size_t i = 0; i < timeline.size(); ++i) {
           const auto& message = timeline[i];
           auto& cached = m_messageLayouts[message.id];
@@ -4685,11 +4733,22 @@ namespace app {
                   + messageFooterHeight(messageButtons(nullptr, message, 0, 0, textWidth),
                                         reactionStrip(nullptr, message, 0, 0, textWidth),
                                         threadStrip(nullptr, message, 0, 0, textWidth));
+          if (!blockedMessage(message)) {
+            auto selected = messageSelectionHeader(message, continuations[i]) + cached.layout.plainText;
+            if (message.type == memberJoinNoticeType || message.type == autoModerationActionType) {
+              const auto timestamp = formatMessageTimestamp(message.timestamp, m_preferences.twelveHourClock);
+              const auto caption = timestamp + (message.deleted ? " · Deleted" : "");
+              selected = cached.layout.plainText + (caption.empty() ? "" : " " + caption);
+            }
+            m_messageSelectionText[message.id] = selected;
+            selectionDocument.append(message.id, selected);
+          }
           layouts.push_back(&cached.layout);
           const auto pending = m_pendingSends.find(message.nonce);
           const bool failed = pending != m_pendingSends.end() && !pending->second.error.empty();
           heights.push_back(height + (failed ? layout::Chat::pendingStatusHeight : 0));
         }
+        updateChatSelectionDocument(std::move(selectionDocument));
         float totalHeight = timelineTopPadding + timelineBottomPadding + introHeight;
         for (const auto height : heights)
           totalHeight += height;
@@ -5107,10 +5166,7 @@ namespace app {
                   : formatMessageTimestamp(message.timestamp, m_preferences.twelveHourClock);
               if (!continuation && message.deleted)
                 selectionTimestamp += selectionTimestamp.empty() ? "Deleted" : " · Deleted";
-              const auto selectionHeader = selectionAuthor
-                  + (selectionAuthor.empty() || selectionTimestamp.empty() ? "" : " ")
-                  + selectionTimestamp
-                  + "\n";
+              const auto selectionHeader = messageSelectionHeader(message, continuation);
               const auto selectionOffset = selectionHeader.size();
               m_messageSelectionText[message.id] = selectionHeader + layout.plainText;
               const auto selectHeader = [&](const std::string& text, float x, float atY, float width, float size,
@@ -6225,10 +6281,11 @@ namespace app {
         }
       }
     }
-    if (!m_reactionHoveredThisFrame) {
-      m_hoverReactionKey.clear();
-      m_reactorHoverTimer.stop();
+    if (reactionCovered) {
+      m_pointerX = pointer.first;
+      m_pointerY = pointer.second;
     }
+    updateReactionHover();
     if (!startupCovered()) {
       drawCompletion(root, w, h);
       drawSearchMenu(root, w, h);
@@ -6263,6 +6320,11 @@ namespace app {
       overlay->setOpacity(startupRevealOpacity());
       root.addChild(std::move(overlay));
     }
+    if (m_dragMessage && m_chatSelectionScrolled) {
+      m_chatSelectionScrolled = false;
+      positionChatSelection(m_pointerX, m_pointerY);
+    }
+    updateChatSelectionScroll();
     finishControls();
     m_roleMotion.end();
     if (m_roleMotion.active() || (m_typingVisible && m_window.active() && !m_preferences.reducedMotion))
@@ -8121,9 +8183,8 @@ namespace app {
     m_window.invalidate();
   }
 
-  void ClientApplication::positionChatSelection(float x, float y) {
-    const auto text = m_messageSelectionText.find(m_selectedMessage);
-    if (text == m_messageSelectionText.end() || text->second != m_selectedText) {
+  void ClientApplication::positionChatSelection(float x, float y, bool anchor) {
+    if (!m_chatSelectionDocument.find(m_selectedMessage) || m_chatSelectionDocument.text != m_selectedText) {
       m_dragMessage = false;
       m_chatTextClick.reset();
       return;
@@ -8131,7 +8192,7 @@ namespace app {
     float nearest = std::numeric_limits<float>::max();
     const TextArea* area = nullptr;
     for (const auto& item : m_textAreas)
-      if (item.message == m_selectedMessage) {
+      if (!anchor || item.message == m_selectedMessage) {
         const auto dy = std::max(0.0F, std::abs(y - item.y - item.run.height / 2) - item.run.height / 2);
         const auto dx = x < item.x ? item.x - x : std::max(0.0F, x - item.x - item.run.width);
         const auto distance = dx * dx + dy * dy * 10000;
@@ -8369,6 +8430,17 @@ namespace app {
     }
     if (key.control && (key.symbol == XKB_KEY_r || key.symbol == XKB_KEY_R)) {
       refresh();
+      return;
+    }
+    if (key.control
+        && (key.symbol == XKB_KEY_a || key.symbol == XKB_KEY_A)
+        && !m_fieldFocused
+        && !m_selectedMessage.empty()
+        && !m_chatSelectionDocument.text.empty()) {
+      m_selectedText = m_chatSelectionDocument.text;
+      m_chatEdit.anchor = 0;
+      m_chatEdit.caret = m_selectedText.size();
+      m_window.invalidate();
       return;
     }
     if (key.control
@@ -8975,9 +9047,9 @@ namespace app {
     case Action::SelectMessage:
       m_fieldFocused = false;
       m_selectedMessage = hit.id;
-      m_selectedText = m_messageSelectionText[hit.id];
+      m_selectedText = m_chatSelectionDocument.text;
       m_dragMessage = true;
-      positionChatSelection(m_pointerX, m_pointerY);
+      positionChatSelection(m_pointerX, m_pointerY, true);
       m_chatEdit.anchor = m_chatEdit.caret;
       break;
     case Action::CopyMessage:

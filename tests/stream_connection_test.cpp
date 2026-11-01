@@ -204,26 +204,30 @@ int main(int argc, char** argv) {
           }
         }
         require(decoded && heard, "The actual publisher sends decodable authenticated video and exact stereo audio");
-        const auto verifySize = [&](const Json& media, int width, int height) {
+        const auto verifySize = [&](int width, int height) {
           bool matching = false;
-          for (const auto& value : media.at("packets")) {
-            const auto packet = cipher.open(unhex(value.get<std::string>()));
-            if (!packet || packet->payloadType != route.payloadType)
-              continue;
-            if (const auto assembled = assembler.receive(*packet, std::chrono::steady_clock::now())) {
-              auto encoded = *assembled;
-              encoded.bytes = remote.decrypt("2", encoded.bytes, codec);
-              std::string error;
-              const auto output = decoder.decode(encoded, error, false);
-              matching |= output && output->width == width && output->height == height;
+          do {
+            const auto media = command();
+            for (const auto& value : media.at("packets")) {
+              const auto packet = cipher.open(unhex(value.get<std::string>()));
+              if (!packet || packet->payloadType != route.payloadType)
+                continue;
+              if (const auto assembled = assembler.receive(*packet, std::chrono::steady_clock::now())) {
+                auto encoded = *assembled;
+                encoded.bytes = remote.decrypt("2", encoded.bytes, codec);
+                std::string error;
+                const auto output = decoder.decode(encoded, error, false);
+                matching |= output && output->width == width && output->height == height;
+              }
             }
-          }
-          require(matching, "Negotiated receiver constraints produce the actual expected encoded dimensions");
+            std::cout << Json{{"dimensions_matched", matching}}.dump() << std::endl;
+          } while (!matching);
+          require(command().value("dimensions_checked", false), "The relay observes the decoded dimensions");
         };
         std::cout << Json{{"constrain", true}}.dump() << std::endl;
-        verifySize(command(), 160, 90);
+        verifySize(160, 90);
         std::cout << Json{{"release", true}}.dump() << std::endl;
-        verifySize(command(), source->width, source->height);
+        verifySize(source->width, source->height);
         std::cout << Json{{"no_sink", true}}.dump() << std::endl;
         require(command().value("suspended", false), "The private relay applies a zero sink request");
         const auto suspended = video->statistics().encoded;
@@ -234,7 +238,7 @@ int main(int argc, char** argv) {
             "A zero sink request suspends real encoding while the source preview remains available"
         );
         std::cout << Json{{"restore_sink", true}}.dump() << std::endl;
-        verifySize(command(), source->width, source->height);
+        verifySize(source->width, source->height);
         connection.pauseVideo(true);
         std::cout << Json{{"pause", true}}.dump() << std::endl;
         require(command().value("paused", false), "The relay observes the inactive stream announcement");

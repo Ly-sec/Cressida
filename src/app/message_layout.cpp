@@ -899,8 +899,11 @@ namespace app {
                     style = previous;
                     pos = end + 1;
                     continue;
-                  } else if (token.starts_with('@') && !token.starts_with("@&"))
+                  } else if (token.starts_with('@') && !token.starts_with("@&")) {
                     style.userMention = id;
+                    if (options && options->userMention)
+                      name = options->userMention(id, name);
+                  }
                   word(
                       std::string((!options || options->mentionPrefix) ? (token.starts_with('#') ? "#" : "@") : "")
                       + name
@@ -1218,7 +1221,8 @@ namespace app {
     auto bodyOptions = options;
     bodyOptions.compact = true;
     auto body = parseMessage(
-        replyContent(reply), 32768, measure, Style::fontSizeDescription, {}, bodyOptions, layout::Reply::avatarSize
+        replyContent(reply), 32768, measure, Style::fontSizeDescription, reply.mentions, bodyOptions,
+        layout::Reply::avatarSize
     );
     if (options.emojiImageLinks && !body.runs.empty() && body.boxes.empty()) {
       const auto& link = body.runs.front().style.link;

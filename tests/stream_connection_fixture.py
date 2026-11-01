@@ -83,6 +83,24 @@ class Relay:
         packets, self.packets = self.packets, []
         return [packet.hex() for packet in packets]
 
+    def constrain(self, pixels, height):
+        # Earlier announcements can have the same dimensions as a later reset.
+        self.signals = [s for s in self.signals if not isinstance(s, dict) or s["op"] != 12]
+        send(self.peer, {"op": 15, "d": {"456": 100, "pixelCounts": {"456": pixels}}})
+        self.wait_signal(lambda s: isinstance(s, dict) and s["op"] == 12
+                         and s["d"]["streams"][0]["max_resolution"]["height"] == height)
+
+    def resized_media(self, payload_type):
+        # Control and UDP delivery are independent. Decode through any in-flight
+        # frames instead of treating the first marker as the requested size.
+        deadline = time.monotonic() + 4
+        while time.monotonic() < deadline:
+            self.reply(packets=self.media(payload_type, False))
+            if self.record()["dimensions_matched"]:
+                self.reply(dimensions_checked=True)
+                return
+        raise AssertionError("The publisher did not deliver the requested encoded dimensions")
+
 
 def scenario(binary, direction, codec):
     with socket.socket() as listener, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
@@ -141,13 +159,11 @@ def scenario(binary, direction, codec):
                     assert speaking["d"] == {"speaking": 2, "delay": 0, "ssrc": 123}, "Shared audio uses the context-audio flag"
                     relay.reply(packets=relay.media(pt, True))
                     assert relay.record()["constrain"]
-                    send(peer, {"op": 15, "d": {"456": 100, "pixelCounts": {"456": 160 * 90}}})
-                    relay.wait_signal(lambda s: isinstance(s, dict) and s["op"] == 12 and s["d"]["streams"][0]["max_resolution"]["height"] == 90)
-                    relay.reply(packets=relay.media(pt, False))
+                    relay.constrain(160 * 90, 90)
+                    relay.resized_media(pt)
                     assert relay.record()["release"]
-                    send(peer, {"op": 15, "d": {"456": 100, "pixelCounts": {"456": 0}}})
-                    relay.wait_signal(lambda s: isinstance(s, dict) and s["op"] == 12 and s["d"]["streams"][0]["max_resolution"]["height"] == 180)
-                    relay.reply(packets=relay.media(pt, False))
+                    relay.constrain(0, 180)
+                    relay.resized_media(pt)
                     assert relay.record()["no_sink"]
                     send(peer, {"op": 15, "d": {"456": 0, "pixelCounts": {"456": 0}}})
                     relay.acknowledged(8)
@@ -160,7 +176,7 @@ def scenario(binary, direction, codec):
                     assert relay.record()["restore_sink"]
                     send(peer, {"op": 15, "d": {"any": 100, "pixelCounts": {}}})
                     relay.acknowledged(9)
-                    relay.reply(packets=relay.media(pt, False))
+                    relay.resized_media(pt)
                     assert relay.record()["pause"]
                     relay.wait_signal(lambda s: isinstance(s, dict) and s["op"] == 12 and not s["d"]["streams"][0]["active"])
                     relay.drain_for(0.05)

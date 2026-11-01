@@ -41,8 +41,7 @@ if ! getent passwd "$CI_UID" >/dev/null; then
 fi
 ci_home=$(mktemp -d /tmp/cressida-musl-home.XXXXXX)
 chown "$CI_UID:$CI_GID" "$ci_home"
-export HOME="$ci_home"
-su-exec "$CI_UID:$CI_GID" sh -eu <<'BUILD'
+su-exec "$CI_UID:$CI_GID" env HOME="$ci_home" sh -eu <<'BUILD'
 export XDG_CONFIG_HOME="$HOME/config"
 export XDG_STATE_HOME="$HOME/state"
 export XDG_CACHE_HOME="$HOME/cache"

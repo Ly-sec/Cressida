@@ -23,6 +23,24 @@ namespace api {
         throw std::runtime_error("Invalid Discord object identifier");
       return result;
     }
+    std::map<std::string, std::string> messageMentions(const nlohmann::json& users) {
+      std::map<std::string, std::string> names;
+      constexpr std::size_t maximumMessageMentions = 100;
+      if (!users.is_array())
+        return names;
+      for (const auto& user : users) {
+        if (names.size() >= maximumMessageMentions)
+          break;
+        if (!user.is_object() || !validSnowflake(text(user, "id")))
+          continue;
+        const auto account = parseAccount(user);
+        auto name = account.name;
+        if (user.contains("member") && user["member"].is_object())
+          name = text(user["member"], "nick", name);
+        names[account.id] = std::move(name);
+      }
+      return names;
+    }
   } // namespace
 
   bool validSnowflake(const std::string& value) {
@@ -598,6 +616,8 @@ namespace api {
             reply.available = original->is_object() || reply.deleted;
             if (original->is_object()) {
               reply.content = text(*original, "content");
+              if (const auto mentions = original->find("mentions"); mentions != original->end())
+                reply.mentions = messageMentions(*mentions);
               if (reply.content.empty() && original->contains("sticker_items")) {
                 const auto stickers = parseStickers((*original)["sticker_items"]);
                 if (!stickers.empty())
@@ -640,18 +660,7 @@ namespace api {
       }
     }
     if (value.contains("mentions") && value["mentions"].is_array()) {
-      patch.mentions.emplace();
-      for (const auto& user : value["mentions"]) {
-        if (!user.is_object() || patch.mentions->size() >= 100)
-          continue;
-        auto account = parseAccount(user);
-        if (validSnowflake(account.id)) {
-          auto name = account.name;
-          if (user.contains("member") && user["member"].is_object())
-            name = text(user["member"], "nick", name);
-          (*patch.mentions)[account.id] = name;
-        }
-      }
+      patch.mentions = messageMentions(value["mentions"]);
     }
     if (value.contains("content") && value["content"].is_string())
       patch.content = text(value, "content");

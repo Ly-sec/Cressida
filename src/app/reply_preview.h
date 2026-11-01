@@ -15,6 +15,7 @@ namespace app {
       reply.deleted = true;
       reply.available = true;
       reply.content.clear();
+      reply.mentions.clear();
       return reply;
     }
     if (!original)
@@ -23,6 +24,7 @@ namespace app {
     reply.author = original->author;
     reply.avatar = original->avatar;
     reply.content = original->content;
+    reply.mentions = original->mentions;
     reply.available = true;
     if (reply.content.empty()) {
       if (!original->stickers.empty())

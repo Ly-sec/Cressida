@@ -109,6 +109,7 @@ namespace app {
           message.reply->deleted = true;
           message.reply->available = true;
           message.reply->content.clear();
+          message.reply->mentions.clear();
         }
     };
     invalidateReplies(m_messages);

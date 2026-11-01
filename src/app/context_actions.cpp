@@ -951,6 +951,7 @@ namespace app {
     case Action::Reply:
       if (found != m_messages.end() && m_contextChannel == m_channelId) {
         m_replies[m_channelId] = {found->id, m_channelId, found->authorId, found->author, found->content};
+        m_replies[m_channelId].mentions = found->mentions;
         if (found->content.empty() && !found->stickers.empty())
           m_replies[m_channelId].content = "Sticker: " + found->stickers.front().name;
         m_focusedInput = "composer";

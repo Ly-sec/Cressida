@@ -52,6 +52,8 @@ int main() {
         {{"message_reference", reference},
          {"referenced_message",
           {{"content", "Original text"},
+           {"mentions",
+            json::array({{{"id", "321"}, {"username", "mentioned"}, {"member", {{"nick", "Server name"}}}}})},
            {"author", {{"id", "789"}, {"username", "Maya"}, {"avatar", "0123456789abcdef0123456789abcdef"}}}}}}
     ).apply(replyMessage);
     require(
@@ -62,12 +64,16 @@ int main() {
     require(
         replyMessage.reply->content == "Original text"
             && replyMessage.reply->author == "Maya"
+            && replyMessage.reply->mentions.at("321") == "Server name"
             && replyMessage.reply->avatar.find("0123456789abcdef0123456789abcdef") != std::string::npos,
         "Reference-only updates do not erase a received preview"
     );
     api::parseMessagePatch({{"message_reference", reference}, {"referenced_message", nullptr}}).apply(replyMessage);
     require(
-        replyMessage.reply->deleted && replyMessage.reply->content.empty() && replyMessage.reply->avatar.empty(),
+        replyMessage.reply->deleted
+            && replyMessage.reply->content.empty()
+            && replyMessage.reply->avatar.empty()
+            && replyMessage.reply->mentions.empty(),
         "Explicit deleted originals replace the previous reply preview"
     );
     api::parseMessagePatch({{"message_reference", nullptr}}).apply(replyMessage);

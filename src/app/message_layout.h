@@ -106,6 +106,7 @@ namespace app {
     };
     std::function<ChannelMention(std::string_view, std::string_view)> channelMention;
     std::function<std::string(std::string_view)> roleMention;
+    std::function<std::string(std::string_view, std::string_view)> userMention;
     bool twelveHourClock = false, showEmbedIcons = true;
   };
   MessageLayout layoutRichMessage(

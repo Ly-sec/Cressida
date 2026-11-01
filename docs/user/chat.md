@@ -167,7 +167,8 @@ sign-out.
 Hover a message and choose **Reply**. The composer shows who you are replying
 to. The mention control switches the reply notification on or off.
 
-Channel mentions in reply previews show the same names as in the message body.
+Channel and user mentions in reply previews show readable names, including your
+local aliases for people.
 
 Press **Escape** or use the reply row's close button to cancel the reply while
 keeping your draft. If a picker or dialog is open, Escape dismisses it first.

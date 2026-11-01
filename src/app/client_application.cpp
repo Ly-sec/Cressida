@@ -4782,6 +4782,10 @@ namespace app {
             displayed.mentions.try_emplace(m_account.id, m_account.name);
             for (auto& [id, name] : displayed.mentions)
               name = userName(id, name);
+            auto displayedReply = reply;
+            if (displayedReply)
+              for (const auto& [id, name] : displayed.mentions)
+                displayedReply->mentions.try_emplace(id, name);
             if (!m_preferences.showEmbeds)
               displayed.embeds.clear();
             if (!m_preferences.showImages)
@@ -4835,10 +4839,10 @@ namespace app {
                                   ) { return m_roleDirectory.roleName(m_dmMode ? "" : m_guildId, std::string(role)); }}
               );
             }
-            cached.reply = reply
+            cached.reply = displayedReply
                 ? layoutReplyPreview(
-                      *reply, userName(reply->authorId, reply->author.empty() ? "message" : reply->author), textWidth,
-                      measure,
+                      *displayedReply, userName(reply->authorId, reply->author.empty() ? "message" : reply->author),
+                      textWidth, measure,
                       {.emojiImageLinks = m_preferences.emojiImageLinks,
                        .compact = true,
                        .unicodeEmoji = [this](std::string_view text) { return m_emojiCatalog.isUnicode(text); },
@@ -4846,7 +4850,9 @@ namespace app {
                        .roleMention =
                            [this](auto role) {
                              return m_roleDirectory.roleName(m_dmMode ? "" : m_guildId, std::string(role));
-                           }}
+                           },
+                       .userMention =
+                           [this](auto id, auto name) { return userName(std::string(id), std::string(name)); }}
                   )
                 : MessageLayout{};
             cached.replySource = std::move(reply);

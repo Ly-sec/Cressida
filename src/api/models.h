@@ -244,6 +244,7 @@ namespace api {
     // A reference-only payload must not erase an already received preview.
     bool available = false;
     std::string avatar;
+    std::map<std::string, std::string> mentions;
     bool operator==(const MessageReference&) const = default;
   };
   struct ReactionUpdate {

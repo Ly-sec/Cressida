@@ -603,18 +603,22 @@ int main(int argc, char** argv) {
     original.author = "Maya";
     original.avatar = "/avatars/3/avatar.png";
     original.content = "Already loaded original";
+    original.mentions = {{"12", "Mentioned user"}};
     api::MessageReference unresolved{"1", "2"};
     auto resolved = app::resolvedReply(unresolved, &original);
     require(
         resolved.content == original.content
             && resolved.author == "Maya"
             && resolved.avatar == original.avatar
+            && resolved.mentions == original.mentions
             && resolved.available,
         "Reference-only replies use already loaded content and author identity"
     );
     original.content = "Edited original";
+    original.mentions = {{"13", "New mention"}};
     require(
-        app::resolvedReply(resolved, &original).content == "Edited original",
+        app::resolvedReply(resolved, &original).content == "Edited original"
+            && app::resolvedReply(resolved, &original).mentions == original.mentions,
         "Reply previews follow loaded edits instead of retaining stale text"
     );
     original.channelId = "4";
@@ -625,6 +629,7 @@ int main(int argc, char** argv) {
     original.channelId = "2";
     require(
         app::resolvedReply(resolved, &original, true).content.empty()
+            && app::resolvedReply(resolved, &original, true).mentions.empty()
             && app::resolvedReply(resolved, &original, true).deleted,
         "A deletion journal overrides loaded original content"
     );
@@ -890,6 +895,25 @@ int main(int argc, char** argv) {
     );
     require(
         roleReply.plainText.contains("@Nightwatch **literal**"), "Reply previews resolve roles with the same server"
+    );
+    api::MessageReference mentionedReply;
+    mentionedReply.content = "<@12> <@!13> `<@12>` <@99>";
+    mentionedReply.mentions = {{"12", "Maya **literal**"}, {"13", "Server name"}};
+    auto userReply = app::layoutReplyPreview(mentionedReply, "Author", 2400, editMeasure);
+    require(
+        userReply.plainText.contains("@Maya **literal** @Server name <@12> @unknown-user")
+            && std::ranges::none_of(userReply.runs, [](const auto& run) { return run.style.bold; }),
+        "Reply snapshots resolve user mentions literally while code and unknown users retain their fallbacks"
+    );
+    auto userOptions = roleOptions;
+    userOptions.userMention = [](std::string_view id, std::string_view fallback) {
+      return id == "12" ? "Local alias" : id == "99" ? "Known user" : std::string(fallback);
+    };
+    userReply = app::layoutReplyPreview(mentionedReply, "Author", 2400, editMeasure, userOptions);
+    require(
+        userReply.plainText.contains("@Local alias @Server name <@12> @Known user")
+            && std::ranges::all_of(userReply.runs, [](const auto& run) { return run.style.userMention.empty(); }),
+        "Reply user resolution applies aliases without changing the whole-preview jump target"
     );
     const std::array roleVersions{roleMessage};
     const auto roleHistory = app::withEditHistory(resolvedRoles, roleVersions, 2400, editMeasure, 14, roleOptions);

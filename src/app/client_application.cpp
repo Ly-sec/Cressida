@@ -791,7 +791,7 @@ namespace app {
         demoProfileStep();
       if (m_demo && m_demoOverlay == "channel-cycle")
         demoChannelStep();
-      if (m_demo && m_demoOverlay == "forum-cycle")
+      if (m_demo && m_demoOverlay.starts_with("forum-cycle"))
         demoForumStep();
       if (m_demo && m_demoOverlay == "thread-cycle")
         demoThreadStep();
@@ -1687,7 +1687,7 @@ namespace app {
                    : m_demo && view && std::string_view(view) == "server-menu-cycle"            ? 20
                    : m_demo && view && std::string_view(view) == "channel-menu-cycle"           ? 31
                    : m_demo && view && std::string_view(view) == "channel-cycle"                ? 18
-                   : m_demo && view && std::string_view(view) == "forum-cycle"                  ? 12
+                   : m_demo && view && std::string_view(view).starts_with("forum-cycle")        ? 12
                    : m_demo && view && std::string_view(view) == "thread-cycle"                 ? 10
                    : m_demo && view && std::string_view(view) == "guild-tag-cycle"              ? 10
                    : m_demo && view && std::string_view(view).starts_with("cosmetics-cycle")    ? cosmeticsReplayFrames
@@ -1830,7 +1830,7 @@ namespace app {
       throw std::runtime_error("Channel feature replay did not complete");
     if (m_demoOverlay == "mentions-cycle" && m_demoInteractionStep != 4)
       throw std::runtime_error("Mention highlighting replay did not complete");
-    if (m_demoOverlay == "forum-cycle" && m_demoInteractionStep != 12)
+    if (m_demoOverlay.starts_with("forum-cycle") && m_demoInteractionStep != 12)
       throw std::runtime_error("Forum replay did not complete");
     if (m_demoOverlay.starts_with("cosmetics-cycle") && m_demoInteractionStep != cosmeticsReplayFrames)
       throw std::runtime_error("Cosmetic replay did not complete");
@@ -2503,7 +2503,7 @@ namespace app {
             m_dialogTitle = "Sync permissions?";
           }
         }
-        if (view == "forum" || view == "forum-error" || view == "forum-cycle")
+        if (view == "forum" || view == "forum-error" || view.starts_with("forum-cycle"))
           prepareForumDemo(view);
         if (view == "threads" || view == "thread" || view == "thread-cycle")
           prepareThreadDemo(view);
@@ -6581,6 +6581,7 @@ namespace app {
     m_client.subscribe(m_guildId, m_channelId, m_memberPage, identity);
   }
   void ClientApplication::selectGuild(const std::string& id) {
+    m_forumPreviewReads.clear();
     if (m_dmMode || m_guildId != id || m_channels.empty())
       clearTyping();
     m_pendingDiscordLink.reset();
@@ -6717,6 +6718,7 @@ namespace app {
   }
 
   void ClientApplication::selectChannel(std::string id) {
+    m_forumPreviewReads.clear();
     closeSearchMenu();
     if (id != m_channelId)
       m_adoptedChatPreload.reset();
@@ -7571,6 +7573,17 @@ namespace app {
         if (auto preview = m_forumFirstMessages.find(change.channel);
             preview != m_forumFirstMessages.end() && preview->second.id == change.message)
           api::applyReaction(preview->second, change, m_account.id);
+        if (auto pending = m_forumPreviewReads.find(change.channel);
+            pending != m_forumPreviewReads.end() && change.message == change.channel) {
+          if (pending->second.reactions.size() < ForumPreviewRead::maximumChanges)
+            pending->second.reactions.push_back(change);
+          else {
+            m_forumPreviewReads.erase(pending);
+            if (m_forumPreviewErrors.size() >= ForumPreviewRead::maximumCached)
+              m_forumPreviewErrors.erase(m_forumPreviewErrors.begin());
+            m_forumPreviewErrors[change.channel] = "Post changed while its preview was loading. Retry.";
+          }
+        }
         if (change.channel == m_chatPreloadChannel) {
           if (m_chatPreloadReactions.size() < 512)
             m_chatPreloadReactions.push_back(change);

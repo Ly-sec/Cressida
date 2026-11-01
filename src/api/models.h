@@ -161,6 +161,7 @@ namespace api {
     bool isForum() const { return kind() == ChannelType::GuildForum || kind() == ChannelType::GuildMedia; }
     std::optional<bool> messageRequest, spam;
     std::optional<std::string> messageRequestTimestamp;
+    std::optional<std::string> ownerId;
     bool isMessageRequest() const { return messageRequest.value_or(false) || spam.value_or(false); }
   };
   void mergePrivateChannel(Channel& current, Channel update);

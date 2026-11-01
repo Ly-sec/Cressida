@@ -744,6 +744,9 @@ namespace api {
     if (command.session == 0 || m_authenticatedSession != command.session)
       return false;
     command.background = command.operation == Operation::ChannelDetails
+        || (command.operation == Operation::Threads
+            && command.threadQuery
+            && command.threadQuery->list == ThreadList::Starter)
         || command.operation == Operation::PrivateChannels
         || command.operation == Operation::StreamPreviewRead
         || command.operation == Operation::StreamPreviewWrite

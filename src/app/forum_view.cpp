@@ -49,6 +49,81 @@ namespace app {
     }
     m_window.invalidate();
   }
+  void ClientApplication::cacheForumPreview(api::Message message) {
+    const auto id = message.channelId;
+    if (m_forumDeletedStarters.contains(id))
+      return;
+    if (const auto prior = m_forumFirstMessages.find(id); prior != m_forumFirstMessages.end()) {
+      if (MessageLog::stale(prior->second, message)
+          || (!prior->second.editedTimestamp.empty() && message.editedTimestamp.empty())
+          || (api::validSnowflake(prior->second.authorId) && !api::validSnowflake(message.authorId)))
+        return;
+    }
+    m_forumFirstMessages[id] = std::move(message);
+    std::erase(m_forumPreviewOrder, id);
+    m_forumPreviewOrder.push_back(id);
+    while (m_forumPreviewOrder.size() > ForumPreviewRead::maximumCached) {
+      m_forumFirstMessages.erase(m_forumPreviewOrder.front());
+      m_forumPreviewOrder.erase(m_forumPreviewOrder.begin());
+    }
+    m_forumPreviewErrors.erase(id);
+  }
+  void ClientApplication::requestForumPreview(const api::Channel& thread) {
+    if (m_forumDeletedStarters.contains(thread.id))
+      return;
+    if (const auto cached = m_forumFirstMessages.find(thread.id); cached != m_forumFirstMessages.end()) {
+      std::erase(m_forumPreviewOrder, thread.id);
+      m_forumPreviewOrder.push_back(thread.id);
+      if (api::validSnowflake(cached->second.authorId))
+        return;
+    }
+    if (m_demo
+        || !m_connected
+        || !forumView()
+        || thread.parentId != m_channelId
+        || m_forumPreviewReads.size() >= ForumPreviewRead::maximumPending
+        || m_forumPreviewReads.contains(thread.id)
+        || m_forumPreviewErrors.contains(thread.id))
+      return;
+    api::ThreadQuery query{api::ThreadList::Starter, m_guildId, thread.id, {}, ++m_threadSerial, m_threads.revision()};
+    if (m_client.threads(query))
+      m_forumPreviewReads.emplace(thread.id, ForumPreviewRead{std::move(query)});
+    else {
+      if (m_forumPreviewErrors.size() >= ForumPreviewRead::maximumCached)
+        m_forumPreviewErrors.erase(m_forumPreviewErrors.begin());
+      m_forumPreviewErrors[thread.id] = "Post preview could not be loaded.";
+    }
+  }
+  bool ClientApplication::forumPreviewEvent(const api::Event& event) {
+    if (!event.threadQuery || event.threadQuery->list != api::ThreadList::Starter)
+      return false;
+    const auto& query = *event.threadQuery;
+    const auto pending = m_forumPreviewReads.find(query.parent);
+    if (pending == m_forumPreviewReads.end() || pending->second.query != query)
+      return true;
+    auto read = std::move(pending->second);
+    m_forumPreviewReads.erase(pending);
+    const auto thread = m_threads.find(query.guild, query.parent);
+    if (query.guild != m_guildId || !forumView() || !thread || thread->parentId != m_channelId)
+      return true;
+    if (event.error.empty() && event.threadPage && event.threadPage->firstMessages.size() == 1) {
+      auto message = event.threadPage->firstMessages.front();
+      if (message.id == query.parent && message.channelId == query.parent && api::validSnowflake(message.authorId)) {
+        for (const auto& patch : read.patches)
+          patch.apply(message);
+        for (const auto& reaction : read.reactions)
+          api::applyReaction(message, reaction, m_account.id);
+        cacheForumPreview(std::move(message));
+        m_window.invalidate();
+        return true;
+      }
+    }
+    if (m_forumPreviewErrors.size() >= ForumPreviewRead::maximumCached)
+      m_forumPreviewErrors.erase(m_forumPreviewErrors.begin());
+    m_forumPreviewErrors[query.parent] = "Post preview is unavailable.";
+    m_window.invalidate();
+    return true;
+  }
   void ClientApplication::drawForum(Node& root, float x, float y, float width, float height) {
     const auto parent = std::ranges::find(m_channels, m_channelId, &api::Channel::id);
     if (parent == m_channels.end())
@@ -160,6 +235,7 @@ namespace app {
           Style::radiusXl
       );
       m_hits.push_back({x + inset, sy, cardWidth, end - sy, Action::OpenThread, thread.id});
+      requestForumPreview(thread);
       const auto first = m_forumFirstMessages.find(thread.id);
       const api::Message* preview = first == m_forumFirstMessages.end() ? nullptr : &first->second;
       std::string thumbnail;
@@ -218,19 +294,20 @@ namespace app {
           *content, 14, ry + ((Style::spaceSection + Style::spaceXs) + Style::borderWidth), textWidth, thread.name,
           Style::fontSizeSection, foreground, FontWeight::SemiBold
       );
-      if (preview) {
-        const auto name = userName(preview->authorId, preview->author);
+      if (preview && api::validSnowflake(preview->authorId)) {
+        const auto owner = thread.ownerId.value_or(preview->authorId);
+        const auto name = userName(owner, owner == preview->authorId ? preview->author : "Unknown user");
         const auto plain = oneLineReplyText(name + ": " + (preview->content.empty() ? "Attachment" : preview->content));
         const auto layout = layoutMessage(
             plain, textWidth, measure, Style::fontSizeDescription, {},
             {.compact = true, .unicodeEmoji = [this](std::string_view text) { return m_emojiCatalog.isUnicode(text); }}
         );
         auto line = std::make_unique<Node>();
-        line->setPosition(14, ry + 75);
-        line->setSize(textWidth, 19);
+        line->setPosition(layout::Forum::previewInset, ry + layout::Forum::previewTop);
+        line->setSize(textWidth, layout::Forum::previewHeight);
         line->setClipChildren(true);
         for (const auto& run : layout.runs) {
-          if (run.y >= 19)
+          if (run.y >= layout::Forum::previewHeight)
             continue;
           if (!run.image.empty())
             emojiImage(*line, run.x, run.y, run.width, run.image);
@@ -242,6 +319,28 @@ namespace app {
         }
         drawMessageStrikes(*line, layout, 0, 0, muted);
         content->addChild(std::move(line));
+      } else {
+        const bool deleted = m_forumDeletedStarters.contains(thread.id);
+        const bool unavailable = m_forumPreviewErrors.contains(thread.id);
+        const auto owner = thread.ownerId ? userName(*thread.ownerId, "") : "";
+        const auto text = (owner.empty() ? "" : owner + ": ")
+            + (deleted           ? "Opening message was deleted."
+                   : unavailable ? "Preview unavailable · Retry"
+                                 : "Loading post preview…");
+        label(
+            *content, layout::Forum::previewInset, ry + layout::Forum::previewTop, textWidth, text,
+            Style::fontSizeDescription, muted
+        );
+        if (unavailable && !deleted) {
+          const float py = std::max(top, top + ry + layout::Forum::previewTop);
+          const float bottom =
+              std::min(top + viewport, top + ry + layout::Forum::previewTop + layout::Forum::previewHeight);
+          if (bottom > py)
+            m_hits.push_back(
+                {x + inset + layout::Forum::previewInset, py, textWidth, bottom - py, Action::ForumPreviewRetry,
+                 thread.id}
+            );
+        }
       }
       float detailX = 14;
       if (preview && !preview->reactions.empty()) {
@@ -407,6 +506,8 @@ namespace app {
   }
   void ClientApplication::prepareForumDemo(const std::string& view) {
     m_demoOverlay = view;
+    if (view.ends_with("light"))
+      m_preferences.theme = "light";
     using Json = nlohmann::json;
     auto forum = api::parseChannels(
                      Json::array(
@@ -433,6 +534,7 @@ namespace app {
            {"type", 11},
            {"guild_id", "1"},
            {"parent_id", "105"},
+           {"owner_id", i % 2 ? "11" : "12"},
            {"name",
             i == 0        ? "Weekend project"
                 : i == 11 ? "My native desktop setup"
@@ -452,7 +554,7 @@ namespace app {
       };
       message.attachments.push_back({id, "preview.png", "", "image/png", {"demo-preview", 640, 360}});
       message.reactions = {{"", "❤️", i + 1}};
-      m_forumFirstMessages[id] = std::move(message);
+      cacheForumPreview(std::move(message));
     }
     api::ThreadQuery query{api::ThreadList::Active, "1", "105", {}, 0, m_threads.revision()};
     m_threads.page(query, api::parseThreadPage(Json{{"threads", threads}}, query));
@@ -474,8 +576,56 @@ namespace app {
       activate(copy);
     };
     const auto step = m_demoInteractionStep++;
+    const auto starterResult = [&](const std::string& id, const std::string& error = "") {
+      api::Event result;
+      result.operation = api::Operation::Threads;
+      result.threadQuery =
+          api::ThreadQuery{api::ThreadList::Starter, m_guildId, id, {}, ++m_threadSerial, m_threads.revision()};
+      m_forumPreviewReads[id] = {*result.threadQuery};
+      result.error = error;
+      if (error.empty()) {
+        result.threadPage.emplace();
+        const auto thread = m_threads.find(m_guildId, id);
+        const auto owner = thread ? thread->ownerId.value_or("12") : "12";
+        result.threadPage->firstMessages.push_back(
+            {id, id, owner == "11" ? "Maya" : "Noah", "Opening post", "2026-10-17T09:50:00Z", owner}
+        );
+      }
+      return result;
+    };
     std::clog << "Forum replay step " << step << '\n';
     if (step == 0) {
+      auto saved = m_forumFirstMessages;
+      auto savedOrder = m_forumPreviewOrder;
+      for (std::size_t i = 0; i < ForumPreviewRead::maximumCached; ++i) {
+        const auto id = std::to_string(80000 + i);
+        cacheForumPreview({id, id, "Noah", "Cached starter", {}, "12"});
+      }
+      cacheForumPreview({"100", "100", "Noah", "An older archived post", {}, "12"});
+      require(
+          m_forumFirstMessages.contains("100") && m_forumFirstMessages.size() <= ForumPreviewRead::maximumCached,
+          "Reading an older post cannot immediately evict its own preview from a full cache"
+      );
+      m_forumFirstMessages = std::move(saved);
+      m_forumPreviewOrder = std::move(savedOrder);
+      m_forumFirstMessages.erase("9011");
+      auto starter = starterResult("9011");
+      updateMessage("9011", "9011", {.content = "Edited while the preview loaded"});
+      threadEvent(starter);
+      require(
+          m_forumFirstMessages.at("9011").authorId == "11"
+              && m_forumFirstMessages.at("9011").content == "Edited while the preview loaded"
+              && m_forumPreviewReads.empty(),
+          "A missing starter loads with its owner while preserving newer live edits"
+      );
+      auto deletedStarter = starterResult("9010");
+      deleteMessages("9010", {"9010"});
+      threadEvent(deletedStarter);
+      cacheForumPreview(deletedStarter.threadPage->firstMessages.front());
+      require(
+          !m_forumFirstMessages.contains("9010") && m_forumDeletedStarters.contains("9010"),
+          "Late individual and bundled starter reads cannot restore a deleted opening message"
+      );
       require(
           forumView() && m_dialogKind.empty() && m_channelId == "105",
           "Forums must select their own channel in the main content area"
@@ -505,7 +655,14 @@ namespace app {
           "Forum search filters visible post cards"
       );
       click(Action::ForumTag, "70");
+      m_forumFirstMessages.erase("9000");
+      threadEvent(starterResult("9000", "Synthetic preview failure"));
     } else if (step == 4) {
+      require(m_forumPreviewErrors.contains("9000"), "A failed preview stays settled until explicit retry");
+      click(Action::ForumPreviewRetry, "9000");
+      require(!m_forumPreviewErrors.contains("9000"), "The card's Retry control re-enables its preview read");
+      threadEvent(starterResult("9000"));
+      require(m_forumFirstMessages.at("9000").content == "Opening post", "Retry restores the original post preview");
       require(m_forumTag == "70", "Forum tag filters are interactive");
       m_forumSearch.clear();
       m_forumTag.clear();
@@ -553,8 +710,14 @@ namespace app {
       failure.threadQuery = api::ThreadQuery{api::ThreadList::Active, "1", "105", {}, ++m_threadSerial, revision};
       m_threadRequests["105"] = *failure.threadQuery;
       failure.error = "A synthetic request failed.";
+      m_forumFirstMessages.erase("9000");
+      auto latePreview = starterResult("9000");
       selectChannel("101");
       threadEvent(failure);
+      threadEvent(latePreview);
+      require(
+          !m_forumFirstMessages.contains("9000"), "A preview read cannot populate the cache after leaving its forum"
+      );
     } else if (step == 10) {
       require(
           m_channelId == "101" && m_dialogKind.empty(),

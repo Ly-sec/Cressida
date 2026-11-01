@@ -274,6 +274,7 @@ namespace app {
       ForumSort,
       ForumTag,
       ForumRetry,
+      ForumPreviewRetry,
       ForumMore,
       NewForumPost,
       ForumPostTag,
@@ -618,6 +619,9 @@ namespace app {
     bool forumView() const;
     void drawForum(Node& root, float x, float y, float width, float height);
     void updateForumSearch();
+    void requestForumPreview(const api::Channel& thread);
+    void cacheForumPreview(api::Message message);
+    bool forumPreviewEvent(const api::Event& event);
     void newForumPost();
     void prepareForumDemo(const std::string& view);
     void demoForumStep();
@@ -1418,6 +1422,16 @@ namespace app {
     std::map<std::string, api::ThreadQuery> m_threadRequests;
     std::map<std::string, api::ThreadPage> m_threadPages;
     std::map<std::string, api::Message> m_forumFirstMessages;
+    struct ForumPreviewRead {
+      static constexpr std::size_t maximumPending = 3, maximumCached = 256, maximumChanges = 32;
+      api::ThreadQuery query;
+      std::vector<api::MessagePatch> patches;
+      std::vector<api::ReactionUpdate> reactions;
+    };
+    std::map<std::string, ForumPreviewRead> m_forumPreviewReads;
+    std::map<std::string, std::string> m_forumPreviewErrors;
+    std::set<std::string> m_forumDeletedStarters;
+    std::vector<std::string> m_forumPreviewOrder;
     std::string m_forumSearch, m_forumTag, m_forumPostTag;
     bool m_forumNewest = false;
     float m_forumScroll = 0;

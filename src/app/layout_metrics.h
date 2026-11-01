@@ -392,6 +392,11 @@ namespace app::layout {
     static constexpr float iconSize = badgeSize - iconInset * 2;
     static constexpr float descriptionTop = Style::spaceGroup * 3 - Style::spaceXxs;
   };
+  struct Forum {
+    static constexpr float previewInset = Style::spaceMd + Style::spaceXxs;
+    static constexpr float previewTop = Style::spaceGroup + Style::spaceXl + Style::spaceXxs + Style::borderWidth;
+    static constexpr float previewHeight = Style::fontSizeDescription + Style::spaceSm - Style::borderWidth;
+  };
   struct Markdown {
     static constexpr float subtextScale = Style::fontSizeDescription / Style::fontSizeBody;
     static constexpr float lineGap = Style::spaceSm;

@@ -14,6 +14,10 @@ namespace app {
     m_threads = {};
     m_forumSearchTimer.stop();
     m_forumFirstMessages.clear();
+    m_forumPreviewReads.clear();
+    m_forumPreviewErrors.clear();
+    m_forumDeletedStarters.clear();
+    m_forumPreviewOrder.clear();
     m_threadPages.clear();
     m_forumSearch.clear();
     m_forumTag.clear();
@@ -82,6 +86,8 @@ namespace app {
     m_channels = std::move(result);
   }
   void ClientApplication::threadEvent(const api::Event& event) {
+    if (forumPreviewEvent(event))
+      return;
     m_messageLayouts.clear();
     m_completionDirty = true;
     const auto selected = m_threads.find(m_guildId, m_channelId);
@@ -89,6 +95,7 @@ namespace app {
     if (event.operation == api::Operation::ThreadUpdate) {
       m_threads.apply(event.threadUpdates);
       if (event.threadUpdates.reset) {
+        m_forumPreviewReads.clear();
         m_threadRequests.clear();
         m_threadsLoaded.clear();
         m_threadErrors.clear();
@@ -125,9 +132,8 @@ namespace app {
         if (active)
           m_threadPages[query.parent] = {{}, event.threadPage->more, event.threadPage->before};
         for (const auto& message : event.threadPage->firstMessages) {
-          m_forumFirstMessages[message.channelId] = message;
-          while (m_forumFirstMessages.size() > 256)
-            m_forumFirstMessages.erase(m_forumFirstMessages.begin());
+          if (m_threads.find(query.guild, message.channelId))
+            cacheForumPreview(message);
         }
       }
       if (opening) {
@@ -142,6 +148,9 @@ namespace app {
           m_status = event.error.empty() ? "This thread is no longer available." : event.error;
       }
     }
+    std::erase_if(m_forumPreviewReads, [&](const auto& entry) {
+      return !m_threads.find(entry.second.query.guild, entry.first);
+    });
     rebuildThreadChannels();
     // Deletion/access loss leaves a useful parent conversation, never a stale
     // composer pointing at a thread which is no longer accessible.
@@ -405,7 +414,11 @@ namespace app {
       m_forumPostTag = m_forumPostTag == hit.id ? "" : hit.id;
       break;
     case Action::ForumRetry:
+      m_forumPreviewErrors.clear();
       loadThreads(true);
+      break;
+    case Action::ForumPreviewRetry:
+      m_forumPreviewErrors.erase(hit.id);
       break;
     case Action::ForumMore:
       loadThreads(false, true);

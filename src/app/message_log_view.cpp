@@ -32,6 +32,19 @@ namespace app {
     if (auto preview = m_forumFirstMessages.find(channel);
         preview != m_forumFirstMessages.end() && preview->second.id == id)
       patch.apply(preview->second);
+    if (auto pending = m_forumPreviewReads.find(channel); pending != m_forumPreviewReads.end() && id == channel) {
+      if (patch.reactions)
+        pending->second.reactions.clear();
+      if (pending->second.patches.size() < ForumPreviewRead::maximumChanges)
+        pending->second.patches.push_back(patch);
+      else {
+        m_forumPreviewReads.erase(pending);
+        if (m_forumPreviewErrors.size() >= ForumPreviewRead::maximumCached)
+          m_forumPreviewErrors.erase(m_forumPreviewErrors.begin());
+        m_forumPreviewErrors[channel] = "Post changed while its preview was loading. Retry.";
+      }
+      m_window.invalidate();
+    }
     if (channel == m_channelId) {
       m_history.changed(id, patch);
       if (!m_history.busy())
@@ -101,6 +114,16 @@ namespace app {
     invalidateReplies(m_messages);
     for (auto& [id, rows] : m_channelMessages)
       invalidateReplies(rows);
+    if (std::ranges::find(ids, channel) != ids.end()) {
+      if (m_forumDeletedStarters.size() >= ForumPreviewRead::maximumCached)
+        m_forumDeletedStarters.erase(m_forumDeletedStarters.begin());
+      m_forumDeletedStarters.insert(channel);
+      m_forumPreviewReads.erase(channel);
+      if (m_forumPreviewErrors.size() >= ForumPreviewRead::maximumCached)
+        m_forumPreviewErrors.erase(m_forumPreviewErrors.begin());
+      m_forumPreviewErrors[channel] = "Original post is unavailable.";
+      std::erase(m_forumPreviewOrder, channel);
+    }
     if (const auto preview = m_forumFirstMessages.find(channel);
         preview != m_forumFirstMessages.end() && deleted(preview->second))
       m_forumFirstMessages.erase(preview);

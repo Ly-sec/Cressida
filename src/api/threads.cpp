@@ -12,6 +12,16 @@ namespace api {
       auto i = v.find(key);
       return i != v.end() && i->is_string() ? i->get<std::string>() : "";
     }
+    bool completeStarter(const Json& value) {
+      const auto author = value.find("author"), content = value.find("content");
+      return value.is_object()
+          && author != value.end()
+          && author->is_object()
+          && validSnowflake(string(*author, "id"))
+          && (!string(*author, "username").empty() || !string(*author, "global_name").empty())
+          && content != value.end()
+          && content->is_string();
+    }
     bool newer(const std::string& a, const std::string& b) {
       return a.size() != b.size() ? a.size() > b.size() : a > b;
     }
@@ -53,6 +63,8 @@ namespace api {
       return {};
     result.name = string(value, "name").substr(0, 400);
     result.parentId = string(value, "parent_id");
+    if (const auto owner = string(value, "owner_id"); validSnowflake(owner))
+      result.ownerId = owner;
     if (!result.parentId.empty() && !validSnowflake(result.parentId))
       return {};
     if (value.contains("applied_tags") && value["applied_tags"].is_array()) {
@@ -169,6 +181,10 @@ namespace api {
       return {};
     if (!validSnowflake(q.parent))
       return {};
+    if (q.list == ThreadList::Starter)
+      return q.before.empty() && q.search.empty() && q.tag.empty() && !q.newest
+          ? "/channels/" + q.parent + "/messages/" + q.parent
+          : "";
     if (q.list == ThreadList::Active) {
       unsigned offset = 0;
       if (!q.before.empty()) {
@@ -242,6 +258,19 @@ namespace api {
     if (!value.is_object())
       throw std::runtime_error("Expected thread response");
     ThreadPage result;
+    if (q.list == ThreadList::Starter) {
+      if (!completeStarter(value))
+        throw std::runtime_error("Incomplete post preview");
+      auto messages = parseMessages(Json::array({value}));
+      if (messages.size() != 1
+          || (!string(value, "guild_id").empty() && string(value, "guild_id") != q.guild)
+          || messages.front().id != q.parent
+          || messages.front().channelId != q.parent
+          || !validSnowflake(messages.front().authorId))
+        throw std::runtime_error("Unexpected post preview identity");
+      result.firstMessages = std::move(messages);
+      return result;
+    }
     if (q.list == ThreadList::Single) {
       auto thread = parseThread(value);
       if (!thread
@@ -267,9 +296,14 @@ namespace api {
     if (value.contains("first_messages")
         && value["first_messages"].is_array()
         && value["first_messages"].size() <= 100) {
-      for (auto& message : parseMessages(value["first_messages"]))
-        if (std::ranges::any_of(result.threads, [&](const auto& t) { return message.channelId == t.id; }))
-          result.firstMessages.push_back(std::move(message));
+      for (const auto& item : value["first_messages"]) {
+        if (!completeStarter(item))
+          continue;
+        for (auto& message : parseMessages(Json::array({item})))
+          if (message.id == message.channelId
+              && std::ranges::any_of(result.threads, [&](const auto& t) { return message.channelId == t.id; }))
+            result.firstMessages.push_back(std::move(message));
+      }
     }
     if (q.list == ThreadList::Active) {
       const auto offset = q.before.empty() ? 0U : static_cast<unsigned>(std::stoul(q.before));
@@ -319,6 +353,8 @@ namespace api {
         c.joined = t.joined;
       if (t.appliedTags)
         c.appliedTags = t.appliedTags;
+      if (t.ownerId)
+        c.ownerId = t.ownerId;
       if (t.messageCount)
         c.messageCount = t.messageCount;
       if (t.threadMemberCount)
@@ -394,8 +430,14 @@ namespace api {
       if ((guildBarrier != m_barriers.end() && guildBarrier->second > query.revision)
           || (parentBarrier != m_barriers.end() && parentBarrier->second > query.revision))
         continue;
-      if (auto i = m_entries.find(thread.id); i != m_entries.end() && i->second.revision > query.revision)
+      if (auto i = m_entries.find(thread.id); i != m_entries.end() && i->second.revision > query.revision) {
+        if (i->second.guild == query.guild
+            && i->second.channel.parentId == thread.parentId
+            && !i->second.channel.ownerId
+            && thread.ownerId)
+          i->second.channel.ownerId = thread.ownerId;
         continue;
+      }
       if (auto i = m_removed.find(thread.id); i != m_removed.end() && i->second > query.revision)
         continue;
       upsert(query.guild, thread, query.revision);

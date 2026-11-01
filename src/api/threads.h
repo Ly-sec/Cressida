@@ -5,7 +5,7 @@
 #include <set>
 
 namespace api {
-  enum class ThreadList { Active, Archived, PrivateArchived, Single };
+  enum class ThreadList { Active, Archived, PrivateArchived, Single, Starter };
   struct ThreadQuery {
     ThreadList list = ThreadList::Active;
     std::string guild, parent, before;

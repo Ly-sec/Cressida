@@ -63,3 +63,8 @@ Select a thread beneath its parent or open a forum post to read its
 conversation. Available creation and management actions depend on the channel
 and your access. Some management features are still incomplete; see
 [Current capabilities](faq.md).
+
+Forum cards show the post owner and an opening-message preview. Missing previews
+load for visible cards without opening their conversations. If a preview cannot
+be read, choose **Retry** on that card. Deleted or inaccessible opening messages
+remain unavailable; the post can still be opened when you have access.

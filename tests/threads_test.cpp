@@ -60,6 +60,56 @@ int main() {
         "Personal-account thread search route"
     );
     require(threadListPath({ThreadList::Active, "1"}).empty(), "Never use bot-only guild active-thread endpoints");
+    const ThreadQuery starter{ThreadList::Starter, "1", "200"};
+    require(
+        threadListPath(starter) == "/channels/200/messages/200",
+        "Forum starter hydration reads the specific original message without changing chat history"
+    );
+    require(
+        threadListPath({ThreadList::Starter, "1", "../200"}).empty()
+            && threadListPath({ThreadList::Starter, "1", "200", "cursor"}).empty(),
+        "Starter reads reject malformed identities and unrelated pagination"
+    );
+    auto starterData = json{
+        {"id", "200"},
+        {"channel_id", "200"},
+        {"content", "Original post"},
+        {"author", {{"id", "7"}, {"username", "Maya"}}}
+    };
+    const auto starterPage = parseThreadPage(starterData, starter);
+    require(
+        starterPage.threads.empty()
+            && starterPage.firstMessages.size() == 1
+            && starterPage.firstMessages.front().authorId == "7"
+            && starterPage.firstMessages.front().content == "Original post",
+        "Starter hydration retains the author and full original message"
+    );
+    for (const auto field : {"id", "channel_id", "guild_id"}) {
+      auto mismatched = starterData;
+      mismatched[field] = "201";
+      bool rejected = false;
+      try {
+        (void)parseThreadPage(mismatched, starter);
+      } catch (const std::exception&) {
+        rejected = true;
+      }
+      require(rejected, "Starter responses cannot populate another thread's preview");
+    }
+    ThreadDirectory owners;
+    auto owned = thread("200");
+    owned["owner_id"] = "7";
+    owners.apply(update("THREAD_CREATE", owned));
+    owners.apply(update("THREAD_UPDATE", {{"id", "200"}, {"guild_id", "1"}, {"name", "Updated title"}}));
+    require(owners.find("1", "200")->ownerId == "7", "Partial updates retain a known thread owner");
+    ThreadDirectory delayedOwner;
+    delayedOwner.apply(update("THREAD_CREATE", thread("200")));
+    const ThreadQuery delayedQuery{ThreadList::Active, "1", "10", {}, 0, delayedOwner.revision()};
+    delayedOwner.apply(update("THREAD_UPDATE", {{"id", "200"}, {"guild_id", "1"}, {"name", "Live title"}}));
+    delayedOwner.page(delayedQuery, parseThreadPage({{"threads", json::array({owned})}}, delayedQuery));
+    require(
+        delayedOwner.find("1", "200")->ownerId == "7" && delayedOwner.find("1", "200")->name == "Live title",
+        "A delayed page can fill missing owner metadata without replacing a newer live title"
+    );
     auto search = active;
     search.search = "hello & 🌙";
     search.tag = "70";
@@ -271,7 +321,13 @@ int main() {
     auto forumPage = parseThreadPage(
         {{"threads", json::array({forumThread})},
          {"has_more", true},
-         {"first_messages", json::array({{{"id", "200"}, {"channel_id", "200"}, {"content", "Preview"}}})}},
+         {"first_messages",
+          json::array(
+              {{{"id", "200"},
+                {"channel_id", "200"},
+                {"content", "Preview"},
+                {"author", {{"id", "7"}, {"username", "Maya"}}}}}
+          )}},
         active
     );
     require(
@@ -279,6 +335,15 @@ int main() {
             && forumPage.firstMessages.size() == 1
             && forumPage.threads[0].appliedTags->front() == "70",
         "Forum search projects preview messages, applied tags and advancing offset"
+    );
+    auto incompleteStarter = starterData;
+    incompleteStarter.erase("content");
+    const auto incompletePage = parseThreadPage(
+        {{"threads", json::array({forumThread})}, {"first_messages", json::array({incompleteStarter})}}, active
+    );
+    require(
+        incompletePage.threads.size() == 1 && incompletePage.firstMessages.empty(),
+        "Incomplete bundled starter data does not masquerade as a fully loaded post preview"
     );
     auto post = interactionRequest(
         {.kind = InteractionKind::CreateForumPost,

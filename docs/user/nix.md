@@ -73,6 +73,13 @@ command instead.
 
 ## Launch
 
+The flake package is not added to your `pkgs` set. For an autostart entry that
+needs an executable path, reference the flake output directly:
+
+```nix
+"${inputs.cressida.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/cressida"
+```
+
 Open **Cressida** from your application launcher or run `cressida`. Use
 `cressida --demo` for an offline preview, or follow [Sign in](sign-in.md).
 

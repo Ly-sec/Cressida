@@ -137,10 +137,12 @@ a portable static package.
 The root `VERSION` file is the single source of the client version. Meson, Nix
 packaging, `cressida --version`, startup diagnostics and network identifiers all
 use that value. To prepare a release, update its single line, for example
-`0.2.0`, and use the matching `v0.2.0` tag. Prerelease values such as
-`0.2.0-rc.1` use the matching `v0.2.0-rc.1` tag. A missing or mismatched version
-stops release packaging. Source archives include `VERSION` so builds from an
-archive report the same version.
+`v0.2.0`, and use the identical `v0.2.0` tag. Prerelease values such as
+`v0.2.0-rc.1` use the identical `v0.2.0-rc.1` tag. Keep the leading `v` in both
+places. A missing or mismatched version stops release packaging. Source archives
+include `VERSION` so builds from an archive report the same version. Release
+filenames omit that prefix, for example `cressida-0.2.0.tar.xz` and
+`cressida-0.2.0-x86_64.AppImage`.
 
 Pushing a matching version tag runs CI, then calls `release-packages.yml`.
 Native x86_64 and aarch64 runners build the client with pinned dependencies in

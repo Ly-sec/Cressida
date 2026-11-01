@@ -8,7 +8,7 @@ import tarfile
 
 
 def release_version(ref, root):
-    match = re.fullmatch(r"refs/tags/v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)", ref)
+    match = re.fullmatch(r"refs/tags/(v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)", ref)
     if not match:
         raise ValueError("Run Release on a vMAJOR.MINOR.PATCH tag (optional prerelease suffix).")
     version = match[1]
@@ -16,11 +16,12 @@ def release_version(ref, root):
         lines = (root / "VERSION").read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError) as error:
         raise ValueError("Could not read VERSION.") from error
-    if len(lines) != 1 or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", lines[0]):
-        raise ValueError("VERSION must contain one MAJOR.MINOR.PATCH line (optional prerelease suffix).")
+    if len(lines) != 1 or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", lines[0]):
+        raise ValueError("VERSION must contain one vMAJOR.MINOR.PATCH line (optional prerelease suffix).")
     if lines[0] != version:
         raise ValueError(f"VERSION must match the tag ({version}).")
-    return version
+    # Keep package filenames stable while source and tag versions retain their prefix.
+    return version.removeprefix("v")
 
 
 def archive_source(root, destination, version):

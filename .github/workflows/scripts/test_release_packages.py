@@ -17,7 +17,7 @@ class ReleasePackageTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         (self.root / "nix").mkdir()
-        (self.root / "VERSION").write_text("0.1.0\n")
+        (self.root / "VERSION").write_text("v0.1.0\n")
         (self.root / "meson.build").write_text("project('fixture', version: files('VERSION'))")
         (self.root / "nix/package.nix").write_text("version = lib.fileContents ../VERSION;")
         (self.root / "packaging/flatpak").mkdir(parents=True)
@@ -39,6 +39,7 @@ class ReleasePackageTests(unittest.TestCase):
         self.assertEqual(source, {"type": "archive", "path": "cressida-0.1.0.tar.xz"})
         with tarfile.open(self.output / source["path"]) as archive:
             self.assertIn("cressida-0.1.0/packaging/flatpak/dev.lysec.Cressida.json", archive.getnames())
+            self.assertEqual(archive.extractfile("cressida-0.1.0/VERSION").read(), b"v0.1.0\n")
             self.assertFalse(any(".flatpak-builder" in name for name in archive.getnames()))
         self.assertEqual(self.manifest.read_bytes(), original)
 

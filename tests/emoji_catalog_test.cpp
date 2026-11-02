@@ -46,6 +46,27 @@ int main(int argc, char** argv) {
         "Parse custom emoji availability/animation and reject invalid tags"
     );
     catalog.setGuild("456", emojis);
+    const auto known = catalog.describe(emojis.front().token());
+    require(
+        known && known->name == "umbriel" && known->guild == "456" && known->animated,
+        "Chat emoji details retain a known source server and animation"
+    );
+    const auto unknown = catalog.describe("<:elsewhere:987654321012345678>");
+    require(
+        unknown && unknown->name == "elsewhere" && unknown->guild.empty(),
+        "Unknown custom emoji retain their wire name without inventing a source server"
+    );
+    require(
+        catalog.describe("👍🏽")
+            && catalog.describe("👩🏽‍💻")
+            && catalog.describe("🇩🇪")
+            && catalog.describe("1️⃣")
+            && catalog.describe("❤️")
+            && !catalog.describe("hello")
+            && !catalog.describe("❤︎")
+            && !catalog.describe("<:bad:tag>"),
+        "Name lookup preserves complete Unicode emoji and rejects ordinary text and malformed tokens"
+    );
     auto duplicate = emojis.front();
     duplicate.id = "123456789012345681";
     duplicate.guild = "789";

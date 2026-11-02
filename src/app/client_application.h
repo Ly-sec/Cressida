@@ -179,6 +179,7 @@ namespace app {
       SendSticker,
       RemoveSticker,
       StickerInfo,
+      EmojiInfo,
       StickerRetry,
       InsertEmoji,
       PickEmoji,
@@ -715,6 +716,14 @@ namespace app {
     void demoTimestampStep();
     void drawEmojiPicker(Node& root, float w, float h);
     void prepareEmojiPicker();
+    void chatEmojiTarget(const MessageRun& run, float x, float y);
+    void inspectEmoji(const Hit& hit);
+    void expressionEmojiImage(Node& root, const api::Emoji& emoji, const layout::Frame& frame);
+    void drawEmojiInfo(Node& root, float w, float h);
+    bool drawExpressionTooltip(Node& root, float w, float h);
+    void demoExpressionStep();
+    void prepareExpressionDemo();
+    static constexpr int expressionReplayFrames = 16;
     void closeEmojiPicker();
     void clearEmojiState();
     void emojiEvent(api::Event& event);
@@ -1293,6 +1302,10 @@ namespace app {
          m_emojiOpened = false;
     std::string m_emojiQuery, m_emojiSection = "all", m_emojiError, m_emojiHovered, m_emojiJump;
     Hit m_emojiBounds{};
+    std::map<std::string, api::Emoji> m_chatEmojiTargets;
+    std::optional<api::Emoji> m_inspectedEmoji;
+    layout::Frame m_expressionAnchor{};
+    bool m_expressionTooltipVisible = false, m_expressionFocused = true;
     float m_emojiScroll = 0, m_emojiRailScroll = 0;
     bool m_stickerTab = false, m_stickerInfo = false;
     std::map<std::string, std::vector<api::Sticker>> m_stickers;

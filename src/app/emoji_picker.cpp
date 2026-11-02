@@ -75,6 +75,7 @@ namespace app {
   void ClientApplication::closeEmojiPicker() {
     m_emojiMenu = m_emojiOpened = false;
     m_stickerTab = m_stickerInfo = false;
+    m_inspectedEmoji.reset();
     m_inspectedSticker.reset();
     m_stickerErrors.erase("details");
     m_stickerErrors.erase("send");
@@ -87,6 +88,8 @@ namespace app {
   }
   void ClientApplication::clearEmojiState() {
     closeEmojiPicker();
+    m_chatEmojiTargets.clear();
+    m_expressionTooltipVisible = false;
     clearStickers();
     m_emojiCatalog.clearGuilds();
     m_emojiPreferences = {};
@@ -207,6 +210,10 @@ namespace app {
     closeEmojiPicker();
   }
   void ClientApplication::drawEmojiPicker(Node& root, float w, float h) {
+    if (m_inspectedEmoji) {
+      drawEmojiInfo(root, w, h);
+      return;
+    }
     if (m_stickerTab) {
       drawStickerPicker(root, w, h);
       return;

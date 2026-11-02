@@ -34,6 +34,9 @@ namespace app {
           if (alias.is_string() && api::validEmojiKey(alias.get<std::string>()))
             names[normalized(unicode)].push_back(alias.get<std::string>());
       }
+    for (const auto& [unicode, aliases] : names)
+      if (!aliases.empty())
+        m_unicodeNames.emplace(unicode, aliases.front());
     if (!catalog.is_array())
       return;
     for (const auto& item : catalog) {
@@ -117,6 +120,39 @@ namespace app {
         item = m_items.find(alias->second);
     }
     return item == m_items.end() ? nullptr : &item->second;
+  }
+  std::optional<api::Emoji> EmojiCatalog::describe(std::string_view text) const {
+    auto custom = api::emojiFromToken(text);
+    if (!custom)
+      custom = api::emojiFromImageLink(text);
+    if (custom) {
+      if (const auto* known = find(custom->id))
+        return *known;
+      return custom;
+    }
+    if (const auto* known = find(std::string(text)); known && known->id.empty() && known->unicode == text)
+      return *known;
+    auto key = normalized(std::string(text));
+    std::string modifiers;
+    constexpr std::size_t modifierBytes = 4;
+    constexpr unsigned char firstTone = 0xBB, lastTone = 0xBF;
+    for (std::size_t at = 0; at + modifierBytes <= key.size();) {
+      if (key.compare(at, modifierBytes - 1, "\xF0\x9F\x8F") == 0
+          && static_cast<unsigned char>(key[at + modifierBytes - 1]) >= firstTone
+          && static_cast<unsigned char>(key[at + modifierBytes - 1]) <= lastTone) {
+        if (const auto tone = m_unicodeNames.find(key.substr(at, modifierBytes)); tone != m_unicodeNames.end())
+          modifiers += "::" + tone->second;
+        key.erase(at, modifierBytes);
+      } else
+        ++at;
+    }
+    if (const auto name = m_unicodeNames.find(key); name != m_unicodeNames.end() && isUnicode(text)) {
+      api::Emoji emoji;
+      emoji.name = name->second + modifiers;
+      emoji.unicode = text;
+      return emoji;
+    }
+    return {};
   }
   std::vector<std::string>
   EmojiCatalog::frequentKeys(const std::vector<std::string>& local, const std::vector<std::string>& remote) const {

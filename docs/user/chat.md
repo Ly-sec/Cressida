@@ -210,6 +210,20 @@ like the emoji picker.
 Choosing a suggestion inserts it without sending the message. Mentions display
 readable names and emoji display their images while you compose.
 
+### Emoji and sticker details
+
+Hover over an emoji or sticker in a message to see its name and a larger
+preview. The preview closes when the pointer leaves. Click an emoji to open its
+details, including its source server when Cressida knows it. **View Server**
+opens that server; emoji from an unknown source still show their name.
+
+Unicode emoji keep their complete sequence, including skin tones and joined
+characters. Dragging across an emoji selects chat text instead of opening its
+details. Emoji inside hidden spoilers stay hidden until you reveal the spoiler.
+
+Click a sticker for its existing details, source and send controls. Close a
+details card with **Escape**, its close button or a click outside it.
+
 ## Slash commands
 
 Type `/` at the start of the composer to browse app commands. Select an app from

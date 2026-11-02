@@ -62,6 +62,8 @@ namespace app {
     }
   }
   void ClientApplication::drawTooltip(Node& root, float w, float h) {
+    if (drawExpressionTooltip(root, w, h))
+      return;
     if (m_tooltip.empty()
         || userAccountDialogOpen()
         || m_contextOpen
@@ -177,6 +179,9 @@ namespace app {
     }
   }
   void ClientApplication::windowFocusChanged(bool focused) {
+    m_expressionFocused = focused;
+    if (!focused && (m_inspectedEmoji || m_stickerInfo))
+      closeEmojiPicker();
     if (!focused) {
       m_reactorHoverTimer.stop();
       m_hoverReactionKey.clear();

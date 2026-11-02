@@ -919,6 +919,33 @@ namespace app::layout {
     static constexpr float gifMaximumTileHeight = 220;
     static constexpr float gifFallbackTileHeight = 140;
   };
+  struct Expression {
+    static constexpr float padding = Style::spaceMd;
+    static constexpr float gap = Style::spaceSm;
+    static constexpr float preview = Style::spaceSection;
+    static constexpr float detailPreview = Style::space2Xl * 2;
+    static constexpr float tooltipWidth = Style::spaceGroup * 6;
+    static constexpr float detailWidth = Style::spaceGroup * 8;
+    static constexpr float tooltipHeight = preview + padding * 2;
+    static constexpr float detailHeight = detailPreview + padding * 3 + Style::controlHeightSm;
+  };
+  inline Frame expressionFrame(Frame anchor, float width, float height, bool detail, float contentHeight = 0) {
+    using E = Expression;
+    const float cardWidth = std::min(detail ? E::detailWidth : E::tooltipWidth, width - E::padding * 2);
+    const float cardHeight = detail ? std::max(E::detailHeight, contentHeight + E::padding * 3 + Style::controlHeightSm)
+                                    : std::max(E::tooltipHeight, contentHeight + E::padding * 2);
+    const float preferredY = anchor.y - cardHeight - E::gap >= Window::titlebarHeight + E::padding
+        ? anchor.y - cardHeight - E::gap
+        : anchor.y + anchor.height + E::gap;
+    return {
+        std::clamp(anchor.x, E::padding, std::max(E::padding, width - cardWidth - E::padding)),
+        std::clamp(
+            preferredY, Window::titlebarHeight + E::padding,
+            std::max(Window::titlebarHeight + E::padding, height - cardHeight - E::padding)
+        ),
+        cardWidth, cardHeight
+    };
+  }
   inline Frame pickerFrame(
       float windowWidth, float composerTop, bool members, float desiredWidth,
       float minimumHeight = Picker::minimumHeight, float maximumHeight = Picker::maximumHeight

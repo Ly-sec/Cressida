@@ -919,6 +919,8 @@ namespace app {
         demoInteractionStep();
       if (m_demo && m_demoOverlay == "sticker-cycle")
         demoStickerStep();
+      if (m_demo && m_demoOverlay.starts_with("expression-cycle") && m_demoInteractionStep < expressionReplayFrames)
+        demoExpressionStep();
       if (m_demo && m_demoOverlay == "gif-cycle")
         demoGifStep();
       if (m_demo && m_demoOverlay == "unread-cycle") {
@@ -1183,6 +1185,8 @@ namespace app {
           && sharingClick(x, y))
         return;
       if (m_emojiMenu
+          && !m_inspectedEmoji
+          && !m_stickerInfo
           && m_emojiBounds.contains(x, y)
           && y >= m_emojiBounds.y + 52
           && y < m_emojiBounds.y + 90
@@ -1231,7 +1235,7 @@ namespace app {
           const auto hit = *it;
           if (beginRailDrag(hit))
             return;
-          if ((hit.action == Action::UserProfile || hit.action == Action::OpenUrl)
+          if ((hit.action == Action::UserProfile || hit.action == Action::OpenUrl || hit.action == Action::EmojiInfo)
               && m_dialogKind.empty()
               && !settingsVisible()
               && !m_contextOpen
@@ -1242,7 +1246,8 @@ namespace app {
               && !userAccountDialogOpen()) {
             const auto text = std::ranges::find_if(m_textAreas, [&](const auto& area) {
               return Hit{area.x, area.y, area.run.width, area.run.height}.contains(x, y)
-                  && (hit.action == Action::OpenUrl
+                  && (hit.action == Action::EmojiInfo ? area.run.style.emoji
+                          : hit.action == Action::OpenUrl
                           ? area.run.style.link == hit.id
                           : area.run.style.userMention == hit.id || (area.header && area.run.offset == 0));
             });
@@ -1777,12 +1782,13 @@ namespace app {
                    : m_demo && view && std::string_view(view) == "attachment-cycle"           ? attachmentReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("window-controls-cycle")
                    ? windowControlsReplayFrames
-                   : m_demo && view && std::string_view(view) == "tray-cycle"              ? trayReplayFrames
-                   : m_demo && view && std::string_view(view) == "sticker-cycle"           ? 8
-                   : m_demo && view && std::string_view(view) == "dm-compose-cycle"        ? 16
-                   : m_demo && view && std::string_view(view).starts_with("dm-home-cycle") ? dmHomeReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("reply-cycle")   ? composerReplyReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("embed-cycle")   ? embedReplayFrames
+                   : m_demo && view && std::string_view(view) == "tray-cycle"                 ? trayReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("expression-cycle") ? expressionReplayFrames
+                   : m_demo && view && std::string_view(view) == "sticker-cycle"              ? 8
+                   : m_demo && view && std::string_view(view) == "dm-compose-cycle"           ? 16
+                   : m_demo && view && std::string_view(view).starts_with("dm-home-cycle")    ? dmHomeReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("reply-cycle") ? composerReplyReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("embed-cycle") ? embedReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("bot-messages-cycle")
                    ? botMessagesReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("composer-edit-cycle")
@@ -1902,6 +1908,8 @@ namespace app {
       throw std::runtime_error("Message hover replay did not finish");
     if (m_demoOverlay == "join-cycle" && m_demoInteractionStep != 4)
       throw std::runtime_error("Server join replay did not complete");
+    if (m_demoOverlay.starts_with("expression-cycle") && m_demoInteractionStep != expressionReplayFrames)
+      throw std::runtime_error("Expression information replay did not finish");
     if (m_demoOverlay == "sticker-cycle" && m_demoInteractionStep != 8)
       throw std::runtime_error("Sticker replay did not complete");
     if (m_demoOverlay == "role-emoji-cycle" && m_demoInteractionStep != 3)
@@ -2116,6 +2124,13 @@ namespace app {
             m_window.setUiScale(1.5F);
             m_focusedInput = "channel-search-panel";
           }
+        } else if (view.starts_with("expression-cycle")) {
+          m_demoOverlay = view;
+          if (view.ends_with("light"))
+            m_preferences.theme = "light";
+          if (view.ends_with("narrow"))
+            m_window.setUiScale(1.5F);
+          prepareExpressionDemo();
         } else if (view.starts_with("server-access-cycle")) {
           m_demoOverlay = view;
           if (view.ends_with("light"))
@@ -4075,6 +4090,8 @@ namespace app {
       closeEmojiPicker();
     m_gifTargets.clear();
     m_stickerTargets.clear();
+    m_chatEmojiTargets.clear();
+    m_expressionTooltipVisible = false;
     m_reactionBrowserRoot = nullptr;
     m_contextTargets.clear();
     m_messageTops.clear();
@@ -5685,6 +5702,7 @@ namespace app {
                       *messageContent, selectionRun, message.id, rx, ry + continuationTextOffset,
                       left + layout::Chat::inset + rx, top + ry + continuationTextOffset
                   );
+                  chatEmojiTarget(run, left + layout::Chat::inset + rx, top + ry + continuationTextOffset);
                   if (run.channelChip) {
                     drawChannelLink(
                         *messageContent, selectionRun, message.id, rx, ry, left + layout::Chat::inset + rx, top + ry
@@ -5768,8 +5786,14 @@ namespace app {
                           pic.sticker->name, Style::fontSizeDescription, muted, FontWeight::Normal, 2
                       );
                     }
-                    m_stickerTargets[pic.sticker->id] = *pic.sticker;
-                    m_hits.push_back({sx, sy, pic.width, pic.height, Action::StickerInfo, pic.sticker->id});
+                    const float visibleTop = std::max(sy, m_messageViewportTop);
+                    const float visibleBottom = std::min(sy + pic.height, m_messageViewportBottom);
+                    if (visibleBottom > visibleTop) {
+                      m_stickerTargets[pic.sticker->id] = *pic.sticker;
+                      m_hits.push_back(
+                          {sx, visibleTop, pic.width, visibleBottom - visibleTop, Action::StickerInfo, pic.sticker->id}
+                      );
+                    }
                     continue;
                   }
                   if (!pic.videoSource.empty()) {
@@ -9038,6 +9062,8 @@ namespace app {
       demo();
       break;
     case Action::Guild:
+      if (m_inspectedEmoji || m_stickerInfo)
+        closeEmojiPicker();
       m_restoreChannel.clear();
       selectGuild(hit.id);
       break;
@@ -9128,6 +9154,9 @@ namespace app {
         focusControl("composer");
         beginInputPaste("composer", true);
       }
+      break;
+    case Action::EmojiInfo:
+      inspectEmoji(hit);
       break;
     case Action::ToggleStickers:
     case Action::StickerSection:

@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -25,9 +26,20 @@ class ReleaseExecutionTests(unittest.TestCase):
             CRESSIDA_TEST_RECORD=str(self.record),
         )
 
-    def executable(self, path, source):
+    def executable(self, path, source, *, isolate_libraries=False):
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"#!{sys.executable}\n" + source)
+        if isolate_libraries:
+            peer = path.with_name(path.name + ".py")
+            peer.write_text(source)
+            # Observe the SDK search path without loading its libraries into host Python.
+            path.write_text(
+                '#!/bin/sh\n'
+                'export CRESSIDA_TEST_TOOL_LIBRARY_PATH="${LD_LIBRARY_PATH-}"\n'
+                'unset LD_LIBRARY_PATH\n'
+                f'exec {shlex.quote(sys.executable)} {shlex.quote(str(peer))} "$@"\n'
+            )
+        else:
+            path.write_text(f"#!{sys.executable}\n" + source)
         path.chmod(0o700)
 
     def smoke(self, fail=False):
@@ -111,18 +123,19 @@ if '/app/.' in sys.argv:
                 self.executable(tool, """
 import os, sys
 from pathlib import Path
+assert 'LD_LIBRARY_PATH' not in os.environ
 if sys.argv[1] == '-s':
     triplet = os.environ['CRESSIDA_TEST_TRIPLET']
-    assert os.environ['LD_LIBRARY_PATH'].split(':') == ['/app/lib', '/usr/lib/' + triplet, '/lib/' + triplet]
+    assert os.environ['CRESSIDA_TEST_TOOL_LIBRARY_PATH'].split(':') == ['/app/lib', '/usr/lib/' + triplet, '/lib/' + triplet]
     appdir = Path(sys.argv[-1]).parents[3]
     loader = appdir / 'lib/ld-release-test.so'
     loader.parent.mkdir()
     loader.touch(mode=0o700)
     (appdir / 'AppRun').write_text('#!/bin/sh\\nLD_LINUX=/lib/ld-release-test.so\\n')
 else:
-    assert os.environ['LD_LIBRARY_PATH'] == '/cressida-test-host-libs'
+    assert os.environ['CRESSIDA_TEST_TOOL_LIBRARY_PATH'] == '/cressida-test-host-libs'
     Path('Cressida-' + os.environ['VERSION'] + '-' + os.environ['ARCH'] + '.AppImage').write_bytes(b'fixture')
-""")
+""", isolate_libraries=True)
                 result = subprocess.run(
                     ["bash", str(SCRIPTS / "build-release-appimage.sh"), str(work), "0.1.0", arch],
                     env=self.environment, text=True, capture_output=True, timeout=20,

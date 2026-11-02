@@ -7,6 +7,11 @@ description:
 
 ## Before you begin
 
+> **Do not use Cressida currently.** Account-restriction reports are under
+> investigation. Do not sign in or continue using the client until this warning
+> is lifted. Read the
+> [account-risk notice](faq.md#can-my-account-be-restricted).
+
 You need a Linux desktop running **Wayland** and working EGL/OpenGL ES drivers.
 There is no X11 window backend. A desktop keyring is recommended so Cressida can
 remember your sign-in.

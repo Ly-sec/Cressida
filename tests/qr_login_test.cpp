@@ -1,4 +1,5 @@
 #include "auth/qr_login.h"
+#include "core/browser_identity.h"
 
 #include <algorithm>
 #include <array>
@@ -444,6 +445,8 @@ namespace {
       require(
           request.starts_with("GET /?v=2 HTTP/1.1\r\n")
               && request.contains("\r\nOrigin: https://discord.com\r\n")
+              && header(request, "User-Agent") == browser_identity::userAgent()
+              && !request.contains("X-Super-Properties:")
               && !request.contains("Authorization:"),
           "QR setup uses only its fixed route and public origin"
       );
@@ -502,6 +505,8 @@ namespace {
       require(
           headers.starts_with("POST /api/v9/users/@me/remote-auth/login HTTP/1.1\r\n")
               && !headers.contains("Authorization:")
+              && header(headers, "User-Agent") == browser_identity::userAgent()
+              && header(headers, "X-Super-Properties") == browser_identity::encodedProperties()
               && headers.contains("Content-Type: application/json"),
           "The approved ticket exchange stays unauthenticated on its fixed route"
       );

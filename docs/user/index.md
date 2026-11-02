@@ -4,6 +4,10 @@ description:
   Get started with Cressida, a native chat client for Linux and Wayland.
 ---
 
+> **Do not use Cressida currently.** Account violations and messaging
+> restrictions have been reported during use and are under investigation. Read
+> the [account-risk notice](faq.md#can-my-account-be-restricted).
+
 Cressida is a native desktop chat client for Linux and Wayland. Bring your
 server conversations, threads, forum posts and DMs into a desktop interface you
 can make your own.

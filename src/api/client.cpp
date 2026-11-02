@@ -9,8 +9,8 @@
 #include "api/server_organization.h"
 #include "api/thread_member_list.h"
 #include "api/uploads.h"
+#include "core/browser_identity.h"
 #include "core/log.h"
-#include "cressida_version.h"
 
 #include <algorithm>
 #include <chrono>
@@ -338,8 +338,8 @@ namespace api {
         const std::string body = payload && !sticker ? payload->dump() : std::string{};
         transfer.body.clear();
         curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers.get());
-        curl_easy_setopt(curl.get(), CURLOPT_USERAGENT, "cressida/" CRESSIDA_VERSION);
+        if (!browser_identity::apply(curl.get(), browser_identity::Transport::Rest, headers))
+          return std::unexpected(Failure{"Could not configure request identity"});
         curl_easy_setopt(curl.get(), CURLOPT_PROTOCOLS_STR, "https");
         curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 0L);
         curl_easy_setopt(curl.get(), CURLOPT_SSL_VERIFYPEER, 1L);

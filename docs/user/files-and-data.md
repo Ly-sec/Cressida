@@ -51,6 +51,17 @@ Slash-command lists, inline arguments, selected command files and frequently
 used commands stay in memory for the current session. They are not saved in the
 account's UI state. See [Slash commands](slash-commands.md).
 
+## Request metadata
+
+Account API requests, the live connection and QR sign-in use one shared, pinned
+browser-style profile. It supplies a browser name/version, public client build
+number, Linux architecture, locale and timezone. These are compatibility
+metadata, separate from Cressida's own version and account credentials.
+
+The profile is not a browser engine or proof that account restrictions are
+prevented. The current [stop-use warning](faq.md#can-my-account-be-restricted)
+remains in effect.
+
 ## Diagnostic logs
 
 `cressida.log` contains the current diagnostic output. When it reaches 1 MiB,

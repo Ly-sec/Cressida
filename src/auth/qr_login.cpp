@@ -1,6 +1,6 @@
 #include "auth/qr_login.h"
 
-#include "cressida_version.h"
+#include "core/browser_identity.h"
 
 #include <algorithm>
 #include <array>
@@ -41,8 +41,6 @@ namespace auth {
     constexpr auto maximumHeartbeat = 2min;
     constexpr auto maximumPoll = 100ms;
     constexpr std::string_view qrPrefix = "https://discord.com/ra/";
-    constexpr std::string_view originHeader = "Origin: https://discord.com";
-    constexpr std::string_view userAgent = "Cressida/" CRESSIDA_VERSION;
 
     struct Failure : std::runtime_error {
       using std::runtime_error::runtime_error;
@@ -258,7 +256,6 @@ namespace auth {
       curl_easy_setopt(easy, CURLOPT_NOPROGRESS, 0L);
       curl_easy_setopt(easy, CURLOPT_XFERINFOFUNCTION, progress);
       curl_easy_setopt(easy, CURLOPT_XFERINFODATA, &context);
-      curl_easy_setopt(easy, CURLOPT_USERAGENT, userAgent.data());
       if (local)
         curl_easy_setopt(easy, CURLOPT_NOPROXY, "127.0.0.1");
     }
@@ -313,9 +310,10 @@ namespace auth {
       );
       if (!headers)
         throw Failure("QR sign-in could not complete. Try browser sign-in.");
+      if (!browser_identity::apply(request.easy.get(), browser_identity::Transport::Rest, headers))
+        throw Failure("QR sign-in could not configure its request.");
       const auto body = Json{{"ticket", ticket}}.dump();
       std::string response;
-      curl_easy_setopt(request.easy.get(), CURLOPT_HTTPHEADER, headers.get());
       curl_easy_setopt(request.easy.get(), CURLOPT_POST, 1L);
       curl_easy_setopt(request.easy.get(), CURLOPT_POSTFIELDS, body.c_str());
       curl_easy_setopt(request.easy.get(), CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
@@ -621,12 +619,9 @@ namespace auth {
       Transfer connection;
       const bool local = m_endpoints.gateway.starts_with("ws://127.0.0.1:");
       configure(connection.easy.get(), m_endpoints.gateway, local, context);
-      std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)> headers(
-          curl_slist_append(nullptr, originHeader.data()), curl_slist_free_all
-      );
-      if (!headers)
+      browser_identity::Headers headers(nullptr, curl_slist_free_all);
+      if (!browser_identity::apply(connection.easy.get(), browser_identity::Transport::Gateway, headers))
         throw Failure("QR sign-in could not start. Try browser sign-in.");
-      curl_easy_setopt(connection.easy.get(), CURLOPT_HTTPHEADER, headers.get());
       curl_easy_setopt(connection.easy.get(), CURLOPT_CONNECT_ONLY, 2L);
       if (connection.perform(context, session.nextDeadline()) != CURLE_OK)
         throw Failure("QR sign-in could not connect. Try again or use browser sign-in.");

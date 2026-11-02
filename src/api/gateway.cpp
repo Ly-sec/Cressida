@@ -2,6 +2,7 @@
 
 #include "api/gateway_pacing.h"
 #include "api/network_profile.h"
+#include "core/browser_identity.h"
 #include "core/log.h"
 
 #include <algorithm>
@@ -415,6 +416,7 @@ namespace api {
       unsigned diagnosticCloseCode = 0;
       gatewayLog.info("Connection starting resumable={}", resumable);
       try {
+        browser_identity::Headers headers(nullptr, curl_slist_free_all);
         std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curl(curl_easy_init(), curl_easy_cleanup);
         if (!curl)
           throw std::runtime_error("Gateway unavailable");
@@ -425,6 +427,8 @@ namespace api {
         const auto& endpoint =
             !resumeId.empty() && sequence >= 0 && !resumeEndpoint.empty() ? resumeEndpoint : m_endpoint;
         curl_easy_setopt(curl.get(), CURLOPT_URL, endpoint.c_str());
+        if (!browser_identity::apply(curl.get(), browser_identity::Transport::Gateway, headers))
+          throw std::runtime_error("Could not configure Gateway identity");
         curl_easy_setopt(curl.get(), CURLOPT_CONNECT_ONLY, 2L);
         curl_easy_setopt(curl.get(), CURLOPT_PROTOCOLS_STR, loopback ? "ws" : "wss");
         if (loopback)
@@ -752,12 +756,7 @@ namespace api {
                         {"compress", false},
                         {"capabilities", identifyCapabilities},
                         {"client_state", {{"guild_versions", Json::object()}}},
-                        {"properties",
-                         {{"os", "Linux"},
-                          {"browser", "cressida"},
-                          {"device", "cressida"},
-                          {"system_locale", "en-US"},
-                          {"release_channel", "stable"}}},
+                        {"properties", browser_identity::properties()},
                         {"presence",
                          {{"status", "unknown"}, {"since", 0}, {"activities", Json::array()}, {"afk", false}}}}}
                   },

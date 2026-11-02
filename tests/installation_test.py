@@ -60,8 +60,8 @@ def check_installation(build, source, meson, readelf):
         headers = installed("includedir", "cressida")
         for path in (source / "src").rglob("*.h"):
             relative = path.relative_to(source / "src")
-            if relative.parts[:2] == ("voice", "dave"):
-                assert not (headers / relative).exists(), "Private MLS/DAVE headers were installed"
+            if relative.parts[:2] == ("voice", "dave") or relative.as_posix() == "core/browser_identity.h":
+                assert not (headers / relative).exists(), "Private protocol headers were installed"
             else:
                 assert (headers / relative).is_file(), f"Missing header: {path}"
         assert not list(headers.rglob("*.cpp")), "Implementation sources leaked into installed headers"

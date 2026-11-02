@@ -11,6 +11,7 @@ import threading
 import time
 
 MAXIMUM_CONTROL_MESSAGES = 12
+HANDSHAKE_IDENTITIES = {}
 
 
 def exact(connection, size):
@@ -36,6 +37,10 @@ def validate_send(packet):
         assert data["client_state"] == {"guild_versions": {}}, "client-state capability needs its cache-state envelope"
         assert isinstance(data["token"], str) and data["compress"] is False
         assert all(isinstance(data["properties"][key], str) for key in ("os", "browser", "device"))
+        profile = data["properties"]
+        assert profile["browser"] == "Chrome" and profile["device"] == ""
+        assert profile["browser_version"] in profile["browser_user_agent"]
+        assert type(profile["client_build_number"]) is int and profile["client_build_number"] > 0
     if opcode in (2, 3):
         presence = data["presence"] if opcode == 2 else data
         assert isinstance(presence["activities"], list) and isinstance(presence["status"], str)
@@ -81,6 +86,8 @@ def receive(connection):
         assert first == 129, "Gateway JSON must arrive as a complete text frame"
         packet = json.loads(data)
         validate_send(packet)
+        if packet["op"] == 2:
+            assert packet["d"]["properties"]["browser_user_agent"] == HANDSHAKE_IDENTITIES[connection.fileno()], "Identify and its WebSocket handshake must use the same identity"
         return packet
 
 
@@ -104,6 +111,12 @@ def upgrade(listener, path="/?v=9&encoding=json"):
         request += exact(connection, 1)
     assert request.split(b"\r\n", 1)[0] == f"GET {path} HTTP/1.1".encode(), "wrong Gateway route"
     headers = dict(line.split(b": ", 1) for line in request.split(b"\r\n")[1:] if b": " in line)
+    normalized = {name.decode().lower(): value.decode() for name, value in headers.items()}
+    assert normalized["user-agent"].startswith("Mozilla/5.0 (")
+    assert normalized["origin"] == "https://discord.com"
+    assert normalized["accept-language"] == "en-US,en;q=0.9"
+    assert "x-super-properties" not in normalized, "WebSocket headers carry their metadata in Identify"
+    HANDSHAKE_IDENTITIES[connection.fileno()] = normalized["user-agent"]
     key = next(value for name, value in headers.items() if name.lower() == b"sec-websocket-key")
     accept = base64.b64encode(hashlib.sha1(key + b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest())
     connection.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept + b"\r\n\r\n")

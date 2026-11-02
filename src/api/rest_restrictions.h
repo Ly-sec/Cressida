@@ -4,6 +4,7 @@
 #include <mutex>
 #include <nlohmann/json_fwd.hpp>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 
@@ -18,6 +19,8 @@ namespace api {
         std::uint64_t session, std::string_view method, std::string_view path, long status, const nlohmann::json& body
     );
     std::optional<std::string> requiredAction(std::uint64_t session, const nlohmann::json& data);
+    bool messageChallenge(std::uint64_t session, std::string_view channel) const;
+    bool resumeMessageChallenge(std::uint64_t session, std::string_view channel);
 
   private:
     enum class Family { Messages, Conversations, Relationships, Invites, Profile, ReadState, Other };
@@ -28,5 +31,6 @@ namespace api {
     bool m_httpVerification = false, m_gatewayAction = false;
     bool m_messages = false, m_conversations = false, m_joins = false;
     unsigned m_challenges = 0;
+    std::set<std::string, std::less<>> m_messageChallenges;
   };
 } // namespace api

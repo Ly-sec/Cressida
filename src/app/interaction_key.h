@@ -30,6 +30,8 @@ namespace app {
       key += ":" + std::to_string(action.revision);
     if (action.kind == api::InteractionKind::ListReactions && !action.reactionAfter.empty())
       key += ":after:" + action.reactionAfter;
+    if (action.kind == api::InteractionKind::InvitePreview || action.kind == api::InteractionKind::AcceptInvite)
+      key += ":invite:" + action.text;
     return key;
   }
 } // namespace app

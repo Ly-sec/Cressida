@@ -32,6 +32,41 @@ int main() {
         "Send restrictions stop queued message and thread creation across channels without stopping reads"
     );
     state.reset(2);
+    for (const long status : {400L, 403L}) {
+      api::RestRestrictions scoped;
+      scoped.reset(1);
+      const auto notice = scoped.observe(
+          1, "POST", "/channels/10/messages", status,
+          {{"captcha_key", Json::array({"private"})}, {"captcha_rqtoken", "never retain"}}
+      );
+      require(
+          notice.contains("conversation")
+              && !notice.contains("private")
+              && !scoped.blocked(1, "POST", "/channels/10/messages?context=reply").empty()
+              && !scoped.blocked(1, "POST", "/channels/10/threads").empty()
+              && scoped.blocked(1, "POST", "/channels/20/messages").empty()
+              && scoped.blocked(1, "GET", "/channels/10/messages").empty(),
+          "A DM security challenge pauses only that conversation on both supported error statuses"
+      );
+      require(
+          !scoped.resumeMessageChallenge(2, "10") && scoped.messageChallenge(1, "10"),
+          "A stale session cannot resume a challenged conversation"
+      );
+      scoped.observe(1, "POST", "/channels/30/messages", status, {{"captcha_key", Json::array()}});
+      require(
+          scoped.resumeMessageChallenge(1, "10")
+              && scoped.blocked(1, "POST", "/channels/10/messages").empty()
+              && scoped.messageChallenge(1, "30"),
+          "Explicit resume clears exactly one local conversation pause"
+      );
+      scoped.observe(1, "POST", "/channels/30/messages", 403, {{"code", 40004}});
+      require(
+          scoped.resumeMessageChallenge(1, "30") && !scoped.blocked(1, "POST", "/channels/20/messages").empty(),
+          "Local challenge recovery cannot clear account-wide messaging restrictions"
+      );
+      scoped.reset(2);
+      require(!scoped.messageChallenge(2, "30"), "Account replacement clears conversation challenge state");
+    }
     require(
         state.blocked(2, "POST", "/channels/10/messages").empty(),
         "Explicit reconnect starts a new restriction generation without replaying any command"

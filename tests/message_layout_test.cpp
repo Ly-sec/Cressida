@@ -25,6 +25,28 @@ int main(int argc, char** argv) {
     const app::MessageMeasure editMeasure = [](std::string_view text, const app::MessageStyle& style) {
       return static_cast<float>(text.size()) * style.size * .5F;
     };
+    api::Message invitation;
+    invitation.content = "https://discord.gg/moon https://discord.gg/moon";
+    app::MessageOptions inviteOptions;
+    inviteOptions.serverInvite = [](const std::string&) { return app::MessageOptions::Invite{}; };
+    const auto inviteLayout = app::layoutRichMessage(invitation, 240, editMeasure, Style::fontSizeBody, inviteOptions);
+    require(
+        inviteLayout.invites.size() == 1
+            && inviteLayout.invites.front().width <= 240
+            && inviteLayout.height >= inviteLayout.invites.front().y + app::layout::ServerInvite::height,
+        "Repeated invite links produce one bounded card with height reserved for rendering and scrolling"
+    );
+    invitation.flags = api::messageSuppressEmbeds;
+    require(
+        app::layoutRichMessage(invitation, 240, editMeasure, Style::fontSizeBody, inviteOptions).invites.empty(),
+        "Suppressed previews cannot fetch or expose invite cards"
+    );
+    invitation.flags = 0;
+    invitation.content = "||https://discord.gg/moon|| `https://discord.gg/other`";
+    require(
+        app::layoutRichMessage(invitation, 240, editMeasure, Style::fontSizeBody, inviteOptions).invites.empty(),
+        "Concealed spoiler links and code do not expose invite metadata"
+    );
     const auto selectable = app::layoutMessage("one two three\nfour five", 500, editMeasure);
     const auto selected = app::messageSelectionAreas(selectable, 0, selectable.plainText.size(), editMeasure, false);
     require(selected.size() == 2, "Selection joins words and intervening spaces once per visual line");

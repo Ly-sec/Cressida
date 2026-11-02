@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <md4c.h>
 #include <pango/pango.h>
+#include <set>
 #include <utility>
 
 namespace app {
@@ -1805,7 +1806,28 @@ namespace app {
         return 0;
       }
     };
+    if (options.serverInvite && !(message.flags & api::messageSuppressEmbeds)) {
+      std::set<std::string> codes;
+      for (const auto& run : result.runs) {
+        if (run.style.spoiler || run.style.code || run.style.link.empty())
+          continue;
+        const auto code = api::serverInviteCode(run.style.link);
+        if (!code
+            || !run.style.link.contains('/')
+            || codes.contains(*code)
+            || codes.size() >= api::maximumMessageInvites)
+          continue;
+        codes.insert(*code);
+        y += Style::spaceSm;
+        result.invites.push_back(
+            {*code, 0, y, std::min(width, layout::ServerInvite::width), options.serverInvite(*code)}
+        );
+        y += layout::ServerInvite::height;
+      }
+    }
     for (const auto& embed : message.embeds) {
+      if (options.serverInvite && api::serverInviteCode(embed.url))
+        continue;
       if (!embed.components.empty()) {
         const float start = y;
         for (const auto& component : embed.components) {
@@ -2003,6 +2025,11 @@ namespace app {
         icon.frame.x += Style::spaceMd;
         icon.frame.y += y;
         result.embedIcons.push_back(std::move(icon));
+      }
+      for (auto& invite : part.invites) {
+        invite.x += Style::spaceMd;
+        invite.y += y;
+        result.invites.push_back(std::move(invite));
       }
       result.plainText += part.plainText;
       y += part.height + 26;

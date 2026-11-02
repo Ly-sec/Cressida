@@ -97,6 +97,8 @@ namespace app {
         );
       cursor += frame.height + R::folderGap;
     }
+    const float addTop = cursor;
+    cursor += R::step;
     m_folderMotion.end();
     if (m_folderMotion.active())
       m_window.invalidate();
@@ -261,6 +263,14 @@ namespace app {
       countBadge(*node, R::badgeRight, py + R::badgeTop(R::rowHeight), mentions[guild.id], true);
       addHit({R::iconX, y, layout::Avatar::rail, layout::Avatar::rail, Action::Guild, guild.id});
       addHit({R::iconX, y, layout::Avatar::rail, layout::Avatar::rail, Action::GuildMenu, guild.id}, true);
+    }
+    if (auto* node = clip(addTop, addTop + layout::Avatar::rail)) {
+      const float py = addTop - m_guildScroll - node->y();
+      rectangle(*node, R::iconX, py, layout::Avatar::rail, layout::Avatar::rail, theme::panel, Style::radiusXl);
+      iconButton(
+          *node, {R::iconX, py, layout::Avatar::rail, layout::Avatar::rail, Action::ServerAccess, "open"}, "plus",
+          "Add a server"
+      );
     }
     drawRailDrag(root);
   }

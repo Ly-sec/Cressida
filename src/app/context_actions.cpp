@@ -776,6 +776,7 @@ namespace app {
           && !m_focusedInput.starts_with("application-field:")
           && !m_focusedInput.starts_with("slash-field:")
           && !m_focusedInput.starts_with("server-menu:")
+          && !m_focusedInput.starts_with("server-access:")
           && m_focusedInput != "dm-create-search"
           && m_focusedInput != "dialog"
           && !(m_dialogKind == "forum-create" && m_focusedInput == "forum-body")
@@ -1110,6 +1111,8 @@ namespace app {
       m_dialogError = m_status;
   }
   void ClientApplication::closeDialog() {
+    m_serverAccessList = {};
+    m_serverAccessStage.clear();
     const auto link = std::exchange(m_composerLink, {});
     closeReactionBrowser();
     closeSelectDropdown();
@@ -1289,6 +1292,14 @@ namespace app {
     m_tooltip.clear();
   }
   void ClientApplication::drawDialog(Node& root, float w, float h) {
+    if (m_dialogKind == "guild-access") {
+      drawServerAccess(root, w, h);
+      return;
+    }
+    if (m_dialogKind == "message-security") {
+      drawMessageSecurity(root, w, h);
+      return;
+    }
     if (m_dialogKind == "composer-link") {
       drawComposerLink(root, w, h);
       return;
@@ -1465,6 +1476,8 @@ namespace app {
       return;
     }
     m_pendingInteractions.erase(key);
+    if (serverAccessResult(event))
+      return;
     if (dmProfileResult(event))
       return;
     if (serverMenuInteractionResult(event))

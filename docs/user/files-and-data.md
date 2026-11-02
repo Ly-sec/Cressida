@@ -62,6 +62,12 @@ The profile is not a browser engine or proof that account restrictions are
 prevented. See the [account-risk notice](faq.md#can-my-account-be-restricted),
 including peer reports about starting new DMs and joining servers.
 
+Visible chat invite cards request server metadata through the account API when
+link previews are enabled. Invite metadata is cached only in memory for the
+current account session. Previewing an invite never joins a server; joining
+requires an explicit click. Hidden spoilers and suppressed previews do not load
+invite cards.
+
 ## Diagnostic logs
 
 `cressida.log` contains the current diagnostic output. When it reaches 1 MiB,

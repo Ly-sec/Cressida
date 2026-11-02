@@ -1,5 +1,6 @@
 #include "api/rest_restrictions.h"
 
+#include <algorithm>
 #include <limits>
 #include <nlohmann/json.hpp>
 #include <utility>
@@ -10,6 +11,25 @@ namespace api {
     constexpr int conversationsLimited = 40003;
     constexpr int messagesDisabled = 40004;
     constexpr int joiningLimited = 340015;
+    constexpr std::size_t maximumChallengedConversations = 128;
+    std::string_view messageChannel(std::string_view method, std::string_view path) {
+      path = path.substr(0, path.find('?'));
+      constexpr std::string_view prefix = "/channels/";
+      if (method != "POST"
+          || !path.starts_with(prefix)
+          || (!path.ends_with("/messages") && !path.ends_with("/threads")))
+        return {};
+      path.remove_prefix(prefix.size());
+      const auto slash = path.find('/');
+      const auto channel = path.substr(0, slash);
+      if (slash == std::string_view::npos
+          || path.find('/', slash + 1) != std::string_view::npos
+          || channel.empty()
+          || channel.size() > 20
+          || !std::ranges::all_of(channel, [](unsigned char c) { return c >= '0' && c <= '9'; }))
+        return {};
+      return channel;
+    }
     const std::string verificationNotice = "Your account requires verification. Writes are paused. Complete "
                                            "verification in the official app, then reconnect Cressida.";
     const std::string requiredActionNotice = "Your account requires attention. Writes are paused. Complete the "
@@ -23,6 +43,9 @@ namespace api {
                                       "account in the official app, then reconnect Cressida.";
     const std::string challengeNotice = "This action requires a security check. Similar writes are paused. Complete "
                                         "the check in the official app, then reconnect Cressida.";
+    const std::string conversationChallengeNotice =
+        "This conversation requires a security check. Sending here is paused. Use Review check to open recovery "
+        "options. Cressida cannot display the CAPTCHA; complete any requested check in the official app.";
   } // namespace
   int restServiceCode(const nlohmann::json& body) {
     if (!body.is_object())
@@ -67,6 +90,7 @@ namespace api {
     m_session = session;
     m_httpVerification = m_gatewayAction = m_messages = m_conversations = m_joins = false;
     m_challenges = 0;
+    m_messageChallenges.clear();
   }
   std::string RestRestrictions::blocked(std::uint64_t session, std::string_view method, std::string_view path) const {
     if (!mutation(method))
@@ -85,6 +109,8 @@ namespace api {
       return conversationsNotice;
     if (m_joins && scope == Family::Invites)
       return joiningNotice;
+    if (m_messageChallenges.contains(messageChannel(method, path)))
+      return conversationChallengeNotice;
     return m_challenges & (1U << std::to_underlying(scope)) ? challengeNotice : "";
   }
   std::string RestRestrictions::observe(
@@ -93,7 +119,7 @@ namespace api {
     if ((status != 400 && status != 403) || !body.is_object())
       return {};
     const auto code = restServiceCode(body);
-    const bool challenge = status == 400 && body.contains("captcha_key");
+    const bool challenge = body.contains("captcha_key");
     std::lock_guard lock(m_mutex);
     if (session != m_session)
       return {};
@@ -114,10 +140,29 @@ namespace api {
       return joiningNotice;
     }
     if (challenge) {
+      if (const auto channel = messageChannel(method, path); !channel.empty()
+          && (m_messageChallenges.contains(channel) || m_messageChallenges.size() < maximumChallengedConversations)) {
+        m_messageChallenges.emplace(channel);
+        return conversationChallengeNotice;
+      }
       m_challenges |= 1U << std::to_underlying(family(method, path));
       return challengeNotice;
     }
     return {};
+  }
+  bool RestRestrictions::messageChallenge(std::uint64_t session, std::string_view channel) const {
+    std::lock_guard lock(m_mutex);
+    return session == m_session && m_messageChallenges.contains(channel);
+  }
+  bool RestRestrictions::resumeMessageChallenge(std::uint64_t session, std::string_view channel) {
+    std::lock_guard lock(m_mutex);
+    if (session != m_session)
+      return false;
+    const auto at = m_messageChallenges.find(channel);
+    if (at == m_messageChallenges.end())
+      return false;
+    m_messageChallenges.erase(at);
+    return true;
   }
   std::optional<std::string> RestRestrictions::requiredAction(std::uint64_t session, const nlohmann::json& data) {
     if (!data.is_object())

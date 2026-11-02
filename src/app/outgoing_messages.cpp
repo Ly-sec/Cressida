@@ -1,4 +1,5 @@
 #include "app/client_application.h"
+#include "app/theme.h"
 #include "render/core/image_encoder.h"
 #include "render/core/texture_manager.h"
 #include "render/scene/image_node.h"
@@ -207,6 +208,7 @@ namespace app {
       m_pendingSends.erase(found);
     } else if (!event.error.empty() || event.messages.empty()) {
       pending.error = event.error.empty() ? "No delivery confirmation received." : event.error;
+      pending.securityChallenge = event.securityChallenge;
       m_status = "Message delivery was not confirmed. Restore the pending message to edit it.";
     }
     for (auto& message : event.messages) {
@@ -259,6 +261,88 @@ namespace app {
     m_edit.clamp(m_drafts[m_channelId]);
     focusControl("composer");
     m_window.invalidate();
+  }
+  void ClientApplication::messageSecurityAction(const std::string& action) {
+    if (action == "review") {
+      const auto channel = m_channelId;
+      if (!api::validSnowflake(channel))
+        return;
+      closeContext();
+      closeDialog();
+      closeCompletion();
+      m_scrolling.stopAll();
+      m_dialogKind = "message-security";
+      m_dialogText = channel;
+      m_fieldFocused = false;
+    } else if (m_dialogKind == "message-security" && action == "open") {
+      const auto guild = m_unreadGuilds.find(m_dialogText);
+      const auto destination = guild == m_unreadGuilds.end() || guild->second.empty() ? "@me" : guild->second;
+      if (!m_demo && api::validSnowflake(m_dialogText))
+        auth::openExternalUrl("https://discord.com/channels/" + destination + "/" + m_dialogText);
+    } else if (m_dialogKind == "message-security" && action == "resume") {
+      const auto channel = m_dialogText;
+      if (!m_demo && !m_client.resumeMessageChallenge(channel)) {
+        m_status = "There is no local security-check pause for this conversation.";
+      } else {
+        for (auto& [_, pending] : m_pendingSends)
+          if (pending.preview.channelId == channel && pending.securityChallenge) {
+            pending.securityChallenge = false;
+            pending.error = "Local security-check pause cleared. Check the conversation before manually resending.";
+          }
+        m_status = "Local pause cleared. Restore a failed message to try sending it manually.";
+      }
+      closeDialog();
+    }
+    m_window.invalidate();
+  }
+  void ClientApplication::drawMessageSecurity(Node& root, float w, float h) {
+    const auto frame = layout::messageSecurityLayout(w, h);
+    rectangle(
+        root, 0, layout::Window::titlebarHeight, w, h - layout::Window::titlebarHeight,
+        Color{0, 0, 0, Style::modalBackdropOpacity}
+    );
+    m_hits.push_back({0, layout::Window::titlebarHeight, w, h - layout::Window::titlebarHeight, Action::None, {}});
+    m_dialogBounds = {frame.dialog.x, frame.dialog.y, frame.dialog.width, frame.dialog.height, Action::None, {}};
+    m_hits.push_back(m_dialogBounds);
+    rectangle(
+        root, frame.dialog.x, frame.dialog.y, frame.dialog.width, frame.dialog.height, theme::sidebar, Style::radiusXl
+    );
+    label(
+        root, frame.title.x, frame.title.y, frame.title.width, "Security check required", Style::fontSizeDialog,
+        theme::foreground, FontWeight::SemiBold
+    );
+    iconButton(
+        root, {frame.close.x, frame.close.y, frame.close.width, frame.close.height, Action::CloseDialog, {}}, "x",
+        "Close"
+    );
+    const std::string text =
+        "The service requested a CAPTCHA. Cressida cannot display it here. Open the official website to complete "
+        "any check it offers. If no check appears, complete the action in that client.\n\n"
+        "After completing the check, Resume clears only this conversation's local pause. It does not remove "
+        "account restrictions or resend failed messages.";
+    const auto measured = m_window.target().renderer().measureText(
+        text, Style::fontSizeBody, FontWeight::Normal, frame.description.width, 0
+    );
+    m_scrolling.limit(m_profileScroll, std::max(0.0F, measured.bottom - measured.top - frame.description.height));
+    auto description = std::make_unique<Node>();
+    description->setPosition(frame.description.x, frame.description.y);
+    description->setSize(frame.description.width, frame.description.height);
+    description->setClipChildren(true);
+    label(
+        *description, 0, -m_profileScroll, frame.description.width, text, Style::fontSizeBody, theme::foreground,
+        FontWeight::Normal, 0
+    );
+    root.addChild(std::move(description));
+    button(
+        root, {frame.open.x, frame.open.y, frame.open.width, frame.open.height, Action::MessageSecurity, "open"},
+        "Open official website", false, false, true, true
+    );
+    button(
+        root,
+        {frame.resume.x, frame.resume.y, frame.resume.width, frame.resume.height, Action::MessageSecurity, "resume"},
+        "Resume sending", true, false, true, true
+    );
+    m_tooltip.clear();
   }
 } // namespace app
 
@@ -513,6 +597,39 @@ namespace app {
       require(!m_sending && m_pendingSends.empty(), "Outgoing replay leaves no pending resources");
       for (const auto& message : m_messages)
         require(api::validSnowflake(message.id), "Confirmed history never contains a local pending ID");
+      require(
+          queueOutgoing("Security-check fixture", {}, {}, {}, false),
+          "A synthetic challenged send enters the normal pipeline"
+      );
+      m_demoOutgoingNonces.push_back(lastNonce());
+    } else if (step == 12) {
+      api::Event error{.operation = api::Operation::Send, .resource = m_channelId};
+      error.nonce = m_demoOutgoingNonces.back();
+      error.error = "Synthetic security check";
+      error.securityChallenge = true;
+      outgoingResult(error);
+    } else if (step == 13) {
+      const auto hit =
+          std::ranges::find_if(m_hits, [](const auto& value) { return value.action == Action::MessageSecurity; });
+      require(hit != m_hits.end(), "A challenged send exposes visible recovery instead of a tooltip-only error");
+      activate(*hit);
+      require(m_dialogKind == "message-security", "Review opens the bounded security-check explanation");
+    } else if (step == 14) {
+      require(sceneContains("CAPTCHA", false), "The recovery explains that this client cannot display the challenge");
+      activate({0, 0, 0, 0, Action::MessageSecurity, "resume"});
+      require(
+          m_pendingSends.size() == 1
+              && !m_pendingSends.begin()->second.securityChallenge
+              && m_pendingSends.begin()->second.completed
+              && !m_sending,
+          "Explicit recovery never resubmits a failed message"
+      );
+    } else if (step == 15) {
+      require(
+          std::ranges::any_of(m_hits, [](const auto& hit) { return hit.action == Action::RestoreOutgoing; }),
+          "After recovery the user can restore the retained message manually"
+      );
+      clearOutgoing();
       std::clog << "Offline outgoing messages, confirmation ordering, recovery and cleanup passed\n";
     }
     m_window.invalidate();

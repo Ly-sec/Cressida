@@ -15,6 +15,7 @@ namespace app {
     m_gatewayGuildsReady = m_gatewayLayoutReady = false;
     m_readyBootstrapPending = false;
     m_startupGuild.clear();
+    m_invitePreviews.clear();
   }
 
   void ClientApplication::saveExpandedFolders() {
@@ -45,6 +46,28 @@ namespace app {
       return;
     m_messageLayouts.clear();
     m_completionDirty = true;
+    if (event.live && !event.guildsComplete) {
+      for (const auto& id : event.removed) {
+        if (!api::validSnowflake(id))
+          continue;
+        std::erase_if(m_guilds, [&](const auto& guild) { return guild.id == id; });
+        m_guildUpdates.erase(id);
+        m_guildChannels.erase(id);
+        std::erase(m_channelCacheOrder, id);
+        if (!m_dmMode && m_guildId == id) {
+          m_restoreChannel.clear();
+          showDirectMessages();
+        }
+      }
+      for (const auto& guild : event.guilds) {
+        if (api::validSnowflake(guild.id)
+            && m_guilds.size() < 10000
+            && std::ranges::find(m_guilds, guild.id, &api::Guild::id) == m_guilds.end())
+          m_guilds.push_back(guild);
+      }
+      arrangeGuildFolders();
+      return;
+    }
     std::map<std::string, std::size_t> known;
     for (std::size_t i = 0; i < m_guilds.size(); ++i)
       known.emplace(m_guilds[i].id, i);

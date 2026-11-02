@@ -157,7 +157,9 @@ namespace api {
     std::vector<Account> memberMatches;
     std::optional<UserProfile> profile;
     std::optional<GuildProfile> guildProfile;
+    std::optional<ServerInvite> serverInvite;
     bool guildVerificationRequired = false;
+    bool securityChallenge = false;
     std::string inviteUrl;
     bool noSavedLogin = false, restoredLogin = false;
     std::optional<auth::CredentialOperation> credentialOperation;
@@ -228,6 +230,7 @@ namespace api {
         std::optional<MessageReference> reply = {}, std::vector<std::string> stickers = {}, std::string nonce = {}
     );
     bool interact(api::Interaction action);
+    bool resumeMessageChallenge(const std::string& channel);
     bool profile();
     bool accountSettings();
     bool searchGifs(const std::string& query);

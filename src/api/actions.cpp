@@ -779,6 +779,54 @@ namespace api {
         request.method = action.kind == Kind::JoinThread ? "PUT" : "DELETE";
       }
       break;
+    case Kind::InvitePreview:
+    case Kind::AcceptInvite: {
+      const auto code = serverInviteCode(action.text);
+      if (!code || *code != action.text || (action.kind == Kind::AcceptInvite && !validSnowflake(action.guild)))
+        return {};
+      request.path = "/invites/" + *code;
+      request.method = action.kind == Kind::InvitePreview ? "GET" : "POST";
+      if (action.kind == Kind::InvitePreview)
+        request.path += "?with_counts=true&with_expiration=true";
+      else
+        request.body = nlohmann::json::object();
+      break;
+    }
+    case Kind::CreateGuild: {
+      constexpr std::size_t minimumName = 2, maximumName = 100, maximumUtf8Bytes = maximumName * 4;
+      if (action.text.empty()
+          || action.text.size() > maximumUtf8Bytes
+          || utf8Length(action.text) < minimumName
+          || utf8Length(action.text) > maximumName
+          || std::isspace(static_cast<unsigned char>(action.text.front()))
+          || std::isspace(static_cast<unsigned char>(action.text.back()))
+          || std::ranges::any_of(action.text, [](unsigned char c) { return c < ' ' || c == 127; }))
+        return {};
+      request.path = "/guilds";
+      request.method = "POST";
+      request.body = {{"name", action.text}, {"icon", nullptr}};
+      if (!action.content.empty() && action.content != "custom") {
+        std::vector<std::string> channels;
+        if (action.content == "gaming")
+          channels = {"general", "clips", "looking-for-group"};
+        else if (action.content == "friends")
+          channels = {"general", "photos"};
+        else if (action.content == "study")
+          channels = {"general", "resources", "study-plans"};
+        else if (action.content == "school")
+          channels = {"general", "announcements", "homework"};
+        else if (action.content == "community")
+          channels = {"general", "introductions", "events"};
+        else
+          return {};
+        request.body["channels"] = nlohmann::json::array();
+        std::size_t id = 0;
+        for (const auto& name : channels)
+          request.body["channels"].push_back({{"id", id++}, {"name", name}, {"type", 0}});
+        request.body["channels"].push_back({{"id", id}, {"name", "Lounge"}, {"type", 2}});
+      }
+      break;
+    }
     case Kind::GuildProfile:
     case Kind::JoinGuild:
       if (!validSnowflake(action.guild))

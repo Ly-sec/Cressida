@@ -610,6 +610,32 @@ namespace app::layout {
     static constexpr float thumbnailReserve = thumbnailSize + padding;
     static constexpr float thumbnailMinimumWidth = thumbnailReserve * 2 + Style::spaceXl;
   };
+  struct ServerInvite {
+    static constexpr float width = Style::profileCardWidth + Style::spaceSection;
+    static constexpr float padding = Style::spaceLg;
+    static constexpr float bannerHeight = Style::spaceGroup + Style::spaceWide;
+    static constexpr float avatarSize = Style::spaceGroup + Style::spaceSm;
+    static constexpr float nameTop = bannerHeight + avatarSize / 2 + Style::spaceLg;
+    static constexpr float detailTop = nameTop + Style::spaceXl;
+    static constexpr float buttonTop = detailTop + Style::spaceWide;
+    static constexpr float height = buttonTop + Style::controlHeight + padding;
+  };
+  struct ServerAccess {
+    static constexpr float padding = Style::spaceXl;
+    static constexpr float introTop = padding + Style::controlHeight;
+    static constexpr float listTop = introTop + Style::controlHeight + Style::spaceMd;
+    static constexpr float rowHeight = Style::controlHeightLg;
+    static constexpr float rowStep = rowHeight + Style::spaceSm;
+    static float formHeight(float errorHeight) {
+      const float error = errorHeight > 0 ? Style::spaceMd + errorHeight : 0;
+      return listTop + Style::controlHeight + error + padding + Style::controlHeight * 2 + Style::spaceSm + padding;
+    }
+    static Frame dialog(float width, float height, float desiredHeight = Style::spaceGroup * 13) {
+      const float w = std::min(Style::embedMaximumWidth, width - padding * 2);
+      const float h = std::min(desiredHeight, height - Window::titlebarHeight - padding * 2);
+      return {(width - w) / 2, Window::titlebarHeight + (height - Window::titlebarHeight - h) / 2, w, h};
+    }
+  };
   struct SignIn {
     static constexpr float maximumWidth = Style::signInMaximumWidth;
     static constexpr float padding = Style::spaceXl;
@@ -691,6 +717,26 @@ namespace app::layout {
     float title, description, hint, error;
     Frame dialog, cancel, remove;
   };
+  struct MessageSecurityFrames {
+    Frame dialog, title, description, open, resume, close;
+  };
+  inline MessageSecurityFrames messageSecurityLayout(float width, float height) {
+    const float padding = Style::spaceXl;
+    const float w = std::min(Style::embedMaximumWidth, width - padding * 2);
+    const float h = std::min(Style::spaceGroup * 8, height - Window::titlebarHeight - padding * 2);
+    const float x = (width - w) / 2, y = Window::titlebarHeight + (height - Window::titlebarHeight - h) / 2;
+    const float footer = y + h - padding - Style::controlHeight;
+    const float cell = (w - padding * 2 - Style::spaceSm) / 2;
+    const float bodyTop = y + padding + Style::controlHeight;
+    return {
+        {x, y, w, h},
+        {x + padding, y + padding, w - padding * 2 - Style::spaceXl, Style::spaceWide},
+        {x + padding, bodyTop, w - padding * 2, footer - bodyTop - Style::spaceMd},
+        {x + padding, footer, cell, Style::controlHeight},
+        {x + padding + cell + Style::spaceSm, footer, cell, Style::controlHeight},
+        {x + w - padding - Style::spaceXl, y + padding, Style::spaceXl, Style::spaceXl}
+    };
+  }
   inline EmbedRemoval embedRemovalLayout(
       float width, float height, float titleHeight, float descriptionHeight, float hintHeight, float errorHeight,
       float cancelWidth, float removeWidth

@@ -2,6 +2,7 @@
 
 #include "api/application_commands.h"
 #include "api/channel_features.h"
+#include "api/guild_access.h"
 #include "api/models.h"
 #include "api/server_organization.h"
 #include "api/server_preferences.h"
@@ -59,7 +60,10 @@ namespace api {
     GuildPrivacy,
     AutoModerationFeedback,
     ApplicationCommand,
-    CommandAutocomplete
+    CommandAutocomplete,
+    InvitePreview,
+    AcceptInvite,
+    CreateGuild
   };
   inline constexpr int autoModerationSubmitFeedback = 4;
   bool

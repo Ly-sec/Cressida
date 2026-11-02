@@ -77,12 +77,26 @@ text. Use synthetic text rather than a private conversation or password.
 
 ## Account restrictions or security checks
 
-If the service asks for verification, restricts messaging or challenges an
-action, Cressida pauses the affected writes and explains the next step. Complete
-the requested check or review **Account Standing** in the official app, then
-reconnect Cressida before trying again. Join restrictions and security checks
-pause both invite joins and public-server joins. Reconnecting resets Cressida's
-local pause; it does not remove a restriction on the account.
+If a message send requires a security check, Cressida pauses sending in that
+conversation. The failed message shows **Security check required** and a
+**Review check** button. A challenge in one DM does not pause ordinary sends in
+other DMs or server channels. Account-wide verification or messaging
+restrictions still apply across conversations.
+
+Cressida cannot display or solve the CAPTCHA itself. **Review check** explains
+this limitation and provides **Open official website**. Complete any check
+offered there. If no check appears, complete the action in the official client;
+opening the website does not guarantee that a challenge will be shown or
+cleared. After completing the check, **Resume sending** clears only this
+conversation's local challenge pause. It does not remove account restrictions or
+resend failed messages. Use **Restore** to recover the message and send it
+manually.
+
+For other account verification or restrictions, complete the requested check or
+review **Account Standing** in the official app, then reconnect Cressida. Join
+restrictions and security checks pause both invite joins and public-server
+joins. Reconnecting resets Cressida's local pause; it does not remove a
+restriction on the account.
 
 Queued actions that are stopped show an error. Cressida does not automatically
 repeat them after the restriction clears. Check whether a message arrived before

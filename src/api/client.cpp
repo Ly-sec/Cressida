@@ -108,7 +108,9 @@ namespace api {
         return "account";
       }
     }
-    bool independentRead(Operation operation) {
+    bool independentRead(Operation operation, const std::optional<Interaction>& interaction = {}) {
+      if (operation == Operation::Interaction && interaction && interaction->kind == InteractionKind::InvitePreview)
+        return true;
       switch (operation) {
       case Operation::CommandIndex:
       case Operation::Messages:
@@ -745,6 +747,9 @@ namespace api {
     if (command.session == 0 || m_authenticatedSession != command.session)
       return false;
     command.background = command.operation == Operation::ChannelDetails
+        || (command.operation == Operation::Interaction
+            && command.interaction
+            && command.interaction->kind == InteractionKind::InvitePreview)
         || (command.operation == Operation::Threads
             && command.threadQuery
             && command.threadQuery->list == ThreadList::Starter)
@@ -985,6 +990,9 @@ namespace api {
     command.nonce = std::move(nonce);
     return enqueue(std::move(command));
   }
+  bool Client::resumeMessageChallenge(const std::string& channel) {
+    return validSnowflake(channel) && m_restRestrictions.resumeMessageChallenge(m_session, channel);
+  }
   bool Client::interact(api::Interaction action) {
     if (!interactionRequest(action))
       return false;
@@ -999,6 +1007,8 @@ namespace api {
       action.commandUploads.clear();
     }
     command.interaction = std::move(action);
+    if (command.interaction->kind == InteractionKind::InvitePreview)
+      command.background = true;
     return enqueue(std::move(command));
   }
 
@@ -1162,6 +1172,15 @@ namespace api {
     if (type == "VOICE_STATE_UPDATE" || type == "VOICE_SERVER_UPDATE") {
       if (type == "VOICE_STATE_UPDATE")
         voiceRosterEvent(session, type, data);
+      if (const auto membership = guildMembershipChange(type, data)) {
+        Event event{.operation = Operation::Guilds, .session = session};
+        event.live = true;
+        if (membership->guild)
+          event.guilds.push_back(*membership->guild);
+        if (!membership->removed.empty())
+          event.removed.push_back(membership->removed);
+        publish(std::move(event));
+      }
       voiceEvent(session, type, data);
       return;
     }
@@ -1796,7 +1815,7 @@ namespace api {
     std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> connection(curl_easy_init(), curl_easy_cleanup);
     m_transportCache->attach(connection.get());
     std::unique_ptr<CURLM, decltype(&curl_multi_cleanup)> multi(curl_multi_init(), curl_multi_cleanup);
-    const auto read = [](const auto& command) { return independentRead(command.operation); };
+    const auto read = [](const auto& command) { return independentRead(command.operation, command.interaction); };
     const auto background = [](const auto& command) { return command.background; };
     while (!stop.stop_requested()) {
       Command command;
@@ -1844,6 +1863,7 @@ namespace api {
       event.channelQuery = command.channelQuery;
       event.inboxQuery = command.inboxQuery;
       event.commandIndex = command.commandIndex;
+      event.interaction = command.interaction;
       if (command.streamPreview)
         event.streamPreview =
             StreamPreviewResult{command.streamPreview->key, command.streamPreview->request, {}, false};
@@ -1864,6 +1884,13 @@ namespace api {
       try {
         std::string path;
         switch (command.operation) {
+        case Operation::Interaction: {
+          const auto route = command.interaction ? interactionRequest(*command.interaction) : std::nullopt;
+          if (!route || route->method != "GET" || command.interaction->kind != InteractionKind::InvitePreview)
+            throw std::runtime_error("Invalid invite preview request");
+          path = route->path;
+          break;
+        }
         case Operation::ActivityMetadata:
           path = command.content;
           break;
@@ -1942,6 +1969,11 @@ namespace api {
           }
         } else {
           switch (command.operation) {
+          case Operation::Interaction:
+            event.serverInvite = parseServerInvite(*response, command.interaction->text);
+            if (!event.serverInvite)
+              throw std::runtime_error("The server invite is unavailable or did not match the requested code.");
+            break;
           case Operation::ActivityMetadata: {
             const auto urls = rpc::activityButtonUrls(*response);
             if (!urls)
@@ -2170,7 +2202,8 @@ namespace api {
         std::unique_lock lock(m_mutex);
         m_ready.wait(lock, stop, [&] {
           return nextRestOwned(
-                     m_commands, [](const auto& pending) { return independentRead(pending.operation); },
+                     m_commands,
+                     [](const auto& pending) { return independentRead(pending.operation, pending.interaction); },
                      [](const auto& pending) { return pending.background; }
                  )
               != m_commands.end()
@@ -2211,7 +2244,7 @@ namespace api {
         if (m_commands.empty())
           continue;
         const auto next = nextRestOwned(
-            m_commands, [](const auto& pending) { return independentRead(pending.operation); },
+            m_commands, [](const auto& pending) { return independentRead(pending.operation, pending.interaction); },
             [](const auto& pending) { return pending.background; }
         );
         if (next == m_commands.end())
@@ -3034,6 +3067,8 @@ namespace api {
                   command.operation == Operation::UserSettings
               )
             : std::expected<Json, Failure>(std::unexpected(Failure{event.error, event.unauthorized}));
+        if (command.operation == Operation::Send)
+          event.securityChallenge = m_restRestrictions.messageChallenge(command.session, command.resource);
         // The issue itself is already delivered. The permission-dependent alert
         // marker is supplementary, like Discord's fire-and-forget marker update.
         if (autoModerationFeedbackSubmitted && !response)
@@ -3404,6 +3439,27 @@ namespace api {
                   || command.interaction->kind == InteractionKind::CreateForumPost)
                 thread->joined = true;
               event.channels.push_back(*thread);
+            } else if (
+                command.interaction->kind == InteractionKind::InvitePreview
+                || command.interaction->kind == InteractionKind::AcceptInvite
+            ) {
+              event.serverInvite = parseServerInvite(*response, command.interaction->text);
+              if (!event.serverInvite
+                  || (command.interaction->kind == InteractionKind::AcceptInvite
+                      && event.serverInvite->guild.id != command.interaction->guild))
+                throw std::runtime_error("The invite response did not match the selected server.");
+              if (command.interaction->kind == InteractionKind::AcceptInvite) {
+                event.guilds.push_back(event.serverInvite->guild);
+                event.guildVerificationRequired =
+                    response->contains("show_verification_form") && (*response)["show_verification_form"] == true;
+              }
+            } else if (command.interaction->kind == InteractionKind::CreateGuild) {
+              if (!response->is_object()
+                  || !response->contains("id")
+                  || !(*response)["id"].is_string()
+                  || !validSnowflake((*response)["id"].get<std::string>()))
+                throw std::runtime_error("The service returned an invalid server.");
+              event.guilds = parseGuilds(Json::array({*response}));
             } else if (command.interaction->kind == InteractionKind::GuildProfile) {
               event.guildProfile = parseGuildProfile(*response);
               if (event.guildProfile->id != command.interaction->guild)

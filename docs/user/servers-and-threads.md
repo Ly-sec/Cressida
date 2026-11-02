@@ -1,7 +1,35 @@
 ---
 title: Servers, folders and threads
-description: Navigate channels and threads and organize the server rail.
+description:
+  Preview invites, join or create servers and organize channels and threads.
 ---
+
+## Join or create a server
+
+Click the **+** button at the end of the server rail to open **Add a Server**.
+Scroll the rail if the button is below your current view.
+
+- Choose **Create My Own** or a starter preset, enter a server name, then choose
+  **Create Server**. Starter presets add a small set of text channels and a
+  voice channel; you can customize them afterward.
+- Choose **Join a Server**, paste an invite link or code, then choose **Preview
+  Invite**. Review the server and choose **Join Server** to join explicitly.
+
+Invite links in chat also show a server card when link previews are enabled. The
+card shows the server name, available artwork and approximate member and online
+counts. **View Invite** opens the native preview without joining. **Go to
+Server** opens a server you already belong to. Unavailable previews have an
+explicit **Retry Preview** action.
+
+Joined and created servers appear in the rail when the service acknowledges
+them. Live membership changes also update the rail when you join or leave in
+another client. Temporary server outages do not remove a server from the list.
+
+Some servers require additional verification in the official app. Account
+security checks also belong there; see
+[Security checks](troubleshooting.md#account-restrictions-or-security-checks).
+Take particular care with new server joins and read the
+[account-risk notice](faq.md#can-my-account-be-restricted).
 
 ## Channels and unread activity
 

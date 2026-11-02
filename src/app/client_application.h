@@ -170,6 +170,8 @@ namespace app {
       DmProfileRetry,
       Send,
       RestoreOutgoing,
+      MessageSecurity,
+      ServerAccess,
       PasteClipboard,
       ToggleEmoji,
       ToggleStickers,
@@ -535,6 +537,17 @@ namespace app {
     );
     float drawRoleBadge(Node& parent, float x, float y, const api::ColoredRole& role);
     void showGuildProfile(const std::string& guild);
+    void openServerAccess(const std::string& invite = {});
+    void serverAccessAction(const std::string& action);
+    bool serverAccessResult(const api::Event& event);
+    void drawServerAccess(Node& root, float width, float height);
+    void requestInvitePreview(const std::string& code, bool retry = false);
+    MessageOptions::Invite inviteCardData(const std::string& code) const;
+    void drawInviteCard(
+        Node& root, const MessageLayout::InviteCard& card, float x, float y, float absoluteX, float absoluteY
+    );
+    void demoServerAccessStep();
+    static constexpr int serverAccessReplayFrames = 16;
     void drawGuildProfile(Node& root, float width, float height);
     void clearThreads();
     const api::Channel* selectedChannel() const;
@@ -1380,6 +1393,18 @@ namespace app {
     api::Account m_dialogAccount;
     api::UserProfile m_profileCard;
     api::GuildProfile m_guildProfile;
+    struct InvitePreview {
+      std::optional<api::ServerInvite> data;
+      std::string error;
+      bool pending = false;
+      std::uint64_t revision = 0;
+    };
+    std::map<std::string, InvitePreview> m_invitePreviews;
+    std::uint64_t m_inviteSerial = 0;
+    std::string m_serverAccessStage, m_serverAccessCode, m_serverAccessInput, m_serverAccessName, m_serverAccessPreset;
+    bool m_serverAccessVerification = false;
+    float m_serverAccessScroll = 0;
+    layout::Frame m_serverAccessList{};
     bool m_guildPreviewJoined = false, m_guildPreviewVerification = false;
     bool m_profileExpanded = false, m_profileRevealSpoilers = false;
     float m_profileScroll = 0, m_profileAnchorX = -1, m_profileAnchorY = -1;
@@ -1707,7 +1732,7 @@ namespace app {
       std::vector<api::Sticker> stickers;
       std::map<std::string, std::string> mentions;
       std::string confirmed, error;
-      bool completed = false, composer = false;
+      bool completed = false, composer = false, securityChallenge = false;
     };
     std::map<std::string, PendingSend> m_pendingSends;
     bool queueOutgoing(
@@ -1719,8 +1744,10 @@ namespace app {
     void releaseOutgoing(PendingSend& pending);
     void clearOutgoing();
     void restoreOutgoing(const std::string& nonce);
+    void messageSecurityAction(const std::string& action);
+    void drawMessageSecurity(Node& root, float width, float height);
     void demoOutgoingStep();
-    static constexpr int outgoingReplayFrames = 12;
+    static constexpr int outgoingReplayFrames = 16;
     std::vector<std::string> m_demoOutgoingNonces;
     std::uint32_t m_demoOutgoingTexture = 0;
     struct ViewerImage {

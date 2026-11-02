@@ -1,5 +1,6 @@
 #pragma once
 
+#include "api/guild_access.h"
 #include "api/models.h"
 #include "app/layout_metrics.h"
 #include "app/syntax_highlight.h"
@@ -64,6 +65,16 @@ namespace app {
     bool spoiler = false;
   };
   struct MessageLayout {
+    struct InviteValue {
+      std::optional<api::ServerInvite> data;
+      bool failed = false, joined = false;
+    };
+    struct InviteCard {
+      std::string code;
+      float x, y, width;
+      InviteValue value;
+    };
+    std::vector<InviteCard> invites;
     struct AutoModeration {
       float authorTop;
       std::size_t contentStart, contentEnd;
@@ -108,6 +119,8 @@ namespace app {
     std::function<std::string(std::string_view)> roleMention;
     std::function<std::string(std::string_view, std::string_view)> userMention;
     bool twelveHourClock = false, showEmbedIcons = true;
+    using Invite = MessageLayout::InviteValue;
+    std::function<Invite(const std::string&)> serverInvite;
   };
   MessageLayout layoutRichMessage(
       const api::Message& message, float width,

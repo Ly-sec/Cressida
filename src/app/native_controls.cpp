@@ -625,6 +625,11 @@ namespace app {
         } else if (id.starts_with("composer-link:") && m_composerLink) {
           (id == "composer-link:label" ? m_composerLink->label : m_composerLink->url) = text;
           m_dialogError.clear();
+        } else if (id.starts_with("server-access:")) {
+          if (m_dialogKind == "guild-access" && !m_dialogPending && text.size() <= 2048) {
+            (id == "server-access:name" ? m_serverAccessName : m_serverAccessInput) = text;
+            m_dialogError.clear();
+          }
         } else if (id == "dm-create-search") {
           if (m_dialogKind == "dm-create" && text.size() <= 256) {
             m_dmCreateSearch = text;
@@ -738,6 +743,8 @@ namespace app {
           submitMessageEdit();
         else if (id == "dm-friend-name")
           dmAction("add-friend");
+        else if (id.starts_with("server-access:"))
+          serverAccessAction(id == "server-access:name" ? "submit" : "preview");
         else if (id == "dm-create-search")
           dmCreateAction("create-submit");
         else if (id == "dm-search") {
@@ -802,14 +809,16 @@ namespace app {
         (m_dialogKind.empty()
          || id == "dialog"
          || id.starts_with("server-menu:")
+         || (m_dialogKind == "guild-access" && id.starts_with("server-access:"))
          || id == "dm-create-search"
          || (m_dialogKind == "composer-link" && id.starts_with("composer-link:")))
         && (!m_serverSettings.open || id.starts_with("server-settings:"))
-        && (id == "dm-create-search"   ? !m_dialogPending
-                : id == "dialog"       ? !m_dialogPending
-                : id == "message-edit" ? m_messageEdit && !m_messageEdit->request
-                : id == "token"        ? !m_connecting
-                : id == "composer"     ? !m_demo
+        && (id.starts_with("server-access:") ? !m_dialogPending
+                : id == "dm-create-search"   ? !m_dialogPending
+                : id == "dialog"             ? !m_dialogPending
+                : id == "message-edit"       ? m_messageEdit && !m_messageEdit->request
+                : id == "token"              ? !m_connecting
+                : id == "composer"           ? !m_demo
                     || m_demoOverlay.starts_with("slash-commands")
                     || m_demoOverlay == "sidebar-cycle"
                     || m_demoOverlay == "inline-edit-cycle"

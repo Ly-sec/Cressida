@@ -645,6 +645,10 @@ namespace app {
         demoSearchStep();
       if (m_demo && m_demoOverlay.starts_with("outgoing-cycle") && m_demoInteractionStep < outgoingReplayFrames)
         demoOutgoingStep();
+      if (m_demo
+          && m_demoOverlay.starts_with("server-access-cycle")
+          && m_demoInteractionStep < serverAccessReplayFrames)
+        demoServerAccessStep();
       if (m_demo && m_demoOverlay == "sidebar-cycle")
         sidebarDemoFrame();
       if (m_demo && m_demoOverlay == "mentions-cycle") {
@@ -1381,6 +1385,8 @@ namespace app {
              || id.starts_with("composer-link:"))
             && m_pasteDialogGeneration != m_dialogGeneration)
           return;
+        if (id.starts_with("server-access:") && m_pasteDialogGeneration != m_dialogGeneration)
+          return;
         if ((id.starts_with("slash-field:") || id == "slash-options")
             && (!m_slashCommand || m_pasteSlashGeneration != m_slashGeneration || m_slashPending))
           return;
@@ -1605,6 +1611,12 @@ namespace app {
         m_window.invalidate();
         return;
       }
+      if (m_dialogKind == "guild-access") {
+        if (m_serverAccessList.contains(m_pointerX, m_pointerY))
+          scroll(m_serverAccessScroll, delta);
+        m_window.invalidate();
+        return;
+      }
       if (m_dialogKind == "sidebar-invite") {
         if (m_channelInvite.editing && m_channelInvite.formBounds.contains(m_pointerX, m_pointerY))
           scroll(m_channelInvite.formScroll, delta);
@@ -1622,7 +1634,7 @@ namespace app {
         m_window.invalidate();
         return;
       }
-      if (m_dialogKind == "profile") {
+      if (m_dialogKind == "profile" || m_dialogKind == "message-security") {
         if (m_dialogBounds.contains(m_pointerX, m_pointerY))
           scroll(m_profileScroll, delta);
         m_window.invalidate();
@@ -1756,8 +1768,10 @@ namespace app {
     m_window.run(
         m_client.eventFd(), [this] { tick(); },
         smokeTest
-            ? (m_demo && view && std::string_view(view).starts_with("inbox-cycle")            ? inboxReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("search-cycle")     ? searchReplayFrames
+            ? (m_demo && view && std::string_view(view).starts_with("inbox-cycle")        ? inboxReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("search-cycle") ? searchReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("server-access-cycle")
+                   ? serverAccessReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("outgoing-cycle")   ? outgoingReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("chat-links-cycle") ? chatLinkReplayFrames
                    : m_demo && view && std::string_view(view) == "attachment-cycle"           ? attachmentReplayFrames
@@ -2102,6 +2116,19 @@ namespace app {
             m_window.setUiScale(1.5F);
             m_focusedInput = "channel-search-panel";
           }
+        } else if (view.starts_with("server-access-cycle")) {
+          m_demoOverlay = view;
+          if (view.ends_with("light"))
+            m_preferences.theme = "light";
+          if (view.ends_with("narrow"))
+            m_window.setUiScale(1.5F);
+          m_showMembers = false;
+          m_messages = {{"89001", m_channelId, "Maya", "https://discord.gg/moonInvite", "2026-11-02T14:00:00Z", "11"}};
+          api::ServerInvite invite{
+              "moonInvite", {.id = "99901", .name = "Moon Cafe", .members = 21, .online = 13}, "demo-preview"
+          };
+          m_invitePreviews[invite.code].data = invite;
+          m_history.restoreLatest(m_messages, true);
         } else if (view.starts_with("outgoing-cycle")) {
           m_demoOverlay = view;
           if (view.ends_with("light"))
@@ -4827,7 +4854,12 @@ namespace app {
                                       auto role
                                   ) { return m_roleDirectory.roleName(m_dmMode ? "" : m_guildId, std::string(role)); },
                    .twelveHourClock = m_preferences.twelveHourClock,
-                   .showEmbedIcons = m_preferences.showImages}
+                   .showEmbedIcons = m_preferences.showImages,
+                   .serverInvite = m_preferences.showEmbeds && !blockedMessage(message) && !message.deleted
+                       ? std::function<MessageOptions::Invite(const std::string&)>([this](const auto& code) {
+                           return inviteCardData(code);
+                         })
+                       : std::function<MessageOptions::Invite(const std::string&)>{}}
               );
               cached.layout = withEditHistory(
                   std::move(cached.layout), versions, textWidth, measure, m_preferences.messageSize,
@@ -5595,6 +5627,17 @@ namespace app {
                     }
                   }
                 }
+                for (const auto& card : layout.invites) {
+                  const float cardY = bodyY + card.y;
+                  if (top + cardY + layout::ServerInvite::height <= top || top + cardY >= bottom)
+                    continue;
+                  if (!message.deleted && !blockedMessage(message))
+                    requestInvitePreview(card.code);
+                  drawInviteCard(
+                      *messageContent, card, layout::Chat::authorGutter + card.x, cardY,
+                      left + layout::Chat::inset + layout::Chat::authorGutter + card.x, top + cardY
+                  );
+                }
                 const auto linkAreas = messageLinkAreas(layout);
                 for (const auto& area : linkAreas) {
                   const auto& run = layout.runs[area.first];
@@ -5844,14 +5887,17 @@ namespace app {
               const float restoreWidth = Style::spaceSection * 3;
               label(
                   *content, layout::Chat::authorGutter, statusY + Style::spaceSm,
-                  std::max(0.0F, textWidth - restoreWidth - Style::spaceMd), "Not confirmed",
+                  std::max(0.0F, textWidth - restoreWidth - Style::spaceMd),
+                  pending->second.securityChallenge ? "Security check required" : "Not confirmed",
                   Style::fontSizeDescription, muted
               );
               button(
                   *content,
                   {layout::Chat::authorGutter + std::max(0.0F, textWidth - restoreWidth), statusY, restoreWidth,
-                   Style::controlHeightSm, Action::RestoreOutgoing, message.nonce},
-                  "Restore"
+                   Style::controlHeightSm,
+                   pending->second.securityChallenge ? Action::MessageSecurity : Action::RestoreOutgoing,
+                   pending->second.securityChallenge ? "review" : message.nonce},
+                  pending->second.securityChallenge ? "Review check" : "Restore"
               );
               if (hovered(
                       left + Style::spaceXl, top + statusY, bodyWidth - Style::spaceGroup,
@@ -9189,6 +9235,12 @@ namespace app {
       if (!m_demo)
         pasteControl("composer", hit.id);
       break;
+    case Action::ServerAccess:
+      serverAccessAction(hit.id);
+      break;
+    case Action::MessageSecurity:
+      messageSecurityAction(hit.id);
+      break;
     case Action::RestoreOutgoing:
       restoreOutgoing(hit.id);
       break;
@@ -9231,7 +9283,9 @@ namespace app {
       m_window.copy(hit.id);
       break;
     case Action::OpenUrl:
-      if (!openDiscordLink(hit.id))
+      if (const auto code = api::serverInviteCode(hit.id); code && hit.id.contains('/'))
+        openServerAccess(*code);
+      else if (!openDiscordLink(hit.id))
         auth::openExternalUrl(hit.id);
       break;
     case Action::RevealSpoiler:

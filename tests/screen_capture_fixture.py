@@ -18,7 +18,6 @@ with tempfile.TemporaryDirectory(prefix="cressida-screen-test-") as directory:
 context.properties = { core.daemon = true core.name = cressida-screen-test }
 context.spa-libs = {
     support.* = support/libspa-support
-    videotestsrc = videotestsrc/libspa-videotestsrc
 }
 context.modules = [
     { name = libpipewire-module-protocol-native }
@@ -26,13 +25,6 @@ context.modules = [
     { name = libpipewire-module-client-node }
     { name = libpipewire-module-link-factory }
     { name = libpipewire-module-access args = { access.force = unrestricted } }
-]
-context.objects = [
-    { factory = spa-node-factory args = {
-        factory.name = videotestsrc node.name = synthetic-screen
-        node.description = SyntheticScreen node.driver = true
-        node.param.Props = { patternType = 1 }
-    } }
 ]
 """)
     environment = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), PIPEWIRE_RUNTIME_DIR=str(runtime),

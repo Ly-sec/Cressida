@@ -1,6 +1,7 @@
 #include "capture/screen.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstring>
@@ -12,6 +13,8 @@
 #include <pipewire/pipewire.h>
 #include <poll.h>
 #include <set>
+#include <spa/buffer/meta.h>
+#include <spa/param/video/format-utils.h>
 #include <stdexcept>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -23,6 +26,13 @@ namespace {
   constexpr std::uint32_t hiddenCursor = 1, embeddedCursor = 2, metadataCursor = 4, legacyCursorModes = 0;
   constexpr auto revocationDeadline = 1s;
   constexpr auto lateResponseSettle = 100ms;
+  constexpr std::uint32_t fixtureWidth = 64, fixtureHeight = 48, fixtureChannels = 3, fixtureFrameRate = 30;
+  constexpr auto fixtureStride = fixtureWidth * fixtureChannels;
+  constexpr auto fixtureFrameBytes = fixtureStride * fixtureHeight;
+  constexpr auto fixtureTimerNanoseconds = 1'000'000'000 / fixtureFrameRate;
+  constexpr std::size_t fixtureFormatBytes = 1024;
+  constexpr int fixtureBufferCount = 4;
+  constexpr std::array<std::uint8_t, fixtureChannels> fixturePixel{19, 73, 151};
   void require(bool value, const char* message) {
     if (!value)
       throw std::runtime_error(message);
@@ -41,7 +51,10 @@ namespace {
     pw_context* context = nullptr;
     pw_core* core = nullptr;
     pw_registry* registry = nullptr;
+    pw_stream* source = nullptr;
+    spa_source* timer = nullptr;
     spa_hook listener{};
+    spa_hook sourceListener{};
     std::atomic<std::uint32_t> node = PW_ID_ANY;
     std::atomic_bool allowNewLinks = true;
     std::atomic_uint blockedInputs = 0;
@@ -52,11 +65,122 @@ namespace {
     std::map<std::uint32_t, Port> ports;
     std::set<std::pair<std::uint32_t, std::uint32_t>> linked;
     std::vector<pw_proxy*> links;
+    std::atomic_bool holdBuffers = false;
+    std::atomic_uint unavailableBuffers = 0;
+    std::vector<pw_buffer*> heldBuffers;
+    std::uint64_t sequence = 0;
+    void resumeBuffers() {
+      pw_thread_loop_lock(loop);
+      holdBuffers = false;
+      for (auto* buffer : heldBuffers)
+        pw_stream_queue_buffer(source, buffer);
+      heldBuffers.clear();
+      pw_thread_loop_unlock(loop);
+    }
+    void produce() {
+      auto* buffer = pw_stream_dequeue_buffer(source);
+      if (!buffer) {
+        ++unavailableBuffers;
+        return;
+      }
+      if (holdBuffers) {
+        heldBuffers.push_back(buffer);
+        return;
+      }
+      if (!buffer->buffer->n_datas) {
+        pw_stream_queue_buffer(source, buffer);
+        return;
+      }
+      auto& pixels = buffer->buffer->datas[0];
+      if (pixels.data && pixels.chunk && pixels.maxsize >= fixtureFrameBytes) {
+        auto* bytes = static_cast<std::uint8_t*>(pixels.data);
+        for (std::size_t at = 0; at < fixtureFrameBytes; at += fixtureChannels)
+          std::ranges::copy(fixturePixel, bytes + at);
+        pixels.chunk->offset = 0;
+        pixels.chunk->size = fixtureFrameBytes;
+        pixels.chunk->stride = fixtureStride;
+        if (auto* header = static_cast<spa_meta_header*>(
+                spa_buffer_find_meta_data(buffer->buffer, SPA_META_Header, sizeof(spa_meta_header))
+            )) {
+          header->flags = 0;
+          header->seq = sequence++;
+          header->dts_offset = 0;
+          header->pts =
+              std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+                  .count();
+        }
+        buffer->size = 1;
+      }
+      pw_stream_queue_buffer(source, buffer);
+    }
     VideoServer() {
       context = pw_context_new(pw_thread_loop_get_loop(loop), nullptr, 0);
       core = pw_context_connect(context, nullptr, 0);
       require(core, "The fixture connects only to its private video server");
       registry = pw_core_get_registry(core, PW_VERSION_REGISTRY, 0);
+      source = pw_stream_new(
+          core, "synthetic-screen",
+          pw_properties_new(
+              PW_KEY_NODE_NAME, "synthetic-screen", PW_KEY_MEDIA_CLASS, "Video/Source", PW_KEY_MEDIA_TYPE, "Video",
+              PW_KEY_MEDIA_CATEGORY, "Capture", PW_KEY_NODE_DRIVER, "true", nullptr
+          )
+      );
+      require(source, "The fixture owns its synthetic video stream");
+      static const pw_stream_events sourceEvents{
+          .version = PW_VERSION_STREAM_EVENTS,
+          .param_changed =
+              [](void* data, std::uint32_t id, const spa_pod* param) {
+                if (id != SPA_PARAM_Format || !param)
+                  return;
+                auto& self = *static_cast<VideoServer*>(data);
+                std::array<std::uint8_t, fixtureFormatBytes> bytes{};
+                auto builder = SPA_POD_BUILDER_INIT(bytes.data(), bytes.size());
+                const spa_pod* params[]{
+                    static_cast<const spa_pod*>(spa_pod_builder_add_object(
+                        &builder, SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers, SPA_PARAM_BUFFERS_buffers,
+                        SPA_POD_CHOICE_RANGE_Int(fixtureBufferCount, fixtureBufferCount / 2, fixtureBufferCount * 2),
+                        SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1), SPA_PARAM_BUFFERS_size,
+                        SPA_POD_Int(fixtureFrameBytes), SPA_PARAM_BUFFERS_stride, SPA_POD_Int(fixtureStride)
+                    )),
+                    static_cast<const spa_pod*>(spa_pod_builder_add_object(
+                        &builder, SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta, SPA_PARAM_META_type,
+                        SPA_POD_Id(SPA_META_Header), SPA_PARAM_META_size, SPA_POD_Int(sizeof(spa_meta_header))
+                    ))
+                };
+                pw_stream_update_params(self.source, params, std::size(params));
+              },
+          .process = [](void* data) { static_cast<VideoServer*>(data)->produce(); }
+      };
+      pw_stream_add_listener(source, &sourceListener, &sourceEvents, this);
+      std::array<std::uint8_t, fixtureFormatBytes> formatBytes{};
+      auto builder = SPA_POD_BUILDER_INIT(formatBytes.data(), formatBytes.size());
+      const spa_video_info_raw format{
+          .format = SPA_VIDEO_FORMAT_RGB, .size = {fixtureWidth, fixtureHeight}, .framerate = {fixtureFrameRate, 1}
+      };
+      const spa_pod* formats[]{spa_format_video_raw_build(&builder, SPA_PARAM_EnumFormat, &format)};
+      require(
+          pw_stream_connect(
+              source, PW_DIRECTION_OUTPUT, PW_ID_ANY,
+              static_cast<pw_stream_flags>(PW_STREAM_FLAG_DRIVER | PW_STREAM_FLAG_MAP_BUFFERS), formats, 1
+          ) == 0,
+          "The synthetic source exports bounded real video frames"
+      );
+      timer = pw_loop_add_timer(
+          pw_thread_loop_get_loop(loop),
+          [](void* data, std::uint64_t) {
+            auto& self = *static_cast<VideoServer*>(data);
+            if (pw_stream_get_state(self.source, nullptr) == PW_STREAM_STATE_STREAMING
+                && pw_stream_is_driving(self.source))
+              pw_stream_trigger_process(self.source);
+          },
+          this
+      );
+      require(timer, "The private source has its own video clock");
+      timespec interval{.tv_sec = 0, .tv_nsec = fixtureTimerNanoseconds};
+      require(
+          pw_loop_update_timer(pw_thread_loop_get_loop(loop), timer, &interval, &interval, false) == 0,
+          "The private clock continues when an output buffer is temporarily unavailable"
+      );
       static const pw_registry_events events{
           .version = PW_VERSION_REGISTRY_EVENTS,
           .global =
@@ -112,8 +236,11 @@ namespace {
     }
     ~VideoServer() {
       pw_thread_loop_stop(loop);
+      pw_loop_destroy_source(pw_thread_loop_get_loop(loop), timer);
       for (auto* link : links)
         pw_proxy_destroy(link);
+      spa_hook_remove(&sourceListener);
+      pw_stream_destroy(source);
       spa_hook_remove(&listener);
       pw_proxy_destroy(reinterpret_cast<pw_proxy*>(registry));
       pw_core_disconnect(core);
@@ -345,6 +472,13 @@ int main() {
       {
         std::lock_guard lock(mutex);
         require(latest && latest->valid(), "PipeWire delivers real valid native RGBA pixels");
+        require(
+            latest->width == fixtureWidth
+                && latest->height == fixtureHeight
+                && std::equal(fixturePixel.begin(), fixturePixel.end(), latest->rgba.begin())
+                && latest->rgba[fixtureChannels] == 255,
+            "Packed RGB fixture frames retain their dimensions and become opaque native RGBA pixels"
+        );
         const auto now =
             std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch())
                 .count();
@@ -356,6 +490,18 @@ int main() {
       require(
           portal.creates == 1 && portal.selects == 1 && portal.starts == 1 && portal.opens == 1,
           "Capture completes the full consent and descriptor exchange"
+      );
+      const auto unavailableBefore = video.unavailableBuffers.load();
+      video.holdBuffers = true;
+      until(
+          [&] { return video.unavailableBuffers > unavailableBefore; },
+          "The private source can exhaust its finite output buffer pool"
+      );
+      const auto framesBeforeResume = frames.load();
+      video.resumeBuffers();
+      until(
+          [&] { return frames > framesBeforeResume; },
+          "A skipped output tick does not prevent future native frames after buffers return"
       );
       const auto before = frames.load();
       portal.cancel = true;
@@ -369,7 +515,10 @@ int main() {
       screen.select("", false);
       until(
           [&] {
-            return portal.opens == 2 && screen.state().phase == capture::ScreenPhase::Ready && !screen.state().cursor;
+            const auto state = screen.state();
+            if (portal.opens == 2 && state.phase == capture::ScreenPhase::Ready && !state.error.empty())
+              throw std::runtime_error("Replacement capture: " + state.error);
+            return portal.opens == 2 && state.phase == capture::ScreenPhase::Ready && !state.cursor;
           },
           "A replacement waits for valid new pixels"
       );

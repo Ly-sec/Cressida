@@ -184,7 +184,7 @@ namespace app {
       selectSettingsPage("privacy");
       break;
     case 10:
-      require(theme::accent == rgbHex(theme::palette.accent), "Restoring saturation restores exact theme colors");
+      require(theme::accent == themeColor(theme::palette.accent), "Restoring saturation restores exact theme colors");
       focusControl("settings:search");
       m_profileDirty = false;
       onKey({.symbol = XKB_KEY_p, .text = "p"});

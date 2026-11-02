@@ -227,9 +227,9 @@ namespace app {
         const auto* surface = dynamic_cast<const RectNode*>(m_scene->children().front().get());
         if (m_connected
             || !surface
-            || surface->style().fill != rgbHex(palette.background)
-            || theme::foreground != rgbHex(palette.foreground)
-            || theme::accent != rgbHex(palette.accent))
+            || surface->style().fill != themeColor(palette.background)
+            || theme::foreground != themeColor(palette.foreground)
+            || theme::accent != themeColor(palette.accent))
           throw std::runtime_error("Startup and login must render with the selected palette and mode");
         std::clog << "Offline themed login check passed\n";
       }
@@ -522,7 +522,7 @@ namespace app {
         demoServerMenuStep();
       if (m_demo && m_demoOverlay == "server-hover-cycle")
         demoGuildHoverStep();
-      if (m_demo && m_demoOverlay == "themes-cycle" && m_demoInteractionStep < 11)
+      if (m_demo && m_demoOverlay == "themes-cycle" && m_demoInteractionStep < themeReplayFrames)
         demoThemeStep();
       if (m_demo && m_demoOverlay.starts_with("message-hover-cycle") && m_demoInteractionStep < 10) {
         const auto step = m_demoInteractionStep++;
@@ -1818,7 +1818,7 @@ namespace app {
                    : m_demo && view && std::string_view(view) == "user-settings-lists-cycle"      ? 30
                    : m_demo && view && std::string_view(view) == "settings-font-cycle"            ? 12
                    : m_demo && view && std::string_view(view) == "server-hover-cycle"             ? 7
-                   : m_demo && view && std::string_view(view) == "themes-cycle"                   ? 11
+                   : m_demo && view && std::string_view(view) == "themes-cycle"                   ? themeReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("message-hover-cycle")  ? 10
                    : m_demo && view && std::string_view(view) == "sidebar-cycle"                  ? 10
                    : m_demo && view && std::string_view(view) == "role-emoji-cycle"               ? 3
@@ -1896,7 +1896,7 @@ namespace app {
       throw std::runtime_error("Chat preload replay did not finish");
     if (m_demoOverlay == "server-hover-cycle" && m_demoInteractionStep != 7)
       throw std::runtime_error("Server hover replay did not finish");
-    if (m_demoOverlay == "themes-cycle" && m_demoInteractionStep != 11)
+    if (m_demoOverlay == "themes-cycle" && m_demoInteractionStep != themeReplayFrames)
       throw std::runtime_error("Theme settings replay did not finish");
     if (m_demoOverlay.starts_with("message-hover-cycle") && m_demoInteractionStep != 10)
       throw std::runtime_error("Message hover replay did not finish");
@@ -3120,7 +3120,7 @@ namespace app {
           }
           const int avatarSize = static_cast<int>(Style::space2Xl);
           std::vector<std::uint8_t> avatarPixels(avatarSize * avatarSize * 4);
-          const auto avatarFill = rgbHex(theme::palette.accent);
+          const auto avatarFill = themeColor(theme::palette.accent);
           const std::array avatarColor{avatarFill.r, avatarFill.g, avatarFill.b, 1.0F};
           for (std::size_t pixel = 0; pixel < avatarPixels.size(); ++pixel)
             avatarPixels[pixel] = static_cast<std::uint8_t>(

@@ -6,6 +6,10 @@
 #include <algorithm>
 #include <string_view>
 
+namespace app {
+  constexpr Color themeColor(ThemeColor value) { return withAlpha(rgbHex(value.rgb), colorByte(value.alpha)); }
+} // namespace app
+
 namespace app::theme {
   inline Color background, sidebar, panel, raised, foreground, muted, accent, ink;
   inline Color railBackground, danger, destructive, success;
@@ -26,44 +30,44 @@ namespace app::theme {
     saturation = std::clamp(colorSaturation, 0.0F, 1.0F);
     palette = colors;
     lightTheme = light;
-    background = accessible(rgbHex(colors.background));
-    sidebar = accessible(rgbHex(colors.sidebar));
-    panel = accessible(rgbHex(colors.panel));
-    raised = accessible(rgbHex(colors.raised));
-    foreground = accessible(rgbHex(colors.foreground));
-    muted = accessible(rgbHex(colors.muted));
-    accent = accessible(rgbHex(colors.accent));
-    ink = accessible(rgbHex(colors.ink));
-    railBackground = accessible(rgbHex(colors.rail));
-    danger = accessible(rgbHex(colors.danger));
-    destructive = accessible(rgbHex(colors.destructive));
-    success = accessible(rgbHex(colors.success));
-    hover = accessible(rgbHex(colors.hover));
-    onHover = accessible(rgbHex(colors.onHover));
+    background = accessible(themeColor(colors.background));
+    sidebar = accessible(themeColor(colors.sidebar));
+    panel = accessible(themeColor(colors.panel));
+    raised = accessible(themeColor(colors.raised));
+    foreground = accessible(themeColor(colors.foreground));
+    muted = accessible(themeColor(colors.muted));
+    accent = accessible(themeColor(colors.accent));
+    ink = accessible(themeColor(colors.ink));
+    railBackground = accessible(themeColor(colors.rail));
+    danger = accessible(themeColor(colors.danger));
+    destructive = accessible(themeColor(colors.destructive));
+    success = accessible(themeColor(colors.success));
+    hover = accessible(themeColor(colors.hover));
+    onHover = accessible(themeColor(colors.onHover));
   }
   inline void select(std::string_view mode) { apply(defaultThemePalette(mode == "light"), mode == "light"); }
   inline Color syntaxColor(CodeToken token) {
     switch (token) {
     case CodeToken::Keyword:
-      return accessible(rgbHex(palette.keyword));
+      return accessible(themeColor(palette.keyword));
     case CodeToken::String:
-      return accessible(rgbHex(palette.string));
+      return accessible(themeColor(palette.string));
     case CodeToken::Comment:
       return muted;
     case CodeToken::Number:
-      return accessible(rgbHex(palette.number));
+      return accessible(themeColor(palette.number));
     case CodeToken::Function:
-      return accessible(rgbHex(palette.function));
+      return accessible(themeColor(palette.function));
     case CodeToken::Type:
-      return accessible(rgbHex(palette.type));
+      return accessible(themeColor(palette.type));
     case CodeToken::Property:
-      return accessible(rgbHex(palette.property));
+      return accessible(themeColor(palette.property));
     case CodeToken::Preprocessor:
-      return accessible(rgbHex(palette.preprocessor));
+      return accessible(themeColor(palette.preprocessor));
     case CodeToken::Added:
-      return accessible(rgbHex(palette.added));
+      return accessible(themeColor(palette.added));
     case CodeToken::Removed:
-      return accessible(rgbHex(palette.removed));
+      return accessible(themeColor(palette.removed));
     default:
       return foreground;
     }

@@ -74,6 +74,21 @@ namespace {
         },
         "Atomic replacement must apply both variants together"
     );
+    auto alpha = changedTemplate();
+    alpha.replace(alpha.find("#123456"), 7, "#12345680");
+    alpha.replace(alpha.find("#fedcba"), 7, "#fedcba00");
+    save(user / "replacement.tmp", alpha);
+    std::filesystem::rename(user / "replacement.tmp", user / "custom.toml");
+    waitFor(
+        runtime,
+        [](const auto& snapshot) {
+          const auto& theme = snapshot.selected("custom");
+          return snapshot.issues.empty()
+              && theme.dark.background == app::ThemeColor{0x123456, 128}
+          && theme.light.background == app::ThemeColor{0xfedcba, 0};
+        },
+        "Alpha-only edits must publish a new immutable theme snapshot"
+    );
     std::filesystem::rename(user / "custom.toml", user / "renamed.toml");
     waitFor(
         runtime,

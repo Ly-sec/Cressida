@@ -16,11 +16,18 @@ namespace app {
       return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
     });
   }
+  struct ThemeColor {
+    static constexpr std::uint8_t opaque = 0xff;
+    std::uint32_t rgb;
+    std::uint8_t alpha;
+    constexpr ThemeColor(std::uint32_t color = 0, std::uint8_t opacity = opaque) : rgb(color), alpha(opacity) {}
+    bool operator==(const ThemeColor&) const = default;
+  };
   struct ThemePalette {
-    std::uint32_t background, sidebar, panel, raised, foreground, muted, accent, ink;
-    std::uint32_t rail, danger, destructive, success;
-    std::uint32_t keyword, string, number, function, type, property, preprocessor, added, removed;
-    std::uint32_t hover = property, onHover = ink;
+    ThemeColor background, sidebar, panel, raised, foreground, muted, accent, ink;
+    ThemeColor rail, danger, destructive, success;
+    ThemeColor keyword, string, number, function, type, property, preprocessor, added, removed;
+    ThemeColor hover = property, onHover = ink;
     bool operator==(const ThemePalette&) const = default;
   };
   constexpr ThemePalette defaultThemePalette(bool light) {

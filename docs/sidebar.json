@@ -68,7 +68,8 @@
         "label": "Appearance and clock format"
       },
       {
-        "slug": "docs/custom-themes"
+        "slug": "docs/custom-themes",
+        "label": "Custom themes and transparency"
       },
       {
         "slug": "docs/rich-presence"

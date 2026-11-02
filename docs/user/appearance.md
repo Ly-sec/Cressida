@@ -30,6 +30,10 @@ You can also [create a custom theme](custom-themes.md) with a TOML file. Buttons
 use a colored hover fill and its paired text color. Custom themes can set these
 separately with `hover` and `on_hover`.
 
+Custom themes also accept `#RRGGBBAA` colors for translucent surfaces. See
+[Transparent surfaces](custom-themes.md#transparent-surfaces) for examples and
+how overlapping backgrounds affect the result.
+
 ## Corners and text
 
 **Corner radius** controls the roundness of panels and controls. The default is

@@ -3,6 +3,7 @@
 #include "app/settings_style.h"
 #include "app/theme.h"
 #include "app/user_settings_form.h"
+#include "render/backend/render_backend.h"
 #include "render/scene/input_area.h"
 #include "render/scene/rect_node.h"
 #include "ui/controls/button.h"
@@ -13,7 +14,9 @@
 #include "ui/controls/slider.h"
 #include "ui/controls/toggle.h"
 
+#include <GLES3/gl3.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -992,38 +995,39 @@ namespace app {
         for (const auto light : {false, true}) {
           const auto& colors = light ? value.light : value.dark;
           const float px = 10 + (light ? previewWidth + Style::spaceDense : 0);
-          rectangle(*card, px, 51, previewWidth, 91, rgbHex(colors.background), Style::controlRadius);
-          rectangle(*card, px, 51, 28, 91, rgbHex(colors.sidebar), Style::radiusSm);
-          rectangle(*card, px, 51, 7, 91, rgbHex(colors.rail), Style::radiusSm);
-          rectangle(*card, px + (Style::spaceDense + Style::borderWidth), 61, 12, 4, rgbHex(colors.muted), 1);
-          rectangle(*card, px + Style::spaceDense, 76, 14, 10, rgbHex(colors.accent), Style::radiusXs);
-          rectangle(*card, px + (Style::spaceMd + Style::borderWidth), 79, 8, 3, rgbHex(colors.ink), 1);
-          rectangle(*card, px + (Style::spaceDense + Style::borderWidth), 93, 12, 3, rgbHex(colors.muted), 1);
-          rectangle(*card, px + (Style::spaceDense + Style::borderWidth), 103, 9, 3, rgbHex(colors.muted), 1);
+          rectangle(*card, px, 51, previewWidth, 91, themeColor(colors.background), Style::controlRadius);
+          rectangle(*card, px, 51, 28, 91, themeColor(colors.sidebar), Style::radiusSm);
+          rectangle(*card, px, 51, 7, 91, themeColor(colors.rail), Style::radiusSm);
+          rectangle(*card, px + (Style::spaceDense + Style::borderWidth), 61, 12, 4, themeColor(colors.muted), 1);
+          rectangle(*card, px + Style::spaceDense, 76, 14, 10, themeColor(colors.accent), Style::radiusXs);
+          rectangle(*card, px + (Style::spaceMd + Style::borderWidth), 79, 8, 3, themeColor(colors.ink), 1);
+          rectangle(*card, px + (Style::spaceDense + Style::borderWidth), 93, 12, 3, themeColor(colors.muted), 1);
+          rectangle(*card, px + (Style::spaceDense + Style::borderWidth), 103, 9, 3, themeColor(colors.muted), 1);
           const float chatX = px + ((Style::space2Xl + Style::spaceXxs) + Style::borderWidth),
                       chatWidth = previewWidth - ((Style::spaceSection + Style::spaceXxs) + Style::borderWidth);
-          label(*card, chatX, 57, chatWidth, light ? "Light" : "Dark", Style::fontSizeDetail, rgbHex(colors.muted));
-          rectangle(*card, chatX, 77, 12, 12, rgbHex(colors.function), Style::radiusMd);
+          label(*card, chatX, 57, chatWidth, light ? "Light" : "Dark", Style::fontSizeDetail, themeColor(colors.muted));
+          rectangle(*card, chatX, 77, 12, 12, themeColor(colors.function), Style::radiusMd);
           rectangle(
-              *card, chatX + (Style::spaceSm + Style::borderWidth), 85, 4, 4, rgbHex(colors.success), Style::radiusXs
+              *card, chatX + (Style::spaceSm + Style::borderWidth), 85, 4, 4, themeColor(colors.success),
+              Style::radiusXs
           );
           rectangle(
-              *card, chatX + (Style::spaceLg + Style::spaceXxs), 77, chatWidth * .55F, 4, rgbHex(colors.accent), 1
+              *card, chatX + (Style::spaceLg + Style::spaceXxs), 77, chatWidth * .55F, 4, themeColor(colors.accent), 1
           );
           label(
               *card, chatX + (Style::spaceLg + Style::spaceXxs), 84, chatWidth - (Style::spaceLg + Style::spaceXxs),
-              "Hello!", Style::fontSizeDetail, rgbHex(colors.foreground)
+              "Hello!", Style::fontSizeDetail, themeColor(colors.foreground)
           );
-          rectangle(*card, chatX, 104, chatWidth, 15, rgbHex(colors.panel), Style::radiusXs);
+          rectangle(*card, chatX, 104, chatWidth, 15, themeColor(colors.panel), Style::radiusXs);
           float codeX = chatX + (Style::spaceXs + Style::borderWidth);
           const float codeUnit = (chatWidth - Style::spaceLg) / 7;
           for (const auto color : {colors.keyword, colors.function, colors.string}) {
-            rectangle(*card, codeX, 110, codeUnit * 2, 3, rgbHex(color), 1);
+            rectangle(*card, codeX, 110, codeUnit * 2, 3, themeColor(color), 1);
             codeX += codeUnit * 2 + 3;
           }
-          rectangle(*card, chatX, 125, chatWidth, 10, rgbHex(colors.raised), Style::radiusXs);
+          rectangle(*card, chatX, 125, chatWidth, 10, themeColor(colors.raised), Style::radiusXs);
           rectangle(
-              *card, chatX + (Style::spaceXs + Style::borderWidth), 129, chatWidth * .5F, 2, rgbHex(colors.muted), 1
+              *card, chatX + (Style::spaceXs + Style::borderWidth), 129, chatWidth * .5F, 2, themeColor(colors.muted), 1
           );
         }
         label(*card, 12, 158, cardWidth - 122, value.bundled ? "Built in" : "Custom", Style::fontSizeDetail, muted);
@@ -2068,6 +2072,58 @@ namespace app {
       m_themeSnapshot.systemLight = false;
     } else if (step == 10) {
       require(!lightTheme && background == rgbHex(0x282828), "Gruvbox also follows system dark mode");
+      auto source = themeTemplate();
+      source.replace(source.find("#17181d"), 7, "#17181d00");
+      source.replace(source.find("#1e2027"), 7, "#1e202780");
+      source.replace(source.find("#f5f5f7"), 7, "#f5f5f780");
+      const auto custom = parseColorTheme(source, "alpha-fixture");
+      require(custom.has_value(), "The native alpha fixture uses the actual custom-theme parser");
+      m_themeSnapshot.themes.push_back(*custom);
+      m_preferences.colorTheme = custom->id;
+      m_preferences.theme = "dark";
+    } else if (step == 11 || step == 12 || step == 13) {
+      const auto* surface = dynamic_cast<const RectNode*>(m_scene->children().front().get());
+      require(
+          surface && surface->style().fill == background && background.a == (step == 11 ? 0 : colorByte(128)),
+          "The application background keeps the selected theme's transparent or translucent alpha"
+      );
+      constexpr std::uint32_t probeSize = 8;
+      auto& backend = m_window.context().backend();
+      auto target = backend.createFramebuffer(probeSize, probeSize);
+      require(target && target->valid(), "The private alpha render target is available");
+      backend.bindFramebuffer(*target);
+      backend.setViewport(probeSize, probeSize);
+      backend.disableScissor();
+      backend.clear(rgba(0, 0, 0, 0));
+      backend.setBlendMode(RenderBlendMode::PremultipliedAlpha);
+      backend.drawRect(probeSize, probeSize, probeSize, probeSize, {.fill = background}, Mat3::identity());
+      std::array<std::uint8_t, 4> pixel{};
+      glReadPixels(probeSize / 2, probeSize / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel.data());
+      backend.bindDefaultFramebuffer();
+      backend.setViewport(m_window.target().bufferWidth(), m_window.target().bufferHeight());
+      const int expectedAlpha = step == 11 ? 0 : 128;
+      require(
+          std::abs(static_cast<int>(pixel[3]) - expectedAlpha) <= 1,
+          "Native drawing preserves alpha in actual framebuffer pixels"
+      );
+      require(
+          pixel[0] <= pixel[3] && pixel[1] <= pixel[3] && pixel[2] <= pixel[3],
+          "Transparent theme rendering retains premultiplied pixels"
+      );
+      if (step == 11)
+        m_preferences.theme = "light";
+      else if (step == 12)
+        m_preferences.saturation = 0;
+      else {
+        m_preferences.colorTheme = "cressida";
+        m_preferences.theme = "dark";
+        m_preferences.saturation = 100;
+      }
+    } else if (step == 14) {
+      require(
+          background.a == 1 && foreground.a == 1 && hover.a == 1,
+          "Switching back to an RGB palette restores opaque colors"
+      );
     }
     std::clog << "Offline theme settings replay step " << step + 1 << " passed\n";
     m_window.invalidate();

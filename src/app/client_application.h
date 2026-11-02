@@ -976,6 +976,7 @@ namespace app {
     void settingsScrollbar(Node& parent, const std::string& id, Hit bounds, float content, float& offset);
     void demoFontStep();
     void demoThemeStep();
+    static constexpr int themeReplayFrames = 15;
     void savePreferences();
     void setPresence(const std::string& status, bool custom = false);
     void drawImageViewer(Node& root, float w, float h);

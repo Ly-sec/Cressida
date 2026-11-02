@@ -13,7 +13,7 @@ namespace app {
   namespace {
     struct Field {
       const char* name;
-      std::uint32_t ThemePalette::* member;
+      ThemeColor ThemePalette::* member;
       bool required = false;
     };
     constexpr Field fields[] = {
@@ -41,15 +41,19 @@ namespace app {
         {"hover", &ThemePalette::hover},
         {"on_hover", &ThemePalette::onHover}
     };
-    std::expected<std::uint32_t, std::string> color(const toml::node& node) {
+    std::expected<ThemeColor, std::string> color(const toml::node& node) {
+      constexpr std::size_t rgbLength = 7, rgbaLength = 9;
+      constexpr unsigned alphaBits = 8;
       const auto value = node.value<std::string>();
-      if (!value || value->size() != 7 || value->front() != '#')
-        return std::unexpected("Use a quoted #RRGGBB color.");
+      if (!value || (value->size() != rgbLength && value->size() != rgbaLength) || value->front() != '#')
+        return std::unexpected("Use a quoted #RRGGBB or #RRGGBBAA color, with alpha last.");
       std::uint32_t result = 0;
-      const auto [end, error] = std::from_chars(value->data() + 1, value->data() + 7, result, 16);
-      if (error != std::errc{} || end != value->data() + 7)
-        return std::unexpected("Use a quoted #RRGGBB color.");
-      return result;
+      const auto [end, error] = std::from_chars(value->data() + 1, value->data() + value->size(), result, 16);
+      if (error != std::errc{} || end != value->data() + value->size())
+        return std::unexpected("Use a quoted #RRGGBB or #RRGGBBAA color, with alpha last.");
+      return value->size() == rgbaLength
+          ? ThemeColor{result >> alphaBits, static_cast<std::uint8_t>(result & ThemeColor::opaque)}
+          : ThemeColor{result};
     }
     std::expected<ThemePalette, std::string> palette(const toml::node_view<const toml::node>& node, bool light) {
       const auto* table = node.as_table();
@@ -154,12 +158,18 @@ namespace app {
     for (const auto light : {false, true}) {
       toml::table colors;
       const auto& value = light ? definition.light : definition.dark;
-      for (const auto& field : fields)
-        colors.insert(field.name, std::format("#{:06x}", value.*(field.member)));
+      for (const auto& field : fields) {
+        const auto color = value.*(field.member);
+        colors.insert(
+            field.name,
+            color.alpha == ThemeColor::opaque ? std::format("#{:06x}", color.rgb)
+                                              : std::format("#{:06x}{:02x}", color.rgb, color.alpha)
+        );
+      }
       result.insert(light ? "light" : "dark", std::move(colors));
     }
     std::ostringstream output;
-    output << result << '\n';
+    output << "# Colors accept #RRGGBB or #RRGGBBAA, with alpha last.\n" << result << '\n';
     return output.str();
   }
   ThemeCatalog::ThemeCatalog(std::filesystem::path bundled, std::filesystem::path user)

@@ -59,8 +59,9 @@ namespace app {
     for (const auto id : {"11", "12"}) {
       const auto profile = fixture(id);
       std::vector<std::uint8_t> pixels(size * size * 4);
-      const auto color =
-          rgbHex(id == std::string_view("11") ? defaultThemePalette(false).accent : defaultThemePalette(false).success);
+      const auto color = themeColor(
+          id == std::string_view("11") ? defaultThemePalette(false).accent : defaultThemePalette(false).success
+      );
       for (std::size_t pixel = 0; pixel < pixels.size(); pixel += 4) {
         pixels[pixel] = static_cast<std::uint8_t>(color.r * 255);
         pixels[pixel + 1] = static_cast<std::uint8_t>(color.g * 255);

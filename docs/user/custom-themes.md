@@ -1,7 +1,8 @@
 ---
 title: Custom themes
 description:
-  Create a light and dark Cressida palette with a live-reloaded TOML file.
+  Create light, dark and translucent Cressida palettes with a live-reloaded TOML
+  file.
 ---
 
 ## Create a theme
@@ -22,7 +23,9 @@ not need to restart after editing colors.
 ## Complete starter
 
 Every theme needs both `[dark]` and `[light]`, with all eight required colors in
-each. Color values must be quoted six-digit hex strings.
+each. Color values must be quoted hex strings: `#RRGGBB` for an opaque color or
+`#RRGGBBAA` with alpha last for transparency. You can mix both formats in a
+theme.
 
 ```toml
 version = 1
@@ -79,6 +82,31 @@ variant's `property` color and `on_hover` to its `ink` color. Set both to
 customize button hover colors independently. Check text against every surface it
 appears on, especially `ink` against `accent` and `on_hover` against `hover`, in
 both variants.
+
+## Transparent surfaces
+
+The last two digits of `#RRGGBBAA` control opacity: `00` is fully transparent,
+`80` is about half opaque and `ff` is fully opaque. Six-digit colors remain
+fully opaque, so existing themes keep their appearance.
+
+For example, replace these colors inside your theme's `[dark]` section:
+
+```toml
+background = "#17181d00"
+sidebar = "#1e2027cc"
+rail = "#14151acc"
+panel = "#24262fb3"
+raised = "#2e313de6"
+```
+
+Surfaces overlap. A translucent panel over an opaque background still shows the
+background underneath it. Set `background` to a transparent color if you want
+those surfaces to reveal the desktop. Adjust other surface colors as needed, and
+keep text colors opaque for readability.
+
+Alpha changes reload while Cressida runs, including changes that leave the RGB
+digits unchanged. Blur is a separate compositor setting; theme transparency does
+not enable it or make transparent areas pass clicks to other windows.
 
 ## Names, limits and overrides
 

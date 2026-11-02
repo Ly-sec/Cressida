@@ -33,7 +33,8 @@ export PATH="$work/tool/squashfs-root/usr/bin:$PATH"
 export VERSION="$version" ARCH="$arch"
 tool="$work/tool/squashfs-root/usr/bin/appimagetool"
 interpreter=$(patchelf --print-interpreter "$appdir/usr/bin/cressida")
-"$tool" -s deploy "$appdir/usr/share/applications/dev.lysec.Cressida.desktop"
+LD_LIBRARY_PATH="/app/lib:/usr/lib/$triplet:/lib/$triplet" \
+    "$tool" -s deploy "$appdir/usr/share/applications/dev.lysec.Cressida.desktop"
 
 # Resolve the loader and bundled resources relative to the extracted image.
 mv "$appdir/AppRun" "$appdir/AppRun.loader"

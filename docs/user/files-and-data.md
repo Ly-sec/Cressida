@@ -59,8 +59,8 @@ number, Linux architecture, locale and timezone. These are compatibility
 metadata, separate from Cressida's own version and account credentials.
 
 The profile is not a browser engine or proof that account restrictions are
-prevented. The current [stop-use warning](faq.md#can-my-account-be-restricted)
-remains in effect.
+prevented. See the [account-risk notice](faq.md#can-my-account-be-restricted),
+including peer reports about starting new DMs and joining servers.
 
 ## Diagnostic logs
 

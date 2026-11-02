@@ -59,24 +59,15 @@ affiliation or endorsement.
 
 ## Can my account be restricted?
 
-**Do not use Cressida currently. Account-restriction reports are under
-investigation.**
-
 Yes. Multiple users have reported account violations, spam flags and loss of
 messaging access while using Cressida, including reports immediately after
 sending a message. Suspension is also a possible account risk. We have not
 established what triggered those actions. Rate-limit handling and other request
 safeguards do not guarantee protection from account restrictions or suspension.
 
-Other native-client projects have reported restrictions or advised caution
-around:
-
-- Starting new direct conversations.
-- Joining or leaving servers.
-- Managing friends or changing account details.
-- Frequent disconnects and reconnects.
-
-These examples come from
+**Take particular care when starting new DMs or joining new servers.** Other
+native-client projects have reported restrictions or advised caution around
+these actions, as described in
 [peer reports](https://github.com/uowuo/abaddon/issues/394#issuecomment-3682402026)
 and [maintainer guidance](https://github.com/uowuo/abaddon#the-spam-filter).
 They are possible risk factors, not confirmed Cressida triggers or a complete

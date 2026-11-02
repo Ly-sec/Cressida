@@ -1,19 +1,17 @@
-> [!CAUTION]
+> [!WARNING]
 >
-> **DO NOT USE CRESSIDA CURRENTLY.**
+> **Account risk: new DMs and server joins**
 >
-> Stop using Cressida while we investigate account-restriction reports. **Your
-> account can be restricted or suspended.**
+> Take particular care when starting new DMs or joining new servers. Other
+> native-client projects mention these actions as possible risk factors.
 >
-> Multiple users have reported account violations and loss of messaging access
-> while using Cressida, including reports immediately after sending a message.
-> **We have not confirmed what triggered these actions.** Browser sign-in and
-> ordinary messaging do not guarantee protection, and our request safeguards
-> cannot guarantee protection from enforcement.
+> Users have reported account flags and messaging restrictions while using
+> Cressida. **The trigger remains unconfirmed.** Existing conversations and our
+> request safeguards do not guarantee protection from restrictions or
+> suspension.
 >
-> **Do not sign in or continue using Cressida until this warning is lifted.**
-> Read the [account-risk FAQ](docs/user/faq.md#can-my-account-be-restricted)
-> before signing in.
+> Read the [account-risk FAQ](docs/user/faq.md#can-my-account-be-restricted) for
+> details. Complete any verification or security checks in the official app.
 
 <p align="center">
   <a href="https://cressida.lysec.dev">
@@ -40,14 +38,16 @@ A few highlights:
 
 ## Can my account be restricted?
 
-**Do not use Cressida currently. Account-restriction reports are under
-investigation.**
-
 Yes. Multiple users have reported violations and messaging restrictions while
 using Cressida, including reports immediately after sending a message.
 Suspension is also a possible account risk. We have not established the trigger,
 and our request safeguards cannot guarantee protection from restrictions or
 suspension.
+
+Take particular care when **starting new DMs or joining new servers**, which
+other native-client projects mention as possible risk factors. These are not
+confirmed Cressida triggers, and existing conversations are not guaranteed to
+avoid account flags.
 
 If the service requests verification or a CAPTCHA, complete it in the official
 app. Read the [account-risk FAQ](docs/user/faq.md#can-my-account-be-restricted)
@@ -88,7 +88,7 @@ available yet. Voice supports server channels and joining existing direct or
 group calls; see the [voice guide](docs/user/voice.md) for settings and current
 limits. Screen sharing needs PipeWire and your desktop's ScreenCast portal; see
 the [screen sharing guide](docs/user/screen-sharing.md) for setup and current
-limits. Image uploads are supported. Some Discord controls and settings remain
+limits. Image uploads are supported. Some service controls and settings remain
 incomplete.
 
 ## Contributing

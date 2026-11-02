@@ -1,3 +1,4 @@
+#include "api/actions.h"
 #include "api/rest_restrictions.h"
 
 #include <iostream>
@@ -45,6 +46,50 @@ int main() {
     require(
         !state.blocked(2, "POST", "/invites/another").empty(), "Join restrictions apply to subsequent server joins"
     );
+    const auto publicJoin = api::interactionRequest({.kind = api::InteractionKind::JoinGuild, .guild = "99"});
+    require(publicJoin.has_value(), "The public server join action produces a validated request");
+    require(
+        !state.blocked(2, publicJoin->method, publicJoin->path).empty(),
+        "An invite join restriction also pauses the actual public server join request"
+    );
+    for (const auto& request : {api::InteractionRequest{.path = "/invites/example", .method = "POST"}, *publicJoin}) {
+      api::RestRestrictions joins;
+      joins.reset(1);
+      joins.observe(1, request.method, request.path, 403, {{"code", 340015}});
+      require(
+          !joins.blocked(1, "POST", "/invites/another").empty()
+              && !joins.blocked(1, publicJoin->method, publicJoin->path).empty()
+              && !joins.blocked(1, publicJoin->method, publicJoin->path + "?context=preview").empty(),
+          "Join limits from either entry point pause both join routes, including query variants"
+      );
+      require(
+          joins.blocked(1, "GET", "/guilds/99/profile").empty()
+              && joins.blocked(1, "PATCH", "/guilds/99/members/@me").empty()
+              && joins.blocked(1, "DELETE", "/users/@me/guilds/99").empty()
+              && joins.blocked(1, "POST", "/channels/10/messages").empty(),
+          "Join-only limits leave reads and other action families unchanged"
+      );
+      joins.reset(2);
+      const auto notice =
+          joins.observe(2, request.method, request.path, 400, {{"captcha_key", Json::array({"private challenge"})}});
+      require(
+          notice.contains("security check")
+              && !notice.contains("private")
+              && !joins.blocked(2, "POST", "/invites/another").empty()
+              && !joins.blocked(2, publicJoin->method, publicJoin->path).empty()
+              && joins.blocked(2, "PATCH", "/users/@me").empty()
+              && joins.blocked(2, "POST", "/channels/10/messages").empty()
+              && joins.blocked(2, "POST", "/users/@me/channels").empty(),
+          "Join challenges share one scoped pause without capturing unrelated writes"
+      );
+      joins.reset(3);
+      joins.observe(2, request.method, request.path, 403, {{"code", 340015}});
+      require(
+          joins.blocked(3, "POST", "/invites/another").empty()
+              && joins.blocked(3, publicJoin->method, publicJoin->path).empty(),
+          "Explicit session replacement clears both join pauses and rejects stale restrictions"
+      );
+    }
     const auto challenge = state.observe(
         2, "POST", "/users/@me/relationships", 400,
         {{"captcha_key", Json::array({"private challenge"})}, {"captcha_rqtoken", "never retained"}}

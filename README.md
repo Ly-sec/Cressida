@@ -1,15 +1,25 @@
+> [!CAUTION]
+> **DO NOT USE CRESSIDA CURRENTLY.**
+>
+> Stop using Cressida while we investigate account-restriction reports.
+> **Your account can be restricted or suspended.**
+>
+> Multiple users have reported account violations and loss of messaging access
+> while using Cressida, including reports immediately after sending a message.
+> **We have not confirmed what triggered these actions.** Browser sign-in and
+> ordinary messaging do not guarantee protection, and our request safeguards
+> cannot guarantee protection from enforcement.
+>
+> **Do not sign in or continue using Cressida until this warning is lifted.** Read the
+> [account-risk FAQ](docs/user/faq.md#can-my-account-be-restricted) before signing in.
+
 <p align="center">
   <a href="https://cressida.lysec.dev">
     <img src="assets/cressida-logo.svg" alt="Cressida logo" width="180">
   </a>
 </p>
 
-> [!WARNING]
-> Cressida is an unofficial third-party Discord client. It is not affiliated with or
-> endorsed by Discord.
->
-> Account restrictions have been reported. Read the [account-risk notice](#can-my-account-be-restricted)
-> before signing in.
+Cressida is an unofficial, unaffiliated third-party client.
 
 # Cressida
 
@@ -28,9 +38,12 @@ A few highlights:
 
 ## Can my account be restricted?
 
-Yes. Users have reported spam flags and temporary account restrictions while
-using Cressida. We have not established the trigger, and our request safeguards
-cannot guarantee protection from restrictions or suspension.
+**Do not use Cressida currently. Account-restriction reports are under investigation.**
+
+Yes. Multiple users have reported violations and messaging restrictions while
+using Cressida, including reports immediately after sending a message. Suspension
+is also a possible account risk. We have not established the trigger, and our
+request safeguards cannot guarantee protection from restrictions or suspension.
 
 If the service requests verification or a CAPTCHA, complete it in the official
 app. Read the [account-risk FAQ](docs/user/faq.md#can-my-account-be-restricted)

@@ -80,7 +80,9 @@ text. Use synthetic text rather than a private conversation or password.
 If the service asks for verification, restricts messaging or challenges an
 action, Cressida pauses the affected writes and explains the next step. Complete
 the requested check or review **Account Standing** in the official app, then
-reconnect Cressida before trying again.
+reconnect Cressida before trying again. Join restrictions and security checks
+pause both invite joins and public-server joins. Reconnecting resets Cressida's
+local pause; it does not remove a restriction on the account.
 
 Queued actions that are stopped show an error. Cressida does not automatically
 repeat them after the restriction clears. Check whether a message arrived before

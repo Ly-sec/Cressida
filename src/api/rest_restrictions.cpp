@@ -53,7 +53,8 @@ namespace api {
       return Family::Conversations;
     if (path.starts_with("/users/@me/relationships"))
       return Family::Relationships;
-    if (method == "POST" && path.starts_with("/invites/"))
+    if ((method == "POST" && path.starts_with("/invites/"))
+        || (method == "PUT" && path.starts_with("/guilds/") && path.ends_with("/members/@me")))
       return Family::Invites;
     if (method == "PATCH" && (path == "/users/@me" || path.starts_with("/users/@me/profile")))
       return Family::Profile;

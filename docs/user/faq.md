@@ -59,8 +59,12 @@ affiliation or endorsement.
 
 ## Can my account be restricted?
 
-Yes. Users have reported spam flags and temporary restrictions while using
-Cressida. We have not established what triggered those actions. Rate-limit
+**Do not use Cressida currently. Account-restriction reports are under investigation.**
+
+Yes. Multiple users have reported account violations, spam flags and loss of
+messaging access while using Cressida, including reports immediately after
+sending a message. Suspension is also a possible account risk. We have not
+established what triggered those actions. Rate-limit
 handling and other request safeguards do not guarantee protection from account
 restrictions or suspension.
 

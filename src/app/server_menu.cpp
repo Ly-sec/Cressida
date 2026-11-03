@@ -41,6 +41,10 @@ namespace app {
   ClientApplication::serverChannelPermissions(const std::string& guild, const std::string& channel) const {
     const auto* target = serverChannel(guild, channel);
     if (!target)
+      target = m_threads.find(guild, channel);
+    if (target && target->isThread())
+      target = serverChannel(guild, target->parentId);
+    if (!target)
       return {};
     return api::channelPermissions(
         guild, m_account.id, m_roleDirectory.owner(guild), m_roleDirectory.allRoles(guild),

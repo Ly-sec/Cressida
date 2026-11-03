@@ -643,6 +643,8 @@ namespace app {
         demoInboxStep();
       if (m_demo && m_demoOverlay.starts_with("search-cycle") && m_demoInteractionStep < searchReplayFrames)
         demoSearchStep();
+      if (m_demo && m_demoOverlay.starts_with("permissions-cycle") && m_demoInteractionStep < permissionsReplayFrames)
+        demoPermissionsStep();
       if (m_demo && m_demoOverlay.starts_with("outgoing-cycle") && m_demoInteractionStep < outgoingReplayFrames)
         demoOutgoingStep();
       if (m_demo
@@ -1375,6 +1377,10 @@ namespace app {
         return;
       if (m_pasteConnected != m_connected || m_pasteSession != m_session || m_pasteChannel != m_channelId)
         return;
+      if ((m_pasteInput.empty() || m_pasteInput == "composer")
+          && m_connected
+          && selectedChannelWriteAccess() != api::MessageWriteAccess::Allowed)
+        return;
       if (!m_pasteInput.empty()) {
         auto id = std::exchange(m_pasteInput, {});
         if (id == "message-edit"
@@ -1777,9 +1783,10 @@ namespace app {
                    : m_demo && view && std::string_view(view).starts_with("search-cycle") ? searchReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("server-access-cycle")
                    ? serverAccessReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("outgoing-cycle")   ? outgoingReplayFrames
-                   : m_demo && view && std::string_view(view).starts_with("chat-links-cycle") ? chatLinkReplayFrames
-                   : m_demo && view && std::string_view(view) == "attachment-cycle"           ? attachmentReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("permissions-cycle") ? permissionsReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("outgoing-cycle")    ? outgoingReplayFrames
+                   : m_demo && view && std::string_view(view).starts_with("chat-links-cycle")  ? chatLinkReplayFrames
+                   : m_demo && view && std::string_view(view) == "attachment-cycle"            ? attachmentReplayFrames
                    : m_demo && view && std::string_view(view).starts_with("window-controls-cycle")
                    ? windowControlsReplayFrames
                    : m_demo && view && std::string_view(view) == "tray-cycle"                 ? trayReplayFrames
@@ -1980,6 +1987,8 @@ namespace app {
       throw std::runtime_error("Inbox replay did not complete");
     if (m_demoOverlay.starts_with("search-cycle") && m_demoInteractionStep != searchReplayFrames)
       throw std::runtime_error("Search menu replay did not complete");
+    if (m_demoOverlay.starts_with("permissions-cycle") && m_demoInteractionStep != permissionsReplayFrames)
+      throw std::runtime_error("Channel permission replay did not complete");
     if (m_demoOverlay.starts_with("outgoing-cycle") && m_demoInteractionStep != outgoingReplayFrames)
       throw std::runtime_error("Outgoing message replay did not complete");
     if (m_demoOverlay.starts_with("typing-cycle") && m_demoInteractionStep != typingReplayFrames)
@@ -2143,6 +2152,18 @@ namespace app {
               "moonInvite", {.id = "99901", .name = "Moon Cafe", .members = 21, .online = 13}, "demo-preview"
           };
           m_invitePreviews[invite.code].data = invite;
+          m_history.restoreLatest(m_messages, true);
+        } else if (view.starts_with("permissions-cycle")) {
+          m_demoOverlay = view;
+          if (view.ends_with("light"))
+            m_preferences.theme = "light";
+          if (view.ends_with("narrow"))
+            m_window.setUiScale(1.5F);
+          m_showMembers = false;
+          m_drafts[m_channelId] = "Keep this draft when access changes.";
+          m_messages = {
+              {"89001", m_channelId, "Maya", "This conversation remains selectable.", "2026-11-02T14:00:00Z", "11"}
+          };
           m_history.restoreLatest(m_messages, true);
         } else if (view.starts_with("outgoing-cycle")) {
           m_demoOverlay = view;
@@ -4674,9 +4695,13 @@ namespace app {
       else if (forum)
         drawForum(root, left, 102, bodyWidth, h - 102);
       else {
+        prepareChannelWriteAccess();
+        const auto writeRestriction = selectedChannelWriteRestriction();
         const auto& draft = m_drafts[m_channelId];
         m_edit.clamp(draft);
-        m_draftWidth = std::max(32.0F, bodyWidth - 222);
+        m_draftWidth = writeRestriction.empty()
+            ? std::max(32.0F, bodyWidth - 222)
+            : layout::Composer::readOnlyReasonWidth(bodyWidth - layout::Floating::gap);
         m_draftOffsets = TextEdit::stops(draft);
         const TextPresentation draftPresentation(draft, composerReplacements(draft));
         std::erase_if(m_draftOffsets, [&](const auto byte) {
@@ -4689,14 +4714,30 @@ namespace app {
         m_window.target().renderer().measureTextCursorStopsWrapped(
             draftPresentation.text(), Style::fontSizeBody, displayOffsets, m_draftWidth, m_draftStops
         );
-        const float fullDraftHeight = m_draftStops.empty()
+        float fullDraftHeight = m_draftStops.empty()
             ? layout::Composer::minimumTextHeight
             : m_draftStops.back().y + std::max(layout::Composer::minimumTextHeight, m_draftStops.back().height);
+        if (draft.empty() && !writeRestriction.empty()) {
+          const auto metrics = m_window.target().renderer().measureText(
+              writeRestriction, Style::fontSizeBody, FontWeight::Normal, m_draftWidth
+          );
+          fullDraftHeight = std::max(fullDraftHeight, std::ceil(metrics.bottom - metrics.top));
+        }
         m_draftHeight = std::clamp(fullDraftHeight, layout::Composer::minimumTextHeight, std::min(160.0F, h * 0.3F));
         const float uploadHeight = m_attachments[m_channelId].empty() ? 0 : layout::DraftAttachment::composerReserve;
         const float stickerHeight = m_draftStickers[m_channelId].empty() ? 0 : 100;
         const float attachmentHeight = uploadHeight + stickerHeight;
         const float replyHeight = m_replies.contains(m_channelId) ? layout::ComposerReply::height : 0;
+        float reasonHeight = 0;
+        if (!writeRestriction.empty() && !draft.empty() && !slashComposerActive()) {
+          const auto metrics = m_window.target().renderer().measureText(
+              writeRestriction, Style::fontSizeMini, FontWeight::Normal,
+              layout::Composer::readOnlyReasonWidth(bodyWidth - layout::Floating::gap),
+              layout::Composer::maximumReasonLines
+          );
+          reasonHeight = std::ceil(std::max(Style::fontSizeMini + Style::spaceXs, metrics.bottom - metrics.top));
+        }
+        const float reasonReserve = layout::Composer::reasonReserve(reasonHeight);
         if (voiceStage)
           m_draftHeight = std::min(
               m_draftHeight,
@@ -4709,11 +4750,12 @@ namespace app {
                       - layout::Composer::verticalPadding
                       - attachmentHeight
                       - replyHeight
+                      - reasonReserve
               )
           );
         const float composerHeight = slashComposerActive()
             ? measureSlashComposer(bodyWidth - layout::Floating::gap, h)
-            : m_draftHeight + layout::Composer::verticalPadding + attachmentHeight + replyHeight;
+            : m_draftHeight + layout::Composer::verticalPadding + attachmentHeight + replyHeight + reasonReserve;
         if (voiceStage) {
           stage = layout::Sharing::stage(
               chatLeft(), w, h,
@@ -5054,6 +5096,8 @@ namespace app {
         content->setPosition(left + Style::spaceXl, top);
         content->setSize(bodyWidth - Style::spaceGroup, std::max(0.0F, bottom - top));
         std::vector<std::string> missingAuthors;
+        if (!m_dmMode && !m_roleDirectory.memberships(m_guildId, m_account.id))
+          missingAuthors.push_back(m_account.id);
         float y = (bottom - top - totalHeight) + m_messageScroll + timelineTopPadding;
         if (introHeight > 0) {
           channelIntro(content.get(), 50, y, textWidth);
@@ -6229,26 +6273,45 @@ namespace app {
           m_draftX = left + 74;
           m_composerTop = composerY;
           m_draftY = composerY + replyHeight + attachmentHeight + Style::spaceXs;
+          const auto readOnly = layout::readOnlyComposerFrames(
+              {left + layout::Floating::inset, composerY, bodyWidth - layout::Floating::gap, composerHeight}, m_draftY,
+              reasonHeight
+          );
+          if (!writeRestriction.empty())
+            m_draftX = readOnly.input.x + layout::Composer::readOnlyTextInset;
           inputControl(
-              root, left + 68, m_draftY, m_draftWidth + Style::spaceMd,
-              composerHeight - attachmentHeight - replyHeight - Style::spaceSm, "composer", draft,
-              m_demo ? "Demo mode is read-only" : "Message this channel…", true
+              root, writeRestriction.empty() ? left + 68 : readOnly.input.x, m_draftY,
+              writeRestriction.empty() ? m_draftWidth + Style::spaceMd : readOnly.input.width,
+              writeRestriction.empty() ? composerHeight - attachmentHeight - replyHeight - Style::spaceSm
+                                       : readOnly.input.height,
+              "composer", draft,
+              !writeRestriction.empty()                                       ? writeRestriction
+                  : m_demo && !m_demoOverlay.starts_with("permissions-cycle") ? "Demo mode is read-only"
+                                                                              : "Message this channel…",
+              true
           );
           const auto actionY =
               composerY + composerHeight - ((Style::spaceSection - Style::spaceXxs) + Style::borderWidth);
-          iconButton(
-              root, {left + (Style::space2Xl - Style::spaceXxs), actionY, 32, 32, Action::PasteClipboard, {}},
-              "clipboard-plus", "Paste from clipboard"
-          );
-          iconButton(
-              root, {left + bodyWidth - 62, actionY, 32, 32, Action::ToggleEmoji, {}}, "mood-smile", "Emoji",
-              m_emojiMenu && !m_stickerTab
-          );
-          iconButton(root, {left + bodyWidth - 98, actionY, 32, 32, Action::ToggleGif, {}}, "gif", "GIFs", m_gifMenu);
-          iconButton(
-              root, {left + bodyWidth - 134, actionY, 32, 32, Action::ToggleStickers, {}}, "sticker", "Stickers",
-              m_emojiMenu && m_stickerTab
-          );
+          if (!writeRestriction.empty() && !draft.empty())
+            label(
+                root, readOnly.reason.x, readOnly.reason.y, readOnly.reason.width, writeRestriction,
+                Style::fontSizeMini, muted, FontWeight::Normal, layout::Composer::maximumReasonLines
+            );
+          if (writeRestriction.empty()) {
+            iconButton(
+                root, {left + (Style::space2Xl - Style::spaceXxs), actionY, 32, 32, Action::PasteClipboard, {}},
+                "clipboard-plus", "Paste from clipboard"
+            );
+            iconButton(
+                root, {left + bodyWidth - 62, actionY, 32, 32, Action::ToggleEmoji, {}}, "mood-smile", "Emoji",
+                m_emojiMenu && !m_stickerTab
+            );
+            iconButton(root, {left + bodyWidth - 98, actionY, 32, 32, Action::ToggleGif, {}}, "gif", "GIFs", m_gifMenu);
+            iconButton(
+                root, {left + bodyWidth - 134, actionY, 32, 32, Action::ToggleStickers, {}}, "sticker", "Stickers",
+                m_emojiMenu && m_stickerTab
+            );
+          }
         }
         if (!m_status.empty())
           label(
@@ -7785,6 +7848,7 @@ namespace app {
               || event.operation == api::Operation::MessageDelete))
         inboxEvent(event);
       filterDeletedChannels(event);
+      filterChannelPermissionSnapshot(event);
       if (!event.unauthorized && chatPreloadEvent(event)) {
         m_window.invalidate();
         continue;
@@ -7944,6 +8008,7 @@ namespace app {
         emojiEvent(event);
       } else if (event.operation == api::Operation::Threads || event.operation == api::Operation::ThreadUpdate) {
         threadEvent(event);
+        revokeUnavailableOutgoing();
         continue; // Scoped browsing errors belong to their forum/browser, never another channel.
 
       } else if (
@@ -8024,6 +8089,7 @@ namespace app {
       } else if (event.operation == api::Operation::RoleStyles) {
         serverSettingsRoleUpdate(event.roleUpdates);
         m_roleDirectory.apply(event.roleUpdates);
+        revokeUnavailableOutgoing();
         m_messageLayouts.clear();
         m_completionDirty = true;
         if (event.roleUpdates.reset)
@@ -8051,6 +8117,7 @@ namespace app {
           removeGuildChannels(event);
           continue;
         }
+        invalidateChannelPermissions(event);
         m_guildChannels.erase(event.resource);
         if (!m_dmMode && event.resource == m_guildId) {
           m_restoreChannel = m_channelId;
@@ -8455,6 +8522,8 @@ namespace app {
 
   void ClientApplication::insert(std::string text) {
     if (!m_connected && !m_showTokenEntry)
+      return;
+    if (m_connected && selectedChannelWriteAccess() != api::MessageWriteAccess::Allowed)
       return;
     if (!m_fieldFocused || m_connecting || (m_connected && (m_demo || m_channelId.empty())))
       return;
@@ -9150,7 +9219,7 @@ namespace app {
         refreshDmProfile();
     } break;
     case Action::PasteClipboard:
-      if (!m_demo && !m_channelId.empty()) {
+      if (!m_demo && !m_channelId.empty() && canSendToThread()) {
         focusControl("composer");
         beginInputPaste("composer", true);
       }
@@ -9282,6 +9351,8 @@ namespace app {
       m_edit.end(m_token);
       break;
     case Action::Composer:
+      if (selectedChannelWriteAccess() != api::MessageWriteAccess::Allowed)
+        break;
       m_fieldFocused = true;
       m_selectAll = false;
       m_dragDraft = true;

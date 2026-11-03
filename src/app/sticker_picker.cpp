@@ -138,13 +138,8 @@ namespace app {
   }
 
   std::string ClientApplication::stickerRestriction(const api::Sticker& sticker) const {
-    if (!m_dmMode && !m_demo) {
-      const auto permissions = selectedChannelPermissions().value_or(0);
-      const auto* channel = selectedChannel();
-      const auto sendBit = channel && channel->isThread() ? 1ULL << 38 : 1ULL << 11;
-      if (!(permissions & api::viewChannel) || !(permissions & sendBit))
-        return "You do not have permission to send messages in this channel.";
-    }
+    if (const auto restriction = selectedChannelWriteRestriction(); !restriction.empty())
+      return restriction;
     const bool external = m_dmMode || m_demo || (selectedChannelPermissions().value_or(0) & (1ULL << 37));
     const auto reason =
         api::stickerUnavailable(sticker, m_dmMode ? "" : m_guildId, m_account.premiumType.value_or(0), external);

@@ -474,7 +474,9 @@ namespace app {
             placeholder
         );
         input.setFrameVisible(false);
-        input.setEnabled(!m_slashPending && m_dialogKind.empty());
+        input.setEnabled(
+            !m_slashPending && m_dialogKind.empty() && selectedChannelWriteAccess() == api::MessageWriteAccess::Allowed
+        );
         input.setHorizontalPadding(Style::spaceXs);
         continue;
       }
@@ -507,7 +509,9 @@ namespace app {
         input.setFrameVisible(false);
         input.setMultilineCenterWhenFits(true);
         input.setHorizontalPadding(Style::spaceXs);
-        input.setEnabled(!m_slashPending && m_dialogKind.empty());
+        input.setEnabled(
+            !m_slashPending && m_dialogKind.empty() && selectedChannelWriteAccess() == api::MessageWriteAccess::Allowed
+        );
         input.refreshTextPresentation();
       } else {
         std::string value = m_slashValues[option];

@@ -158,7 +158,12 @@ permission and print the failing check's log directly in the job output.
 
 The release job attaches both `.AppImage` and `.flatpak` files for each
 architecture, a `cressida-VERSION.tar.xz` source archive and `SHA256SUMS`
-covering all five files to the draft release. A maintainer publishes it. The
-workflow does not upload an application to Flathub or another distribution
+covering all five files, then publishes the release automatically after every
+required check succeeds. Uploads stay in a private draft until the complete
+asset set, file sizes and SHA-256 digests have been verified. Failed uploads or
+verification leave that draft unpublished. Rerunning a tag can repair an
+unfinished draft; an already published release and its assets remain unchanged.
+
+The workflow does not upload an application to Flathub or another distribution
 repository. Manual runs of **Release packages** on a version tag retain package
-artifacts for seven days without creating a release.
+artifacts for seven days without creating or publishing a release.

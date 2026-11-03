@@ -237,6 +237,11 @@ namespace api {
           if (!exists)
             ++m_memberCount;
         }
+      if (!update.removedRoles.empty()) {
+        const std::set<std::string, std::less<>> removed(update.removedRoles.begin(), update.removedRoles.end());
+        for (auto& [_, roles] : target.members)
+          std::erase_if(roles, [&](const auto& id) { return removed.contains(id); });
+      }
     }
   }
   std::vector<ColoredRole> RoleDirectory::allRoles(const std::string& guild) const {

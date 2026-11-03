@@ -27,7 +27,7 @@
     "items": [
       {
         "slug": "docs/chat",
-        "label": "Chat, formatting, reactions and emoji"
+        "label": "Chat, permissions, formatting and reactions"
       },
       {
         "slug": "docs/inbox"
@@ -108,7 +108,7 @@
       },
       {
         "slug": "docs/packaging",
-        "label": "Packaging, versions and bundled libraries"
+        "label": "Packaging, versions and releases"
       }
     ]
   }

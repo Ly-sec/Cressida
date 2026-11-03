@@ -59,6 +59,18 @@ int main() {
     api::RestRequestScope resumed{stop.get_token(), &session, 7, &revision, revision.load(), &ready};
     require(resumed.cancellation() == api::RestCancellation::None, "A resumed read uses the new queue revision");
     api::RestRequestScope mutation{stop.get_token(), &session, 7};
+    std::atomic_bool messageRevoked{false};
+    api::RestRequestScope messageWrite{stop.get_token(), &session, 7};
+    messageWrite.revoked = &messageRevoked;
+    require(
+        messageWrite.cancellation() == api::RestCancellation::None,
+        "Accepted message writes retain an independent permission lease"
+    );
+    messageRevoked = true;
+    require(
+        messageWrite.cancellation() == api::RestCancellation::Superseded,
+        "Revoked message permission cancels queued admission and future rate-limit attempts"
+    );
     ++revision;
     require(
         mutation.cancellation() == api::RestCancellation::None,

@@ -540,15 +540,12 @@ namespace app {
     return true;
   }
   bool ClientApplication::canSendToThread() {
-    const auto* thread = m_threads.find(m_guildId, m_channelId);
-    if (forumView())
-      return false;
-    if (!m_dmMode && thread && thread->archived.value_or(false)) {
-      m_status = "Reopen this thread before sending a message.";
-      m_window.invalidate();
-      return false;
-    }
-    return true;
+    const auto restriction = selectedChannelWriteRestriction();
+    if (restriction.empty())
+      return true;
+    m_status = restriction;
+    m_window.invalidate();
+    return false;
   }
   float ClientApplication::threadStrip(Node* root, const api::Message& message, float x, float y, float width) {
     const auto* thread = m_threads.find(m_guildId, message.id);

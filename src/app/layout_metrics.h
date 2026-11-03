@@ -191,7 +191,26 @@ namespace app::layout {
     static constexpr float minimumTextHeight = Style::fontSizeBody + Style::spaceSm;
     static constexpr float verticalPadding = Style::spaceXl;
     static constexpr float minimumHeight = minimumTextHeight + verticalPadding;
+    static constexpr int maximumReasonLines = 2;
+    static constexpr float readOnlyTextInset = Style::spaceXs + Style::inputTextInnerInset;
+    static float readOnlyInputWidth(float width) { return std::max(0.0F, width - Style::spaceLg * 2); }
+    static float readOnlyReasonWidth(float width) {
+      return std::max(0.0F, readOnlyInputWidth(width) - readOnlyTextInset * 2);
+    }
+    static float reasonReserve(float height) { return height > 0 ? height + Style::spaceSm : 0; }
   };
+  struct ReadOnlyComposerFrames {
+    Frame input, reason;
+  };
+  inline ReadOnlyComposerFrames readOnlyComposerFrames(Frame composer, float contentTop, float reasonHeight) {
+    const float x = composer.x + Style::spaceLg;
+    const float reasonTop = composer.y + composer.height - Style::spaceXs - reasonHeight;
+    const float inputBottom = reasonTop - (reasonHeight > 0 ? Style::spaceSm : 0);
+    return {
+        {x, contentTop, Composer::readOnlyInputWidth(composer.width), std::max(0.0F, inputBottom - contentTop)},
+        {x + Composer::readOnlyTextInset, reasonTop, Composer::readOnlyReasonWidth(composer.width), reasonHeight}
+    };
+  }
   struct ComposerReply {
     static constexpr float controlSize = Style::spaceXl;
     static constexpr float padding = Style::spaceSm;

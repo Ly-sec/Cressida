@@ -118,6 +118,11 @@ namespace app {
   }
 
   void ClientApplication::updateCompletion() {
+    if ((m_focusedInput == "composer" || m_slashCommand)
+        && selectedChannelWriteAccess() != api::MessageWriteAccess::Allowed) {
+      closeCompletion();
+      return;
+    }
     if (m_slashCommand) {
       updateSlashArgumentCompletion();
       return;

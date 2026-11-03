@@ -44,6 +44,8 @@ namespace app {
       std::string content, std::vector<api::Upload> uploads, std::vector<std::string> stickers,
       std::vector<api::Sticker> previews, bool consumeDraft, std::optional<api::Gif> gif
   ) {
+    if (!canSendToThread())
+      return false;
     if ((!m_connected && !m_demo) || m_channelId.empty() || (m_demo && !m_demoOverlay.starts_with("outgoing-cycle")))
       return false;
     std::size_t retained = 0, retainedTextures = 0, submittedTextures = 0;
@@ -65,11 +67,14 @@ namespace app {
     }
     const auto nonce = outgoingNonce();
     const auto reply = m_replies.contains(m_channelId) ? std::optional(m_replies.at(m_channelId)) : std::nullopt;
-    if (!m_demo && !m_client.send(m_channelId, content, uploads, reply, stickers, nonce)) {
+    const auto revoked = std::make_shared<std::atomic_bool>(false);
+    if (!m_demo && !m_client.send(m_channelId, content, uploads, reply, stickers, nonce, revoked)) {
       m_status = "Could not queue this message. Check its length and attachments.";
       return false;
     }
     PendingSend pending;
+    pending.guild = m_dmMode ? "" : m_guildId;
+    pending.revoked = revoked;
     pending.composer = consumeDraft;
     pending.preview = {
         .id = "pending:" + nonce,
@@ -132,6 +137,8 @@ namespace app {
   }
 
   void ClientApplication::releaseOutgoing(PendingSend& pending) {
+    if (pending.revoked)
+      pending.revoked->store(true);
     for (auto& image : pending.images) {
       if (!image.texture.valid())
         continue;
@@ -149,6 +156,25 @@ namespace app {
       releaseOutgoing(pending);
     m_pendingSends.clear();
     m_sending = false;
+  }
+  void ClientApplication::revokeUnavailableOutgoing() {
+    for (auto& [_, pending] : m_pendingSends) {
+      if (pending.completed || pending.guild.empty() || !pending.revoked || pending.revoked->load())
+        continue;
+      const auto* channel = serverChannel(pending.guild, pending.preview.channelId);
+      if (!channel)
+        channel = m_threads.find(pending.guild, pending.preview.channelId);
+      const auto permissions = serverChannelPermissions(pending.guild, pending.preview.channelId);
+      if (channel && api::messageWriteAccess(*channel, permissions) == api::MessageWriteAccess::Allowed)
+        continue;
+      pending.revoked->store(true);
+      pending.completed = true;
+      pending.error = "Message delivery could not be confirmed after channel access changed. Check the conversation "
+                      "before trying again.";
+    }
+    m_sending = std::ranges::any_of(m_pendingSends, [](const auto& entry) {
+      return !entry.second.completed && entry.second.confirmed.empty();
+    });
   }
 
   void ClientApplication::confirmOutgoing(api::Message& message) {
@@ -207,7 +233,8 @@ namespace app {
     if (!pending.confirmed.empty()) {
       m_pendingSends.erase(found);
     } else if (!event.error.empty() || event.messages.empty()) {
-      pending.error = event.error.empty() ? "No delivery confirmation received." : event.error;
+      if (!pending.revoked || !pending.revoked->load())
+        pending.error = event.error.empty() ? "No delivery confirmation received." : event.error;
       pending.securityChallenge = event.securityChallenge;
       m_status = "Message delivery was not confirmed. Restore the pending message to edit it.";
     }

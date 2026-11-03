@@ -654,6 +654,13 @@ namespace app {
     void prepareThreadDemo(const std::string& view);
     void demoThreadStep();
     bool canSendToThread();
+    api::MessageWriteAccess selectedChannelWriteAccess() const;
+    std::string selectedChannelWriteRestriction() const;
+    void filterChannelPermissionSnapshot(api::Event& event) const;
+    std::string channelPermissionGuild(const std::string& channel) const;
+    void invalidateChannelPermissions(const api::Event& event);
+    void prepareChannelWriteAccess();
+    void demoPermissionsStep();
     bool guildProfileAction(const Hit& hit);
     void prepareGuildTagDemo();
     void demoGuildTagStep();
@@ -1565,6 +1572,7 @@ namespace app {
     std::uint64_t m_threadSerial = 0;
     std::set<std::string> m_channelDetailRequests, m_channelDetailsLoaded;
     std::map<std::string, std::string> m_channelDetailErrors;
+    std::map<std::string, std::uint64_t> m_channelPermissionRevisions;
     std::string m_channelSearchText, m_channelPanel, m_channelPanelError;
     struct SearchSuggestion {
       std::string title, detail, insert, glyph = "search", avatar;
@@ -1746,6 +1754,8 @@ namespace app {
       std::vector<api::Sticker> stickers;
       std::map<std::string, std::string> mentions;
       std::string confirmed, error;
+      std::string guild;
+      std::shared_ptr<std::atomic_bool> revoked;
       bool completed = false, composer = false, securityChallenge = false;
     };
     std::map<std::string, PendingSend> m_pendingSends;
@@ -1757,10 +1767,12 @@ namespace app {
     void outgoingResult(api::Event& event);
     void releaseOutgoing(PendingSend& pending);
     void clearOutgoing();
+    void revokeUnavailableOutgoing();
     void restoreOutgoing(const std::string& nonce);
     void messageSecurityAction(const std::string& action);
     void drawMessageSecurity(Node& root, float width, float height);
     void demoOutgoingStep();
+    static constexpr int permissionsReplayFrames = 16;
     static constexpr int outgoingReplayFrames = 16;
     std::vector<std::string> m_demoOutgoingNonces;
     std::uint32_t m_demoOutgoingTexture = 0;

@@ -53,7 +53,6 @@ namespace {
   constexpr float kClearGlyphScale = 0.85F;
   constexpr auto kCursorBlinkInterval = std::chrono::milliseconds(530);
   constexpr auto kCursorBlinkResumeDelay = std::chrono::milliseconds(650);
-  constexpr float kTextInnerInset = 3.0F;
   constexpr float kPlaceholderAlpha = 0.68F;
   constexpr float kPrimaryPlaceholderAlpha = 0.50F;
   constexpr float kPasswordGlyphScale = 0.82F;
@@ -240,7 +239,7 @@ Input::Input() {
     if (data.pressed) {
       resetUndoCoalescing();
       m_goalCaretX = -1.0F;
-      const float textStartX = m_horizontalPadding + kTextInnerInset;
+      const float textStartX = m_horizontalPadding + Style::inputTextInnerInset;
       const std::size_t offset = m_multiline
           ? pointToByteOffset(data.localX - textStartX, data.localY - multilineTextTop() + m_scrollOffsetY)
           : xToByteOffset(data.localX - textStartX + m_scrollOffset - m_contentLeadSlack);
@@ -288,7 +287,7 @@ Input::Input() {
     if (m_inputArea != nullptr && m_inputArea->pressed()) {
       resetUndoCoalescing();
       m_goalCaretX = -1.0F;
-      const float textStartX = m_horizontalPadding + kTextInnerInset;
+      const float textStartX = m_horizontalPadding + Style::inputTextInnerInset;
       if (m_multiline) {
         // Drag near the top/bottom edge pans the viewport a line per motion event.
         const float heightPx = height() > 0.0F ? height() : m_controlHeight;
@@ -994,7 +993,7 @@ void Input::recomputeContentLeadSlack(Renderer& renderer, float width, bool show
     return;
   }
 
-  const float textInset = m_horizontalPadding + kTextInnerInset;
+  const float textInset = m_horizontalPadding + Style::inputTextInnerInset;
   const float rightInset = showClearButton ? clearButtonTextReserveWidth() : textInset;
   const float viewportWidth = std::max(0.0F, width - textInset - rightInset);
   float textExtent = 0.0F;
@@ -1169,7 +1168,7 @@ void Input::doLayout(Renderer& renderer) {
   m_background->setFrameSize(w, h);
 
   if (m_textViewport != nullptr) {
-    const float textInset = m_horizontalPadding + kTextInnerInset;
+    const float textInset = m_horizontalPadding + Style::inputTextInnerInset;
     const float rightInset = showClearButton ? clearButtonTextReserveWidth() : textInset;
     const float viewportW = std::max(0.0F, w - textInset - rightInset);
     m_textViewport->setPosition(textInset, 0.0F);
@@ -1949,7 +1948,7 @@ void Input::ensureCursorVisible() {
   }
 
   const float cursorContentX = stopXForByte(m_cursorPos);
-  const float revealPad = std::max(kCursorRevealPadding, kTextInnerInset);
+  const float revealPad = std::max(kCursorRevealPadding, Style::inputTextInnerInset);
   const float slack = m_contentLeadSlack;
   const float cursorVx = cursorContentX - m_scrollOffset + slack;
   const float leftEdge = revealPad;
@@ -2359,7 +2358,7 @@ void Input::animatePasswordGlyphIn(GlyphNode& glyph) {
 
 float Input::textViewportWidth() const noexcept {
   const float w = width() > 0.0F ? width() : kMinWidth;
-  const float textInset = m_horizontalPadding + kTextInnerInset;
+  const float textInset = m_horizontalPadding + Style::inputTextInnerInset;
   const float rightInset = clearButtonVisible() ? clearButtonTextReserveWidth() : textInset;
   return std::max(0.0F, w - textInset - rightInset);
 }
@@ -2379,7 +2378,7 @@ float Input::clearButtonTextReserveWidth() const noexcept {
     return 0.0F;
   }
   const float clearGlyphSize = std::round(m_fontSize * kClearGlyphScale);
-  return clearButtonHitWidth() * 0.5F + clearGlyphSize * 0.5F + kTextInnerInset;
+  return clearButtonHitWidth() * 0.5F + clearGlyphSize * 0.5F + Style::inputTextInnerInset;
 }
 
 bool Input::hasSelection() const noexcept { return selectionStart() != selectionEnd(); }

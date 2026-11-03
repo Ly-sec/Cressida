@@ -173,7 +173,7 @@ namespace app {
     if (found != m_inputs.end())
       for (const auto* node = static_cast<Node*>(found->second); node; node = node->parent())
         mounted |= node == m_scene.get();
-    if (mounted) {
+    if (mounted && found->second->enabled()) {
       m_focusedInput = id;
       m_controlInput.setFocus(found->second->inputArea());
     }
@@ -204,6 +204,7 @@ namespace app {
         || !m_connected
         || startupCovered()
         || m_channelId.empty()
+        || selectedChannelWriteAccess() != api::MessageWriteAccess::Allowed
         || settingsVisible()
         || !m_dialogKind.empty()
         || m_contextOpen
@@ -517,7 +518,7 @@ namespace app {
       if (input != m_inputs.end())
         for (const auto* node = static_cast<Node*>(input->second); node; node = node->parent())
           mounted |= node == m_scene.get();
-      if (mounted)
+      if (mounted && input->second->enabled())
         focusControl(m_focusedInput);
       else {
         m_controlInput.setFocus(nullptr);
@@ -580,7 +581,7 @@ namespace app {
       field->setMultiline(multiline);
       field->setMultilineCenterWhenFits(id == "composer");
       if (id == "composer")
-        field->setHorizontalPadding(4);
+        field->setHorizontalPadding(Style::spaceXs);
       field->setPasswordMode(password);
       field->setSubmitOnEnter(id == "composer");
       field->setOnFocusGain([this, id] {
@@ -623,7 +624,7 @@ namespace app {
       });
       field->setOnChange([this, id](const std::string& text) {
         if (id == "composer") {
-          if (text.size() <= 8000) {
+          if (text.size() <= 8000 && selectedChannelWriteAccess() == api::MessageWriteAccess::Allowed) {
             m_drafts[m_channelId] = text;
             m_edit.end(text);
           }
@@ -797,6 +798,10 @@ namespace app {
     else
       m_multilineInputs.erase(id);
     input.setMultiline(multiline);
+    if (id == "composer")
+      input.setMultilineCenterWhenFits(
+          !value.empty() || selectedChannelWriteAccess() == api::MessageWriteAccess::Allowed
+      );
     input.setSubmitOnEnter(
         id == "composer"
         || id == "dialog"
@@ -818,6 +823,7 @@ namespace app {
          || id == "dm-create-search"
          || (m_dialogKind == "composer-link" && id.starts_with("composer-link:")))
         && (!m_serverSettings.open || id.starts_with("server-settings:"))
+        && (id != "composer" || selectedChannelWriteAccess() == api::MessageWriteAccess::Allowed)
         && (id.starts_with("server-access:") ? !m_dialogPending
                 : id == "dm-create-search"   ? !m_dialogPending
                 : id == "dialog"             ? !m_dialogPending
@@ -835,6 +841,7 @@ namespace app {
                     || m_demoOverlay.starts_with("composer-edit-cycle")
                     || m_demoOverlay.starts_with("chat-links-cycle")
                     || m_demoOverlay.starts_with("autocomplete")
+                    || m_demoOverlay.starts_with("permissions-cycle")
                                    : !m_savingProfile)
     );
     input.setControlHeight(height);

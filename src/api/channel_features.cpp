@@ -281,6 +281,36 @@ namespace api {
         *bits = (*bits & ~*permissionBits(o.deny)) | *permissionBits(o.allow);
     return bits;
   }
+  MessageWriteAccess messageWriteAccess(const Channel& channel, std::optional<std::uint64_t> permissions) {
+    if (channel.kind() == ChannelType::DirectMessage || channel.kind() == ChannelType::GroupDirectMessage)
+      return MessageWriteAccess::Allowed;
+    if (!channel.isThread()
+        && channel.kind() != ChannelType::GuildText
+        && channel.kind() != ChannelType::GuildAnnouncement
+        && channel.kind() != ChannelType::GuildVoice
+        && channel.kind() != ChannelType::GuildStageVoice)
+      return MessageWriteAccess::Unsupported;
+    if (!permissions)
+      return MessageWriteAccess::Unknown;
+    if (!(*permissions & viewChannel))
+      return MessageWriteAccess::Hidden;
+    if (!(*permissions & (channel.isThread() ? sendMessagesInThreads : sendMessages)))
+      return MessageWriteAccess::Denied;
+    if (channel.isThread()) {
+      if (!channel.archived)
+        return MessageWriteAccess::Unknown;
+      if (*channel.archived)
+        return channel.locked.value_or(false) && !(*permissions & manageThreads) ? MessageWriteAccess::Locked
+                                                                                 : MessageWriteAccess::Archived;
+      if (channel.kind() == ChannelType::PrivateThread && !(*permissions & manageThreads)) {
+        if (!channel.joined)
+          return MessageWriteAccess::Unknown;
+        if (!*channel.joined)
+          return MessageWriteAccess::NotJoined;
+      }
+    }
+    return MessageWriteAccess::Allowed;
+  }
   std::vector<ColoredRole>
   channelAccessRoles(const std::string& guild, std::span<const ColoredRole> roles, const Channel& channel) {
     std::vector<ColoredRole> result;

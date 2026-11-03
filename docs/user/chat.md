@@ -41,6 +41,20 @@ AM/PM times, enable **Use 12-hour clock** in
 Bot authors show an **APP** chip beside their name and role icon. The chip
 remains visible when role icons are turned off.
 
+### Read-only channels
+
+In a server channel where you cannot send messages, the composer shows a
+permission explanation and its message controls stay disabled. Cressida checks
+channel access before sending text, images, GIFs or stickers. Threads also use
+their thread-specific posting permissions; archived threads must be reopened
+before you can post.
+
+While permissions are loading, the composer shows **Checking channel
+permissions…**. If that information is unavailable, sending stays disabled.
+Changes to roles or channel access update the composer while you are connected.
+Your existing draft, reply, attachments and stickers are kept when access
+changes. Restoring access does not send or retry a message automatically.
+
 ## Edit and format your draft
 
 Right-click the message input or inline message editor for **Undo**, **Redo**,

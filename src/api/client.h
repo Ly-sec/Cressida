@@ -187,6 +187,7 @@ namespace api {
     std::optional<voice::State> voice;
     std::optional<api::VoiceRosterUpdate> voiceRoster;
     std::optional<StreamPreviewResult> streamPreview;
+    std::uint64_t permissionRevision = 0;
   };
 
   // An ordered account/mutation owner and three independent, bounded GET lanes.
@@ -227,7 +228,8 @@ namespace api {
     bool promotePreload(const std::string& channel, const HistoryQuery& query);
     bool send(
         const std::string& channelId, std::string content, std::vector<Upload> uploads = {},
-        std::optional<MessageReference> reply = {}, std::vector<std::string> stickers = {}, std::string nonce = {}
+        std::optional<MessageReference> reply = {}, std::vector<std::string> stickers = {}, std::string nonce = {},
+        std::shared_ptr<std::atomic_bool> revoked = {}
     );
     bool interact(api::Interaction action);
     bool resumeMessageChallenge(const std::string& channel);
@@ -294,6 +296,8 @@ namespace api {
       std::optional<CommandIndexQuery> commandIndex;
       std::optional<StreamPreviewQuery> streamPreview;
       std::shared_ptr<std::atomic_bool> activityRevoked;
+      std::uint64_t permissionRevision = 0;
+      std::shared_ptr<std::atomic_bool> messageRevoked;
     };
     struct PreloadRead {
       std::uint64_t session;
@@ -322,6 +326,7 @@ namespace api {
     std::atomic<std::uint64_t> m_authenticatedSession{0};
     std::atomic<std::uint64_t> m_restoringSession{0};
     std::atomic<std::uint64_t> m_presenceRevision{0};
+    std::atomic<std::uint64_t> m_channelPermissionRevision{0};
     std::atomic<std::uint64_t> m_foregroundRevision{0}, m_historyRevision{0}, m_readCredentialRevision{0};
     std::array<process::WakeEvent, 3> m_readWake;
     std::string m_readToken, m_authenticatedUser; // Under m_mutex; readers require the authenticated generation.

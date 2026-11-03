@@ -19,13 +19,9 @@ namespace app {
     }
   } // namespace
   std::optional<std::uint64_t> ClientApplication::channelPermissionsFor(const std::string& id) const {
-    const auto at = std::ranges::find(m_channels, id, &api::Channel::id);
-    if (m_dmMode || at == m_channels.end())
+    if (m_dmMode)
       return {};
-    return api::channelPermissions(
-        m_guildId, m_account.id, m_roleDirectory.owner(m_guildId), m_roleDirectory.allRoles(m_guildId),
-        m_roleDirectory.memberships(m_guildId, m_account.id), *at
-    );
+    return serverChannelPermissions(m_guildId, id);
   }
   std::optional<std::uint64_t> ClientApplication::guildPermissions() const {
     api::Channel base;

@@ -2,6 +2,7 @@
 #include "app/message_time.h"
 #include "app/reply_preview.h"
 #include "app/theme.h"
+#include "render/scene/text_node.h"
 #include "ui/controls/button.h"
 #include "ui/controls/scrollbar.h"
 #include "ui/controls/slider.h"
@@ -15,6 +16,7 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <set>
+#include <stdexcept>
 
 namespace app {
   using namespace theme;
@@ -42,13 +44,402 @@ namespace app {
     return channel == m_channels.end() ? nullptr : &*channel;
   }
   std::optional<std::uint64_t> ClientApplication::selectedChannelPermissions() const {
+    return channelPermissionsFor(m_channelId);
+  }
+  api::MessageWriteAccess ClientApplication::selectedChannelWriteAccess() const {
+    if (m_dmMode && !m_channelId.empty())
+      return api::MessageWriteAccess::Allowed;
     const auto* channel = selectedChannel();
-    if (m_dmMode || !channel)
+    if (!channel)
+      return api::MessageWriteAccess::Unknown;
+    if (m_demo && !m_demoOverlay.starts_with("permissions-cycle")) {
+      if (channel->isForum())
+        return api::MessageWriteAccess::Unsupported;
+      return channel->isThread() && channel->archived.value_or(false) ? api::MessageWriteAccess::Archived
+                                                                      : api::MessageWriteAccess::Allowed;
+    }
+    return api::messageWriteAccess(*channel, selectedChannelPermissions());
+  }
+  std::string ClientApplication::selectedChannelWriteRestriction() const {
+    switch (selectedChannelWriteAccess()) {
+    case api::MessageWriteAccess::Allowed:
       return {};
-    return api::channelPermissions(
-        m_guildId, m_account.id, m_roleDirectory.owner(m_guildId), m_roleDirectory.allRoles(m_guildId),
-        m_roleDirectory.memberships(m_guildId, m_account.id), *channel
-    );
+    case api::MessageWriteAccess::Hidden:
+      return "You do not have permission to view this channel.";
+    case api::MessageWriteAccess::Denied:
+      return "You don't have permission to send messages in this channel.";
+    case api::MessageWriteAccess::Archived:
+      return "Reopen this thread before sending a message.";
+    case api::MessageWriteAccess::Locked:
+      return "This thread is locked.";
+    case api::MessageWriteAccess::NotJoined:
+      return "Join this private thread before sending a message.";
+    case api::MessageWriteAccess::Unsupported:
+      return "Messages cannot be sent in this channel.";
+    case api::MessageWriteAccess::Unknown: {
+      const auto* channel = selectedChannel();
+      const auto permissionChannel = channel && channel->isThread() ? channel->parentId : m_channelId;
+      if (m_loadingChannels || m_channelDetailRequests.contains(permissionChannel))
+        return "Checking channel permissions…";
+      return "Channel permissions are unavailable.";
+    }
+    }
+    return "Channel permissions are unavailable.";
+  }
+  void ClientApplication::prepareChannelWriteAccess() {
+    if (!m_demo || m_demoOverlay.starts_with("permissions-cycle"))
+      revokeUnavailableOutgoing();
+    if (m_demo || m_dmMode || !m_connected || m_loadingChannels)
+      return;
+    auto channel = selectedChannel();
+    if (channel && channel->isThread())
+      channel = serverChannel(m_guildId, channel->parentId);
+    if (!channel
+        || channel->overwrites
+        || m_channelDetailsLoaded.contains(channel->id)
+        || m_channelDetailRequests.contains(channel->id)
+        || m_channelDetailErrors.contains(channel->id))
+      return;
+    if (m_client.channelDetails(channel->id))
+      m_channelDetailRequests.insert(channel->id);
+    else
+      m_channelDetailErrors[channel->id] = "Could not load channel permissions.";
+  }
+  std::string ClientApplication::channelPermissionGuild(const std::string& channel) const {
+    if (!m_dmMode && serverChannel(m_guildId, channel))
+      return m_guildId;
+    for (const auto& [guild, channels] : m_guildChannels)
+      if (std::ranges::find(channels, channel, &api::Channel::id) != channels.end())
+        return guild;
+    return {};
+  }
+  void ClientApplication::filterChannelPermissionSnapshot(api::Event& event) const {
+    if (event.operation != api::Operation::Channels && event.operation != api::Operation::ChannelDetails)
+      return;
+    for (auto& fresh : event.channels) {
+      const auto guild =
+          event.operation == api::Operation::Channels ? event.resource : channelPermissionGuild(fresh.id);
+      const auto* current = serverChannel(guild, fresh.id);
+      const auto revision = m_channelPermissionRevisions.find(guild);
+      if (revision != m_channelPermissionRevisions.end() && event.permissionRevision < revision->second)
+        fresh.overwrites = current ? current->overwrites : std::nullopt;
+    }
+  }
+  void ClientApplication::invalidateChannelPermissions(const api::Event& event) {
+    if (event.resource != m_guildId && std::ranges::find(m_guilds, event.resource, &api::Guild::id) == m_guilds.end())
+      return;
+    auto& revision = m_channelPermissionRevisions[event.resource];
+    revision = std::max(revision, event.permissionRevision);
+    const auto invalidate = [&](auto& channels) {
+      for (auto& channel : channels) {
+        channel.overwrites.reset();
+        m_channelDetailsLoaded.erase(channel.id);
+        m_channelDetailErrors.erase(channel.id);
+      }
+    };
+    if (!m_dmMode && event.resource == m_guildId)
+      invalidate(m_channels);
+    if (const auto cached = m_guildChannels.find(event.resource); cached != m_guildChannels.end())
+      invalidate(cached->second);
+    revokeUnavailableOutgoing();
+  }
+  void ClientApplication::demoPermissionsStep() {
+    const auto require = [](bool condition, const char* message) {
+      if (!condition)
+        throw std::runtime_error(message);
+    };
+    const auto step = m_demoInteractionStep++;
+    const auto access = [&] { return selectedChannelWriteAccess(); };
+    const auto mounted = [&] {
+      const auto input = m_inputs.find("composer");
+      require(input != m_inputs.end(), "Permission replay requires the native composer");
+      return input->second;
+    };
+    const auto roles = [&](std::uint64_t permissions) {
+      m_roleDirectory.apply(
+          {.guilds = {
+               {.guild = m_guildId,
+                .replaceRoles = true,
+                .roles = {{.id = m_guildId, .permissions = std::to_string(permissions)}},
+                .members = {{m_account.id, {}}},
+                .owner = "other-owner"}
+           }}
+      );
+    };
+    const auto snapshot = [&](std::uint64_t revision, bool writable) {
+      api::Event event{.operation = api::Operation::Channels, .resource = m_guildId, .channels = m_channels};
+      event.permissionRevision = revision;
+      for (auto& channel : event.channels) {
+        channel.overwrites.emplace();
+        if (!writable)
+          channel.overwrites->push_back({m_guildId, "0", std::to_string(api::sendMessages), 0});
+      }
+      filterChannelPermissionSnapshot(event);
+      channelSnapshotEvent(event);
+    };
+    const std::string draft = "Keep this draft when access changes.";
+    const auto assertReadOnlyLayout = [&](bool empty) {
+      const auto* input = mounted();
+      require(!input->enabled(), "A read-only composer cannot focus or accept clicks");
+      require(
+          m_controlInput.focusedArea() != input->inputArea(),
+          "Permission loss releases native composer focus and its caret"
+      );
+      float inputX = 0, inputY = 0;
+      Node::absolutePosition(input, inputX, inputY);
+      std::optional<layout::Frame> caption, placeholder;
+      const auto inspect = [&](auto&& self, const Node& node) -> void {
+        if (node.type() == NodeType::Text) {
+          const auto& text = static_cast<const TextNode&>(node);
+          if (text.text() == selectedChannelWriteRestriction() && text.fontSize() == Style::fontSizeMini) {
+            float x = 0, y = 0;
+            Node::absolutePosition(&node, x, y);
+            const auto metrics = m_window.target().renderer().measureText(
+                text.text(), text.fontSize(), FontWeight::Normal, node.width(), layout::Composer::maximumReasonLines
+            );
+            const float top = y + metrics.top;
+            if (top >= inputY)
+              caption = layout::Frame{x, top, node.width(), metrics.bottom - metrics.top};
+          }
+          if (text.text() == selectedChannelWriteRestriction() && text.fontSize() == Style::fontSizeBody) {
+            float x = 0, y = 0;
+            Node::absolutePosition(&node, x, y);
+            const auto metrics = m_window.target().renderer().measureText(
+                text.text(), text.fontSize(), FontWeight::Normal, m_draftWidth
+            );
+            placeholder = layout::Frame{
+                x + metrics.inkLeft, y + metrics.inkTop, metrics.inkRight - metrics.inkLeft,
+                metrics.inkBottom - metrics.inkTop
+            };
+          }
+        }
+        for (const auto& child : node.children())
+          self(self, *child);
+      };
+      inspect(inspect, *m_scene);
+      if (empty) {
+        require(input->value().empty() && !caption, "Empty read-only composers use only their primary placeholder");
+        const float height = m_window.height() + layout::Window::titlebarHeight - m_window.titlebarHeight();
+        const float reply = m_replies.contains(m_channelId) ? layout::ComposerReply::height : 0;
+        const auto metrics = m_window.target().renderer().measureText(
+            selectedChannelWriteRestriction(), Style::fontSizeBody, FontWeight::Normal, m_draftWidth
+        );
+        const float visibleHeight =
+            std::max(layout::Composer::minimumTextHeight, std::ceil(metrics.bottom - metrics.top));
+        const auto compact = layout::composerFrame(height, visibleHeight + layout::Composer::verticalPadding + reply);
+        require(
+            std::abs(compact.top - m_composerTop) <= Style::borderWidth,
+            "Empty read-only composers grow only for their wrapped explanation"
+        );
+        require(placeholder.has_value(), "Empty read-only composers show their permission placeholder");
+        require(
+            placeholder->y >= inputY - Style::borderWidth
+                && placeholder->y + placeholder->height <= inputY + input->height() + Style::borderWidth,
+            "Every wrapped placeholder line fits within the disabled input"
+        );
+      } else {
+        require(caption.has_value(), "A retained read-only draft has its own permission caption row");
+        require(
+            inputY + input->height() + Style::spaceSm <= caption->y + Style::borderWidth,
+            "Permission caption and retained draft input cannot overlap"
+        );
+        const float sceneHeight = m_window.height() + layout::Window::titlebarHeight - m_window.titlebarHeight();
+        const float bottom = inputY - input->y() + sceneHeight - layout::Composer::bottomInset;
+        require(
+            caption->y + caption->height + Style::spaceXs <= bottom + Style::borderWidth,
+            "Wrapped permission captions fit within the composer"
+        );
+        require(
+            std::abs(m_draftWidth - (input->width() - layout::Composer::readOnlyTextInset * 2)) <= Style::borderWidth,
+            "Read-only draft measurement uses the native input's actual wrapping width"
+        );
+      }
+    };
+    if (step == 0) {
+      m_roleDirectory = {};
+      roles(api::viewChannel | api::sendMessages);
+      auto channel = *selectedChannel();
+      channel.overwrites.emplace();
+      m_channels = {channel};
+      m_guildChannels[m_guildId] = m_channels;
+      m_replies[m_channelId] = {.message = "89001", .channel = m_channelId, .authorId = "11", .author = "Maya"};
+    } else if (step == 1) {
+      require(
+          mounted()->enabled() && access() == api::MessageWriteAccess::Allowed,
+          "Known writable channel enables the native composer"
+      );
+      m_channels.front().overwrites = {{m_guildId, "0", std::to_string(api::sendMessages), 0}};
+    } else if (step == 2) {
+      assertReadOnlyLayout(false);
+      require(
+          !mounted()->enabled() && mounted()->value() == draft,
+          "Permission revocation disables editing without consuming the draft"
+      );
+      require(
+          !canSendToThread() && !queueOutgoing("blocked", {}, {}, {}, true),
+          "All normal and direct queue submissions reject read-only channels"
+      );
+      send();
+      require(
+          m_pendingSends.empty() && m_drafts.at(m_channelId) == draft && m_replies.contains(m_channelId),
+          "Denied sends retain pending content and reply state"
+      );
+      require(
+          std::ranges::none_of(
+              m_hits,
+              [](const auto& hit) {
+                return hit.action == Action::PasteClipboard
+                    || hit.action == Action::ToggleGif
+                    || hit.action == Action::ToggleStickers;
+              }
+          ),
+          "Read-only composer does not advertise message actions"
+      );
+      require(!m_chatSelectionDocument.text.empty(), "Read-only conversation keeps its selectable document");
+      m_channels.front().overwrites.emplace();
+    } else if (step == 3) {
+      require(mounted()->enabled(), "Restoring write permission restores the retained native input");
+      PendingSend pending;
+      pending.preview.channelId = m_channelId;
+      pending.guild = m_guildId;
+      pending.revoked = std::make_shared<std::atomic_bool>(false);
+      m_pendingSends["permission-revocation"] = std::move(pending);
+      PendingSend direct;
+      direct.revoked = std::make_shared<std::atomic_bool>(false);
+      m_pendingSends["unrelated-direct"] = std::move(direct);
+      m_channels.front().overwrites.reset();
+    } else if (step == 4) {
+      assertReadOnlyLayout(false);
+      require(
+          !mounted()->enabled() && access() == api::MessageWriteAccess::Unknown,
+          "Unknown channel metadata cannot retain an earlier grant"
+      );
+      require(
+          selectedChannelWriteRestriction() == "Channel permissions are unavailable.",
+          "Settled unknown metadata has an explicit unavailable state"
+      );
+      require(
+          m_pendingSends.at("permission-revocation").revoked->load()
+              && m_pendingSends.at("permission-revocation").completed,
+          "Revoked permission cancels an already queued message without retrying it"
+      );
+      require(
+          !m_pendingSends.at("unrelated-direct").revoked->load(),
+          "Guild permission changes cannot cancel an unrelated private message"
+      );
+      clearOutgoing();
+      m_channelDetailRequests.insert(m_channelId);
+      m_drafts[m_channelId].clear();
+    } else if (step == 5) {
+      assertReadOnlyLayout(true);
+      require(
+          selectedChannelWriteRestriction() == "Checking channel permissions…",
+          "Pending channel metadata has an explicit loading state"
+      );
+      m_drafts[m_channelId] = draft;
+      api::Event event{.operation = api::Operation::ChannelDetails, .resource = m_channelId, .channels = m_channels};
+      event.channels.front().overwrites = {{m_guildId, "0", std::to_string(api::sendMessages), 0}};
+      channelFeatureEvent(event);
+    } else if (step == 6) {
+      assertReadOnlyLayout(false);
+      require(access() == api::MessageWriteAccess::Denied, "Resolved read-only metadata stays disabled");
+      api::Event event{.operation = api::Operation::InvalidateChannels, .resource = m_guildId};
+      event.permissionRevision = 2;
+      invalidateChannelPermissions(event);
+      m_loadingChannels = true;
+    } else if (step == 7) {
+      require(!mounted()->enabled(), "Live channel changes revoke old grants before refresh");
+      snapshot(1, true);
+      require(access() == api::MessageWriteAccess::Unknown, "Late REST results cannot restore an invalidated grant");
+      snapshot(2, false);
+      m_drafts[m_channelId].clear();
+    } else if (step == 8) {
+      assertReadOnlyLayout(true);
+      require(access() == api::MessageWriteAccess::Denied, "Current permission snapshot settles the read-only state");
+      m_drafts[m_channelId] = draft;
+      m_guildChannels["other-guild"] = {{.id = "other-channel", .name = "Other channel", .type = 0}};
+      m_channelPermissionRevisions["other-guild"] = 5;
+      api::Event detail{
+          .operation = api::Operation::ChannelDetails,
+          .resource = "other-channel",
+          .channels = m_guildChannels.at("other-guild")
+      };
+      detail.permissionRevision = 4;
+      filterChannelPermissionSnapshot(detail);
+      channelFeatureEvent(detail);
+      require(
+          !m_channelDetailsLoaded.contains("other-channel"),
+          "Another guild's stale details cannot settle using the selected guild's revision"
+      );
+      detail.permissionRevision = 5;
+      channelFeatureEvent(detail);
+      require(
+          m_channelDetailsLoaded.contains("other-channel"),
+          "Another guild's current details settle independently of the selected guild"
+      );
+      snapshot(3, true);
+    } else if (step == 9) {
+      require(mounted()->enabled(), "A current grant restores the composer after invalidation");
+      roles(api::viewChannel);
+    } else if (step == 10) {
+      require(!mounted()->enabled(), "A live self-role update revokes write access");
+      roles(api::viewChannel | api::sendMessages);
+      const auto parent = m_channelId;
+      m_channels.push_back({.id = "89002", .name = "Thread", .type = 11, .parentId = parent, .archived = false});
+      m_channelId = m_channels.back().id;
+      m_drafts[m_channelId] = draft;
+    } else if (step == 11) {
+      require(access() == api::MessageWriteAccess::Denied, "Parent Send Messages does not grant thread sending");
+      roles(api::viewChannel | api::sendMessagesInThreads);
+    } else if (step == 12) {
+      require(
+          mounted()->enabled() && access() == api::MessageWriteAccess::Allowed,
+          "Threads inherit parent overwrites and use their distinct send bit"
+      );
+      require(
+          api::messageWriteAccess(m_channels.front(), selectedChannelPermissions()) == api::MessageWriteAccess::Denied,
+          "A thread grant cannot grant ordinary parent-channel sending"
+      );
+      m_threads.apply({.changes = {{.guild = m_guildId, .threads = {m_channels.back()}}}});
+      PendingSend pending;
+      pending.preview.channelId = m_channelId;
+      pending.guild = m_guildId;
+      pending.revoked = std::make_shared<std::atomic_bool>(false);
+      m_pendingSends["background-thread"] = std::move(pending);
+      m_dmMode = true;
+      revokeUnavailableOutgoing();
+      require(
+          !m_pendingSends.at("background-thread").revoked->load(),
+          "Navigating away cannot cancel a still-writable thread send"
+      );
+      m_dmMode = false;
+      clearOutgoing();
+      m_channels.back().type = 12;
+      m_channels.back().joined = false;
+    } else if (step == 13) {
+      require(
+          !mounted()->enabled() && access() == api::MessageWriteAccess::NotJoined,
+          "Private thread membership is required before composing"
+      );
+      m_channels.back().joined = true;
+      m_channels.back().archived = true;
+    } else if (step == 14) {
+      require(
+          !mounted()->enabled() && access() == api::MessageWriteAccess::Archived,
+          "Archived threads require an explicit reopen"
+      );
+      m_dmMode = true;
+    } else if (step == 15) {
+      require(
+          mounted()->enabled() && access() == api::MessageWriteAccess::Allowed,
+          "Private conversations do not depend on guild permission metadata"
+      );
+      require(
+          m_drafts.at(m_channelId) == draft && m_replies.contains(m_channels.front().id),
+          "Navigation and permission transitions preserve drafts and replies"
+      );
+    }
+    m_window.invalidate();
   }
   void ClientApplication::closeChannelPanel() {
     m_channelPanel.clear();
@@ -80,6 +471,7 @@ namespace app {
     m_channelDetailRequests.clear();
     m_channelDetailsLoaded.clear();
     m_channelDetailErrors.clear();
+    m_channelPermissionRevisions.clear();
     m_componentStates.clear();
     m_dismissedEphemeral.clear();
     m_deletedChannels.clear();
@@ -508,7 +900,11 @@ namespace app {
       if (!event.error.empty())
         m_channelDetailErrors[event.resource] = event.error;
       else {
-        m_channelDetailsLoaded.insert(event.resource);
+        const auto guild = channelPermissionGuild(event.resource);
+        const auto revision = m_channelPermissionRevisions.find(guild);
+        if (!guild.empty()
+            && (revision == m_channelPermissionRevisions.end() || event.permissionRevision >= revision->second))
+          m_channelDetailsLoaded.insert(event.resource);
         m_channelDetailErrors.erase(event.resource);
         std::set<std::string> reordered;
         for (const auto& fresh : event.channels) {

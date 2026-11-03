@@ -37,6 +37,11 @@ Choose a server from the rail, then a channel from its sidebar. Threads appear
 under their parent channel with an L-shaped branch. Forum channels provide a
 place to browse posts and their conversations.
 
+Some channels allow you to read without posting. Their composer explains the
+missing permission and keeps your draft intact. See
+[Read-only channels](chat.md#read-only-channels) for permission loading and live
+access changes.
+
 By default, text channels appear before voice and Stage channels within each
 category and in the uncategorized list, keeping the server's saved order within
 each group.

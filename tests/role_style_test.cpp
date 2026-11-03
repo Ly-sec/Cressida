@@ -86,9 +86,29 @@ int main() {
     );
     require(directory.colors("1", "11")->primary == 0x2255AA, "Live role edits replace colors");
     require(directory.roleName("1", "50") == "Moonwatch", "Live role edits refresh mention names");
+    directory.apply(
+        api::parseRoleUpdates(
+            "GUILD_MEMBER_UPDATE",
+            json{{"guild_id", "1"}, {"user_id", "13"}, {"roles", json::array({"50", "60", "999"})}}
+        )
+    );
     directory.apply(api::parseRoleUpdates("GUILD_ROLE_DELETE", json{{"guild_id", "1"}, {"role_id", "50"}}));
     require(!directory.colors("1", "11"), "Deleting the only colored role restores default color");
     require(directory.roleName("1", "50").empty(), "Deleted roles cannot retain stale mention names");
+    const auto emptyMembership = directory.memberships("1", "11");
+    require(
+        emptyMembership && emptyMembership->empty(), "Deleting a member's last role retains known empty membership"
+    );
+    require(
+        directory.memberships("1", "13") == std::vector<std::string>{"60", "999"}
+            && directory.memberships("2", "11") == std::vector<std::string>{"90"},
+        "Role deletion removes only the explicit ID in its own server and preserves unrelated unknown roles"
+    );
+    directory.apply(api::parseRoleUpdates("GUILD_ROLE_DELETE", json{{"guild_id", "1"}, {"role_id", "999"}}));
+    require(
+        directory.memberships("1", "13") == std::vector<std::string>{"60"},
+        "An explicit deletion also clears an unknown role from cached memberships"
+    );
     directory.apply(
         api::parseRoleUpdates(
             "GUILD_MEMBER_UPDATE", json{{"guild_id", "1"}, {"user_id", "12"}, {"roles", json::array()}}

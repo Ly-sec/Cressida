@@ -406,6 +406,11 @@ namespace app {
         || m_inboxOpen
         || m_slashPending)
       return;
+    if (const auto restriction = selectedChannelWriteRestriction(); !restriction.empty()) {
+      m_slashError = restriction;
+      m_window.invalidate();
+      return;
+    }
     if (!api::commandAvailable(*m_slashCommand, slashContext())) {
       m_slashError = "This command is no longer available in this channel.";
       m_window.invalidate();

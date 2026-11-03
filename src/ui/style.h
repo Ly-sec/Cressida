@@ -37,6 +37,7 @@ namespace Style {
   inline constexpr float profileFrameResponsiveAspect = 300.0F / 480.0F;
 
   inline constexpr float spaceXs = 4.0F;
+  inline constexpr float inputTextInnerInset = 3.0F;
   inline constexpr float spaceSm = 8.0F;
   inline constexpr float spaceMd = 12.0F;
   inline constexpr float spaceLg = 16.0F;

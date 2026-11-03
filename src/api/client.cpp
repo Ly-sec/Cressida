@@ -746,6 +746,8 @@ namespace api {
   bool Client::enqueue(Command command) {
     if (command.session == 0 || m_authenticatedSession != command.session)
       return false;
+    if (command.operation == Operation::Channels || command.operation == Operation::ChannelDetails)
+      command.permissionRevision = m_channelPermissionRevision.load();
     command.background = command.operation == Operation::ChannelDetails
         || (command.operation == Operation::Interaction
             && command.interaction
@@ -973,9 +975,10 @@ namespace api {
   }
   bool Client::send(
       const std::string& id, std::string content, std::vector<Upload> uploads, std::optional<MessageReference> reply,
-      std::vector<std::string> stickers, std::string nonce
+      std::vector<std::string> stickers, std::string nonce, std::shared_ptr<std::atomic_bool> revoked
   ) {
-    if (!validSnowflake(id)
+    if ((revoked && revoked->load())
+        || !validSnowflake(id)
         || (!nonce.empty() && !validSnowflake(nonce))
         || !validStickerIds(stickers)
         || (content.empty() && uploads.empty() && stickers.empty())
@@ -988,6 +991,7 @@ namespace api {
     command.reply = std::move(reply);
     command.stickers = std::move(stickers);
     command.nonce = std::move(nonce);
+    command.messageRevoked = std::move(revoked);
     return enqueue(std::move(command));
   }
   bool Client::resumeMessageChallenge(const std::string& channel) {
@@ -1728,7 +1732,10 @@ namespace api {
       } else if ((type == "CHANNEL_CREATE" || type == "CHANNEL_UPDATE") && data.contains("guild_id")) {
         publish(
             Event{
-                .operation = Operation::InvalidateChannels, .session = session, .resource = data.value("guild_id", "")
+                .operation = Operation::InvalidateChannels,
+                .session = session,
+                .resource = data.value("guild_id", ""),
+                .permissionRevision = ++m_channelPermissionRevision
             }
         );
       } else if (type == "CHANNEL_CREATE" || type == "CHANNEL_UPDATE") {
@@ -1857,6 +1864,7 @@ namespace api {
           || (command.readRevision && command.readRevision != m_historyRevision))
         continue;
       Event event{.operation = command.operation, .session = command.session, .resource = command.resource};
+      event.permissionRevision = command.permissionRevision;
       event.nonce = command.nonce;
       event.history = command.history;
       event.threadQuery = command.threadQuery;
@@ -2290,6 +2298,7 @@ namespace api {
         }
       }};
       Event event{.operation = command.operation, .session = command.session, .resource = command.resource};
+      event.permissionRevision = command.permissionRevision;
       if (command.operation == Operation::BootstrapSettings)
         event.operation = Operation::Layout;
       if (command.operation == Operation::Send)
@@ -2323,6 +2332,8 @@ namespace api {
         transfer.scope.revoked = command.streamPreview->revoked.get();
         transfer.retryRateLimits = false;
       }
+      if (command.operation == Operation::Send)
+        transfer.scope.revoked = command.messageRevoked.get();
       event.restoredLogin = command.restoredLogin;
       if (command.operation == Operation::ActivityExternalAssets) {
         event.nonce = command.nonce;

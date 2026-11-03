@@ -26,6 +26,90 @@ namespace {
 int main() {
   try {
     {
+      Channel channel{.id = "10", .name = "read-only", .type = 0};
+      const auto allowed = viewChannel | sendMessages;
+      require(
+          messageWriteAccess(channel, allowed) == MessageWriteAccess::Allowed,
+          "Ordinary channels require known view and send permissions"
+      );
+      require(
+          messageWriteAccess(channel, viewChannel) == MessageWriteAccess::Denied,
+          "Read-only channels reject message writes"
+      );
+      require(
+          messageWriteAccess(channel, sendMessages) == MessageWriteAccess::Hidden,
+          "Send permission cannot grant access to hidden channels"
+      );
+      require(
+          messageWriteAccess(channel, {}) == MessageWriteAccess::Unknown,
+          "Missing permission metadata cannot grant write access"
+      );
+      channel.type = static_cast<int>(ChannelType::GuildVoice);
+      require(
+          messageWriteAccess(channel, viewChannel) == MessageWriteAccess::Denied,
+          "Voice-channel conversations enforce ordinary message permission"
+      );
+      channel.type = static_cast<int>(ChannelType::PublicThread);
+      channel.archived = false;
+      require(
+          messageWriteAccess(channel, allowed) == MessageWriteAccess::Denied,
+          "Parent Send Messages does not grant thread sending"
+      );
+      require(
+          messageWriteAccess(channel, viewChannel | sendMessagesInThreads) == MessageWriteAccess::Allowed,
+          "Thread sends do not require parent Send Messages"
+      );
+      channel.locked = true;
+      require(
+          messageWriteAccess(channel, viewChannel | sendMessagesInThreads) == MessageWriteAccess::Allowed,
+          "Locking an active thread only restricts reopening"
+      );
+      channel.archived = true;
+      require(
+          messageWriteAccess(channel, viewChannel | sendMessagesInThreads) == MessageWriteAccess::Locked,
+          "Locked archived threads cannot be reopened by ordinary members"
+      );
+      require(
+          messageWriteAccess(channel, viewChannel | sendMessagesInThreads | manageThreads)
+              == MessageWriteAccess::Archived,
+          "Managers must explicitly reopen an archived thread before sending"
+      );
+      channel.type = static_cast<int>(ChannelType::PrivateThread);
+      channel.archived = false;
+      channel.joined = false;
+      require(
+          messageWriteAccess(channel, viewChannel | sendMessagesInThreads) == MessageWriteAccess::NotJoined,
+          "Private thread sending requires membership"
+      );
+      channel.joined.reset();
+      require(
+          messageWriteAccess(channel, viewChannel | sendMessagesInThreads) == MessageWriteAccess::Unknown,
+          "Unknown private membership cannot grant write access"
+      );
+      require(
+          messageWriteAccess(channel, viewChannel | sendMessagesInThreads | manageThreads)
+              == MessageWriteAccess::Allowed,
+          "Thread managers can access private threads without joining"
+      );
+      channel.joined = true;
+      require(
+          messageWriteAccess(channel, viewChannel | sendMessagesInThreads) == MessageWriteAccess::Allowed,
+          "Joined private threads accept the thread-specific send permission"
+      );
+      channel.type = static_cast<int>(ChannelType::GuildForum);
+      require(
+          messageWriteAccess(channel, ~std::uint64_t{0}) == MessageWriteAccess::Unsupported,
+          "Forum containers cannot receive ordinary chat messages"
+      );
+      for (const auto kind : {ChannelType::DirectMessage, ChannelType::GroupDirectMessage}) {
+        channel.type = static_cast<int>(kind);
+        require(
+            messageWriteAccess(channel, {}) == MessageWriteAccess::Allowed,
+            "Private conversations do not depend on guild permission metadata"
+        );
+      }
+    }
+    {
       Interaction create{.kind = InteractionKind::CreateChannel, .text = "new-channel", .guild = "1", .parentId = "20"};
       auto request = interactionRequest(create);
       require(

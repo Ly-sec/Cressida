@@ -1,6 +1,7 @@
 #include "app/client_application.h"
 #include "app/theme.h"
 #include "render/scene/image_node.h"
+#include "render/scene/text_node.h"
 
 #include <algorithm>
 #include <cmath>
@@ -61,17 +62,16 @@ namespace app {
         continue;
       if ((guildMuted || channelMuted(channel)) && m_unreadTimeline.mentions(channel) == 0)
         continue;
+      if (!serverChannelReadable(guild.id, channel))
+        continue;
       unread = true;
-      const auto cache = m_guildChannels.find(guild.id);
-      if (cache == m_guildChannels.end())
-        continue;
-      const auto row = std::ranges::find(cache->second, channel, &api::Channel::id);
-      if (row == cache->second.end())
-        continue;
+      const auto* row = serverChannel(guild.id, channel);
+      if (!row)
+        row = m_threads.find(guild.id, channel);
       const auto cursor = m_unreadTimeline.cursor(channel);
       const auto message = cursor ? cursor->latest : std::string{};
       if (activity.empty() || message.size() > latest.size() || (message.size() == latest.size() && message > latest)) {
-        activity = "New activity in #" + row->name;
+        activity = row ? "New activity in #" + row->name : "New activity";
         latest = message;
       }
     }
@@ -82,7 +82,8 @@ namespace app {
     auto& renderer = m_window.target().renderer();
     const auto titleWidth =
         renderer.measureText(guild.name, Style::fontSizeCaption, FontWeight::SemiBold).width + badgeWidth;
-    const auto activityWidth = renderer.measureText(activity, Style::fontSizeMini).width;
+    const auto activityWidth =
+        std::ceil(renderer.measureText(activity, Style::fontSizeMini).width) + Style::borderWidth;
     const std::string online = guild.online ? countText(*guild.online) + " online" : "";
     const std::string members = guild.members ? countText(*guild.members) + " members" : "";
     const float onlineWidth = online.empty() ? 0 : renderer.measureText(online, Style::fontSizeDescription).width + 20;
@@ -92,7 +93,13 @@ namespace app {
     const float width = std::min(
         std::clamp(std::max({titleWidth, activityWidth, onlineWidth + membersWidth}) + 24, 200.0F, 340.0F), w - 94
     );
-    const float height = 40 + (activity.empty() ? 0 : 20) + (counts ? 24 : 0);
+    const auto activityLines = [&](int lines) {
+      const auto metrics =
+          renderer.measureText(activity, Style::fontSizeMini, FontWeight::Normal, width - Style::spaceXl, lines);
+      return metrics.bottom - metrics.top;
+    };
+    const float activityExtra = activity.empty() ? 0 : std::max(0.0F, activityLines(2) - activityLines(1));
+    const float height = 40 + (activity.empty() ? 0 : 20 + activityExtra) + (counts ? 24 : 0);
     const float x = 84, y = std::clamp(at->y + at->height / 2 - height / 2, 44.0F, std::max(44.0F, h - height - 8));
     rectangle(
         root, x, y + (Style::spaceXxs + Style::borderWidth), width, height, Color{0, 0, 0, .25F}, Style::surfaceRadius
@@ -115,7 +122,7 @@ namespace app {
     if (!activity.empty())
       label(
           root, x + Style::spaceMd, y + (Style::space2Xl + Style::borderWidth), width - Style::spaceXl, activity,
-          Style::fontSizeMini, muted
+          Style::fontSizeMini, muted, FontWeight::Normal, 2
       );
     if (counts) {
       const float cy = y + height - 25;
@@ -190,6 +197,23 @@ namespace app {
           m_guildTooltipBounds.width > 0 && m_guildTooltipBounds.id == std::to_string(step + 1),
           "Hover card follows the actual server pointer target"
       );
+      if (step == 0) {
+        const auto hasText = [&](auto&& self, const Node& node, std::string_view value) -> bool {
+          if (node.type() == NodeType::Text
+              && static_cast<const TextNode&>(node).text().find(value) != std::string::npos)
+            return true;
+          return std::ranges::any_of(node.children(), [&](const auto& child) { return self(self, *child, value); });
+        };
+        const auto rendered = [&](std::string_view value) {
+          return std::ranges::any_of(m_scene->children(), [&](const auto& node) {
+            return hasText(hasText, *node, value);
+          });
+        };
+        require(
+            rendered("New activity in #" + m_channels.front().name) && !rendered("staff-only"),
+            "Hover card activity omits channels the account cannot view"
+        );
+      }
       require(
           m_guildTooltipBounds.x >= 78 && m_guildTooltipBounds.y >= 44,
           "Hover card stays clear of the server icon and titlebar"

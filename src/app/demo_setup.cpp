@@ -308,6 +308,25 @@ namespace app {
           m_guildChannels[m_guildId] = m_channels;
           m_unreadGuilds[m_channels.front().id] = m_guildId;
           m_unreadChannels.insert(m_channels.front().id);
+          if (view == "server-hover-cycle") {
+            // A newer unread channel that the account cannot view must stay out of
+            // the hover card and rail; the readable channel still reports activity.
+            m_channels.front().overwrites.emplace();
+            auto hidden = m_channels.front();
+            hidden.id = "990000000000000001";
+            hidden.name = "staff-only";
+            hidden.overwrites =
+                std::vector<api::PermissionOverwrite>{{m_guildId, "0", std::to_string(api::viewChannel)}};
+            m_channels.push_back(hidden);
+            m_guildChannels[m_guildId] = m_channels;
+            m_unreadGuilds[hidden.id] = m_guildId;
+            m_unreadChannels.insert(hidden.id);
+            api::GuildRoleUpdate access{.guild = m_guildId, .replaceRoles = true};
+            access.owner = "999";
+            access.roles.push_back({.id = m_guildId, .permissions = std::to_string(api::viewChannel)});
+            access.members[m_account.id] = {};
+            m_roleDirectory.apply({false, {access}});
+          }
           m_pointerX = layout::Sidebar::railWidth / 2;
           m_pointerY = layout::ServerRail::top
               + (view == "server-hover-partner"        ? 1

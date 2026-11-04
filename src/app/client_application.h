@@ -892,6 +892,7 @@ namespace app {
     const std::vector<api::Channel>& serverChannels(const std::string& guild) const;
     const api::Channel* serverChannel(const std::string& guild, const std::string& channel) const;
     std::optional<std::uint64_t> serverChannelPermissions(const std::string& guild, const std::string& channel) const;
+    bool serverChannelReadable(const std::string& guild, const std::string& channel) const;
     std::vector<std::pair<std::string, std::string>> serverSettingsPages(const std::string& guild) const;
     bool serverMenuEntry(int id);
     void openServerSubmenu(int id, float center);

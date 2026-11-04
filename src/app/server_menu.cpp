@@ -51,6 +51,19 @@ namespace app {
         m_roleDirectory.memberships(guild, m_account.id), *target
     );
   }
+  bool ClientApplication::serverChannelReadable(const std::string& guild, const std::string& channel) const {
+    const auto* target = serverChannel(guild, channel);
+    if (!target)
+      target = m_threads.find(guild, channel);
+    if (!target || target->kind() == api::ChannelType::GuildCategory)
+      return false;
+    const auto permissions = serverChannelPermissions(guild, channel);
+    if (!permissions || !(*permissions & api::viewChannel))
+      return false;
+    return target->kind() != api::ChannelType::PrivateThread
+        || target->joined.value_or(false)
+        || (*permissions & api::manageThreads);
+  }
   bool ClientApplication::serverChannelVisible(const api::Channel& channel) const {
     const auto guild = std::ranges::find(m_guilds, m_guildId, &api::Guild::id);
     const auto visible = [&](const api::Channel& item) {

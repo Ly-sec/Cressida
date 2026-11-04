@@ -28,8 +28,9 @@ namespace app {
     m_railBottom = bottom;
     std::map<std::string, int> mentions;
     for (const auto& [channel, guild] : m_unreadGuilds)
-      if (!guild.empty())
-        mentions[guild] = std::min(1000000, mentions[guild] + m_unreadTimeline.mentions(channel));
+      if (const auto count = m_unreadTimeline.mentions(channel);
+          !guild.empty() && count > 0 && serverChannelReadable(guild, channel))
+        mentions[guild] = std::min(1000000, mentions[guild] + count);
     struct Row {
       const api::Guild* guild = nullptr;
       const api::GuildFolder* folder = nullptr;
@@ -252,7 +253,10 @@ namespace app {
       }
       const bool unread =
           !m_userDirectory.muted(guild.id) && std::ranges::any_of(m_unreadGuilds, [&](const auto& state) {
-            return state.second == guild.id && m_unreadChannels.contains(state.first) && !channelMuted(state.first);
+            return state.second == guild.id
+                && m_unreadChannels.contains(state.first)
+                && !channelMuted(state.first)
+                && serverChannelReadable(guild.id, state.first);
           });
       if (selected || over || unread)
         rectangle(

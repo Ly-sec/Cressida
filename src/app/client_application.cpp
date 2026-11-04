@@ -2612,7 +2612,7 @@ namespace app {
                     std::max(24.0F, headerWidth - (tagFits ? tagSpace : 0) - roleSpace - appSpace - 6);
                 const float authorWidth = std::min(
                     nameMax,
-                    m_window.target().renderer().measureText(author, Style::fontSizeCaption, FontWeight::SemiBold).width
+                    m_window.target().renderer().measureText(author, Style::fontSizeBody, FontWeight::SemiBold).width
                         + 4
                         + (m_preferences.roleColorMode == 1
                                    && !m_dmMode
@@ -2636,11 +2636,11 @@ namespace app {
                     : 0;
                 selectHeader(
                     author, layout::Chat::authorGutter + nameInset, y,
-                    std::max(0.0F, std::min(authorWidth, nameMax) - nameInset), Style::fontSizeCaption, 0,
+                    std::max(0.0F, std::min(authorWidth, nameMax) - nameInset), Style::fontSizeBody, 0,
                     FontWeight::SemiBold
                 );
                 roleLabel(
-                    *messageContent, 50, y, nameMax, author, Style::fontSizeCaption, foreground, FontWeight::SemiBold,
+                    *messageContent, 50, y, nameMax, author, Style::fontSizeBody, foreground, FontWeight::SemiBold,
                     message.authorId, "message:" + message.id,
                     y + (Style::spaceLg + Style::spaceXxs) >= 0
                         && y < bottom - top
@@ -2696,7 +2696,7 @@ namespace app {
                 }
                 const float timestampAvailable = 50 + textWidth - timestampX;
                 if (!timestamp.empty() && timestampAvailable > 0) {
-                  const float timestampY = y + Style::spaceXxs + Style::borderWidth;
+                  const float timestampY = y + Style::spaceXs;
                   const float width = std::min(timestampWidth + Style::spaceXxs, timestampAvailable);
                   selectHeader(
                       timestamp, timestampX, timestampY, width, Style::fontSizeDetail,
@@ -3516,8 +3516,8 @@ namespace app {
               label(
                   *members, Style::spaceLg + Style::spaceXxs + iconWidth, rowY + layout::Members::groupTextTop,
                   memberWidth - layout::Window::titlebarHeight - iconWidth,
-                  member.group + (member.count >= 0 ? " — " + std::to_string(member.count) : ""), Style::fontSizeMini,
-                  muted, FontWeight::SemiBold
+                  member.group + (member.count >= 0 ? " — " + std::to_string(member.count) : ""),
+                  Style::fontSizeDescription, muted, FontWeight::SemiBold
               );
             } else if (!member.user.id.empty()) {
               const bool memberOver = hovered(

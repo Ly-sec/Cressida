@@ -43,6 +43,15 @@ int main() {
         "Categories never carry activity of their own"
     );
 
+    require(app::channelUnreadDotVisible(text, granted), "Granted text channels show unread dots");
+    require(!app::channelUnreadDotVisible(text, unknown), "Unknown access hides unread dots");
+    for (const auto type : {api::ChannelType::GuildVoice, api::ChannelType::GuildStageVoice}) {
+      const auto voice = channel(type);
+      const auto grant = app::resolveChannelAccess(voice, view);
+      require(app::channelActivityVisible(voice, grant), "Voice chat mentions remain visible");
+      require(!app::channelUnreadDotVisible(voice, grant), "Voice and stage channels never show unread dots");
+    }
+
     const auto privateThread = channel(api::ChannelType::PrivateThread, false);
     require(app::resolveChannelAccess(privateThread, view).denied(), "Unjoined private threads require Manage Threads");
     require(

@@ -49,7 +49,9 @@ each group.
 Unread markers sit inside the channel sidebar. Mention counts appear on rail
 icons and folders. Large counts use `99+`; hover a count to see its full value.
 Muted channels and categories appear dimmer, while hovered, selected and
-mentioned items remain readable.
+mentioned items remain readable. Voice and Stage channels never show an ordinary
+unread marker, but mentions in their chat still show a count. Opening a forum or
+media channel in a focused window marks its new post activity as read.
 
 Server mute and channel mute work separately. Muting a server hides its ordinary
 unread dot in the rail; unread channel names still use the brighter text color.

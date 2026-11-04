@@ -64,6 +64,14 @@ namespace app {
     return grant.granted() && target.kind() != api::ChannelType::GuildCategory;
   }
 
+  // Voice and stage channels never show an ordinary unread dot or bright name;
+  // their text chat still counts mentions through channelActivityVisible.
+  inline bool channelUnreadDotVisible(const api::Channel& target, const ChannelGrant& grant) {
+    return channelActivityVisible(target, grant)
+        && target.kind() != api::ChannelType::GuildVoice
+        && target.kind() != api::ChannelType::GuildStageVoice;
+  }
+
   // Sidebar listing keeps channels whose access is still Unknown, so the list does
   // not flicker while role data arrives. `guildFallback` is the server-wide
   // permission set, consulted only when the channel's own access is Unknown.

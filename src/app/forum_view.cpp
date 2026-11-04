@@ -595,6 +595,19 @@ namespace app {
     };
     std::clog << "Forum replay step " << step << '\n';
     if (step == 0) {
+      m_unreadTimeline.snapshot({{"105", api::UnreadCursor{.after = "9000", .latest = "9011"}}});
+      m_unreadChannels.insert("105");
+      require(markForumRead(), "A focused forum view acknowledges its latest post activity");
+      require(
+          !m_unreadTimeline.cursor("105") && !m_unreadChannels.contains("105") && m_localRead["105"] == "9011",
+          "Viewing a forum clears its unread dot"
+      );
+      require(!markForumRead(), "An already acknowledged forum does not repeat its read");
+      m_unreadChannels.insert("105");
+      m_dialogKind = "test";
+      require(!markForumRead() && m_unreadChannels.contains("105"), "Covered forums are not acknowledged");
+      m_dialogKind.clear();
+      require(markForumRead() && !m_unreadChannels.contains("105"), "Uncovered forums clear stale local dots");
       auto saved = m_forumFirstMessages;
       auto savedOrder = m_forumPreviewOrder;
       for (std::size_t i = 0; i < ForumPreviewRead::maximumCached; ++i) {

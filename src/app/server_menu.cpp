@@ -96,8 +96,14 @@ namespace app {
   int ClientApplication::visibleMentions(const std::string& guild, const std::string& channel) const {
     return channelActivityVisible(guild, channel) ? m_unreadTimeline.mentions(channel) : 0;
   }
+  bool ClientApplication::unreadDotVisible(const std::string& guild, const std::string& channel) const {
+    if (guild.empty())
+      return true;
+    const auto* target = serverChannelTarget(guild, channel);
+    return target && app::channelUnreadDotVisible(*target, channelAccess(guild, channel));
+  }
   bool ClientApplication::visibleUnread(const std::string& guild, const std::string& channel) const {
-    return m_unreadTimeline.cursor(channel).has_value() && channelActivityVisible(guild, channel);
+    return m_unreadTimeline.cursor(channel).has_value() && unreadDotVisible(guild, channel);
   }
   bool ClientApplication::serverChannelVisible(const api::Channel& channel) const {
     const auto guild = std::ranges::find(m_guilds, m_guildId, &api::Guild::id);

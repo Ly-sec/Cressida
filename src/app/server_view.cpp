@@ -62,7 +62,8 @@ namespace app {
         continue;
       if ((guildMuted || channelMuted(channel)) && m_unreadTimeline.mentions(channel) == 0)
         continue;
-      if (!channelActivityVisible(guild.id, channel))
+      if (!channelActivityVisible(guild.id, channel)
+          || (!unreadDotVisible(guild.id, channel) && m_unreadTimeline.mentions(channel) == 0))
         continue;
       unread = true;
       const auto* row = serverChannel(guild.id, channel);

@@ -256,7 +256,7 @@ namespace app {
             return state.second == guild.id
                 && m_unreadChannels.contains(state.first)
                 && !channelMuted(state.first)
-                && channelActivityVisible(guild.id, state.first);
+                && unreadDotVisible(guild.id, state.first);
           });
       if (selected || over || unread)
         rectangle(

@@ -906,6 +906,7 @@ namespace app {
     bool messageActionAllowed(bool (*action)(const ChannelGrant&)) const;
     bool replyAllowed() const;
     bool channelActivityVisible(const std::string& guild, const std::string& channel) const;
+    bool unreadDotVisible(const std::string& guild, const std::string& channel) const;
     std::vector<std::pair<std::string, std::string>> serverSettingsPages(const std::string& guild) const;
     bool serverMenuEntry(int id);
     void openServerSubmenu(int id, float center);
@@ -1725,6 +1726,8 @@ namespace app {
     };
     std::optional<AdoptedChatPreload> m_adoptedChatPreload;
     bool readingChannel(const std::string& channel) const;
+    bool readingForum(const std::string& channel) const;
+    bool markForumRead();
     bool markChannelRead(bool explicitAction = false);
     bool acknowledgeChannelRead(const std::string& channel, const std::string& message, bool automatic = false);
     void dispatchReadAcknowledgements();

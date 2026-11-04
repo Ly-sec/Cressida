@@ -1521,7 +1521,7 @@ namespace app {
         const bool selected = channel.id == m_channelId;
         const int mentions = visibleMentions(activityGuild, channel.id);
         const bool unread = (m_unreadChannels.contains(channel.id) || m_unreadDMs.contains(channel.id))
-            && channelActivityVisible(activityGuild, channel.id)
+            && unreadDotVisible(activityGuild, channel.id)
             && (!channelMuted(channel.id) || mentions > 0);
         const float rowX = layout::Sidebar::railWidth + layout::Sidebar::rowInset;
         const float rowWidth = sidebarWidth - layout::Sidebar::rowInset * 2;
@@ -1847,9 +1847,10 @@ namespace app {
         );
       if (m_dmMode && !m_dmPage.empty())
         drawDmHome(root, w, h);
-      else if (forum)
+      else if (forum) {
+        markForumRead();
         drawForum(root, left, 102, bodyWidth, h - 102);
-      else {
+      } else {
         prepareChannelWriteAccess();
         const auto writeRestriction = selectedChannelWriteRestriction();
         const auto& draft = m_drafts[m_channelId];
@@ -3894,6 +3895,30 @@ namespace app {
         && !m_loadingMessages
         && m_messageScroll <= 1;
   }
+  // Forum and media parents never load history, so a focused, uncovered forum
+  // view acknowledges the parent's latest post activity instead.
+  bool ClientApplication::readingForum(const std::string& channel) const {
+    return m_connected
+        && !startupCovered()
+        && channel == m_channelId
+        && forumView()
+        && !m_shareOpen
+        && !m_inboxOpen
+        && (m_window.active() || (m_demo && m_demoOverlay.starts_with("forum-cycle")))
+        && !settingsVisible()
+        && m_dialogKind.empty()
+        && m_viewImage.empty();
+  }
+  bool ClientApplication::markForumRead() {
+    if (!readingForum(m_channelId))
+      return false;
+    const auto cursor = m_unreadTimeline.cursor(m_channelId);
+    if (!cursor)
+      return m_unreadChannels.erase(m_channelId) > 0;
+    if (!MessageHistory::less(m_localRead[m_channelId], cursor->latest))
+      return false;
+    return acknowledgeChannelRead(m_channelId, cursor->latest, true);
+  }
   bool ClientApplication::markChannelRead(bool explicitAction) {
     if (m_channelId.empty() || m_messages.empty() || !m_history.atLatest() || (!m_demo && !m_history.initialized()))
       return false;
@@ -4306,6 +4331,7 @@ namespace app {
       m_unreadDMs.erase(id);
       m_unreadChannels.erase(id);
     }
+    markForumRead();
     for (const auto& row : channelListRows(
              m_channels, m_collapsedCategories, m_channelId, m_channelListPreferences,
              [&](const auto& id) { return channelMuted(id); },
@@ -5267,7 +5293,7 @@ namespace app {
             m_unreadDMs.insert(event.resource);
         }
         const bool fromOther = !ephemeral && !event.messages.empty() && event.messages.back().authorId != m_account.id;
-        if (!readingChannel(event.resource) && fromOther)
+        if (!readingChannel(event.resource) && !readingForum(event.resource) && fromOther)
           m_unreadChannels.insert(event.resource);
         if (event.resource != m_channelId) {
           if (auto cached = m_channelMessages.find(event.resource); cached != m_channelMessages.end()) {

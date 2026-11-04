@@ -517,6 +517,14 @@ namespace app {
     void demoEmbedStep();
     void prepareBotMessagesDemo();
     void demoBotMessagesStep();
+    void demoFrame(std::chrono::steady_clock::time_point drawStarted);
+    int demoFrameLimit(const char* view) const;
+    void demoVerifyCompletion() const;
+    void demoChannelContent(const std::string& id);
+    void demoDrawOverlays(float w);
+    static bool isSyntaxDemoView(std::string_view view);
+    void prepareSyntaxDemo(std::string_view view);
+    void demoSyntaxCheck();
     void removeMessageEmbeds(const std::string& message, bool immediate);
     void drawRemoveEmbedsDialog(Node& root, float width, float height);
     void demoMarkdownStep();

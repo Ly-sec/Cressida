@@ -1053,19 +1053,19 @@ int main(int argc, char** argv) {
       return result;
     };
     constexpr std::string_view terminalBody =
-        "❯ sudo dnf in libdave-devel                                                     2.4s\n"
+        "❯ sudo dnf in example-devel                                                     2.4s\n"
         "Updating and loading repositories:\n"
         "Repositories loaded.\n"
         "Failed to resolve the transaction:\n"
-        "No match for argument: libdave-devel\n"
+        "No match for argument: example-devel\n"
         "You can try to add to command line:\n"
         "  --skip-unavailable to skip unavailable packages\n"
-        "aditya@adi-fedora ~ [1]\n"
+        "user@workstation ~ [1]\n"
         "❯                                                                               1.2s";
     for (const float width : {240.F, 1200.F}) {
       const auto terminal = checkFencedBody("```" + std::string(terminalBody) + "```", terminalBody, width);
       require(
-          terminal.plainText.starts_with("code❯ sudo dnf in libdave-devel")
+          terminal.plainText.starts_with("code❯ sudo dnf in example-devel")
               && terminal.plainText.ends_with("1.2s\n")
               && !terminal.plainText.contains("```"),
           "Same-line terminal fences retain the command and timings instead of treating them as metadata"
@@ -1073,8 +1073,8 @@ int main(int argc, char** argv) {
     }
     checkFencedBody("```echo hello```", "echo hello");
     checkFencedBody("__before__ <@1> ```<@1> __literal__ ||secret||``` **after**", "<@1> __literal__ ||secret||");
-    checkFencedBody("```sudo dnf in libdave-devel\noutput```", "sudo dnf in libdave-devel\noutput");
-    checkFencedBody("```❯ sudo dnf in libdave-devel\noutput", "❯ sudo dnf in libdave-devel\noutput");
+    checkFencedBody("```sudo dnf in example-devel\noutput```", "sudo dnf in example-devel\noutput");
+    checkFencedBody("```❯ sudo dnf in example-devel\noutput", "❯ sudo dnf in example-devel\noutput");
     checkFencedBody("```future_lang\noutput", "output\n");
     checkFencedBody("```text output\nfirst\n```", "text output\nfirst\n");
     const auto slashLanguage = checkFencedBody("```text/plain\nfirst\n```", "first\n");

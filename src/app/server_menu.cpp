@@ -51,26 +51,62 @@ namespace app {
         m_roleDirectory.memberships(guild, m_account.id), *target
     );
   }
-  bool ClientApplication::serverChannelReadable(const std::string& guild, const std::string& channel) const {
-    const auto* target = serverChannel(guild, channel);
+  const api::Channel*
+  ClientApplication::serverChannelTarget(const std::string& guild, const std::string& channel) const {
+    if (const auto* target = serverChannel(guild, channel))
+      return target;
+    return m_threads.find(guild, channel);
+  }
+  ChannelGrant ClientApplication::channelAccess(const std::string& guild, const std::string& channel) const {
+    const auto* target = serverChannelTarget(guild, channel);
     if (!target)
-      target = m_threads.find(guild, channel);
-    if (!target || target->kind() == api::ChannelType::GuildCategory)
-      return false;
-    const auto permissions = serverChannelPermissions(guild, channel);
-    if (!permissions || !(*permissions & api::viewChannel))
-      return false;
-    return target->kind() != api::ChannelType::PrivateThread
-        || target->joined.value_or(false)
-        || (*permissions & api::manageThreads);
+      return {};
+    return resolveChannelAccess(*target, serverChannelPermissions(guild, channel));
+  }
+  bool
+  ClientApplication::channelAllows(const std::string& guild, const std::string& channel, std::uint64_t bits) const {
+    return channelAccess(guild, channel).allows(bits);
+  }
+  ChannelGrant ClientApplication::channelGrantFor(const std::string& channel) const {
+    return m_dmMode ? ChannelGrant{} : channelAccess(m_guildId, channel);
+  }
+  bool ClientApplication::channelCan(
+      const std::string& guild, const std::string& channel, bool (*action)(const ChannelGrant&)
+  ) const {
+    return guild.empty() || action(channelAccess(guild, channel));
+  }
+  bool ClientApplication::selectedCan(bool (*action)(const ChannelGrant&)) const {
+    return m_dmMode || action(channelGrantFor(m_channelId));
+  }
+  bool ClientApplication::messageActionAllowed(bool (*action)(const ChannelGrant&)) const {
+    // Offline fixtures carry no permission data outside the dedicated permission replays.
+    if (m_demo && !m_demoOverlay.starts_with("permissions-cycle"))
+      return true;
+    return selectedCan(action);
+  }
+  bool ClientApplication::replyAllowed() const {
+    return selectedChannelWriteAccess() == api::MessageWriteAccess::Allowed;
+  }
+  bool ClientApplication::channelActivityVisible(const std::string& guild, const std::string& channel) const {
+    if (guild.empty())
+      return true;
+    const auto* target = serverChannelTarget(guild, channel);
+    return target && app::channelActivityVisible(*target, channelAccess(guild, channel));
+  }
+  int ClientApplication::visibleMentions(const std::string& guild, const std::string& channel) const {
+    return channelActivityVisible(guild, channel) ? m_unreadTimeline.mentions(channel) : 0;
+  }
+  bool ClientApplication::visibleUnread(const std::string& guild, const std::string& channel) const {
+    return m_unreadTimeline.cursor(channel).has_value() && channelActivityVisible(guild, channel);
   }
   bool ClientApplication::serverChannelVisible(const api::Channel& channel) const {
     const auto guild = std::ranges::find(m_guilds, m_guildId, &api::Guild::id);
     const auto visible = [&](const api::Channel& item) {
-      auto permission = serverChannelPermissions(m_guildId, item.isThread() ? item.parentId : item.id);
-      if (!permission)
-        permission = guildPermissions();
-      return !permission || (*permission & api::viewChannel) || (item.isThread() && item.joined.value_or(false));
+      return channelListed(
+          item,
+          resolveChannelAccess(item, serverChannelPermissions(m_guildId, item.isThread() ? item.parentId : item.id)),
+          guildPermissions()
+      );
     };
     if (channel.type != 4) {
       if (!visible(channel))
@@ -87,7 +123,7 @@ namespace app {
       return true;
     const auto followed = [&](const api::Channel& item) {
       return item.id == m_channelId
-          || m_unreadTimeline.mentions(item.id) > 0
+          || visibleMentions(m_guildId, item.id) > 0
           || (m_userDirectory.notificationFlags(item.id) & api::channelOptInEnabled)
           || (m_userDirectory.notificationFlags(item.parentId) & api::channelOptInEnabled)
           || std::ranges::find(m_channelListPreferences.pinned, item.id) != m_channelListPreferences.pinned.end();
@@ -103,10 +139,10 @@ namespace app {
     std::map<std::string, std::string> states;
     for (const auto& guild : guilds) {
       for (const auto& channel : serverChannels(guild))
-        if (channel.type != 4 && !channel.lastMessageId.empty())
+        if (channel.type != 4 && !channel.lastMessageId.empty() && channelActivityVisible(guild, channel.id))
           states[channel.id] = channel.lastMessageId;
       for (const auto& [channel, source] : m_unreadGuilds)
-        if (source == guild)
+        if (source == guild && channelActivityVisible(guild, channel))
           if (const auto cursor = m_unreadTimeline.cursor(channel))
             states[channel] = cursor->latest;
     }
@@ -233,9 +269,11 @@ namespace app {
     const bool invite = std::ranges::any_of(channels, [&](const auto& channel) {
       return channel.type != 4
           && !channel.isThread()
-          && (serverChannelPermissions(guild->id, channel.id).value_or(0) & 1);
+          && api::permission::allows(
+                 serverChannelPermissions(guild->id, channel.id), api::permission::createInstantInvite
+          );
     });
-    if (invite || (permissions & 1))
+    if (invite || api::permission::allows(permissions, api::permission::createInstantInvite))
       add(ServerMenuKind::Invite, "Invite to Server", "user-plus");
     separate();
     add(m_userDirectory.muted(guild->id) ? ServerMenuKind::Mute : ServerMenuKind::MuteMenu,
@@ -258,19 +296,20 @@ namespace app {
       add(ServerMenuKind::SettingsMenu, "Server Settings", "settings");
     add(ServerMenuKind::Privacy, "Privacy Settings", "shield");
     add(ServerMenuKind::Profile, "Edit Per-server Profile", "user");
-    if (permissions & (api::manageChannel | (1ULL << 33) | (1ULL << 44))) {
+    namespace p = api::permission;
+    if (p::allowsAny(permissions, p::manageChannels | p::manageEvents | p::createEvents)) {
       separate();
-      if (permissions & api::manageChannel) {
+      if (p::allows(permissions, p::manageChannels)) {
         add(ServerMenuKind::CreateChannel, "Create Channel", "hash");
         add(ServerMenuKind::CreateCategory, "Create Category", "folder-plus");
       }
-      if (permissions & ((1ULL << 33) | (1ULL << 44)))
+      if (p::allowsAny(permissions, p::manageEvents | p::createEvents))
         add(ServerMenuKind::CreateEvent, "Create Event", "calendar");
     }
     separate();
     add(ServerMenuKind::MoveMenu, "Move to…", "folder");
     separate();
-    if (permissions & (1ULL << 5))
+    if (p::allows(permissions, p::manageGuild))
       add(ServerMenuKind::Security, "Security Actions", "shield", true);
     if (m_roleDirectory.owner(guild->id) != m_account.id)
       add(ServerMenuKind::Leave, "Leave Server", "logout", true);
@@ -414,7 +453,7 @@ namespace app {
       if (command.kind == Kind::CreateEvent)
         serverSettingsAction({0, 0, 0, 0, Action::ServerSettingsAction, "new"});
     } else if (command.kind == Kind::CreateChannel || command.kind == Kind::CreateCategory) {
-      if (!(permissions & api::manageChannel))
+      if (!api::permission::allows(permissions, api::permission::manageChannels))
         return true;
       action.kind = api::InteractionKind::CreateChannel;
       action.channelType = command.kind == Kind::CreateCategory ? 4 : 0;
@@ -424,14 +463,16 @@ namespace app {
       for (const auto& channel : serverChannels(command.guild))
         if (channel.type != 4
             && !channel.isThread()
-            && (serverChannelPermissions(command.guild, channel.id).value_or(0) & 1)) {
+            && api::permission::allows(
+                serverChannelPermissions(command.guild, channel.id), api::permission::createInstantInvite
+            )) {
           action.kind = api::InteractionKind::CreateInvite;
           action.channel = channel.id;
           openChannelInvite(action);
           opened = true;
           break;
         }
-      if (!opened && (permissions & 1)) {
+      if (!opened && api::permission::allows(permissions, api::permission::createInstantInvite)) {
         action.kind = api::InteractionKind::CreateInvite;
         openChannelInvite(action);
         if (!m_demo && m_client.channels(command.guild)) {
@@ -588,7 +629,9 @@ namespace app {
     for (const auto& channel : serverChannels(event.resource))
       if (channel.type != 4
           && !channel.isThread()
-          && (serverChannelPermissions(event.resource, channel.id).value_or(0) & 1)) {
+          && api::permission::allows(
+              serverChannelPermissions(event.resource, channel.id), api::permission::createInstantInvite
+          )) {
         m_dialogAction->channel = channel.id;
         generateChannelInvite();
         return;

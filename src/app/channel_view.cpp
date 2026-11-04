@@ -760,7 +760,7 @@ namespace app {
     const auto roles = m_roleDirectory.allRoles(m_guildId);
     const auto access = api::channelAccessRoles(m_guildId, roles, *channel);
     const bool privateChannel = channelPrivate(m_guildId, *channel);
-    const auto permissions = selectedChannelPermissions().value_or(0);
+    const auto grant = channelGrantFor(m_channelId);
     const auto measure = [&](std::string_view text, const MessageStyle& style) {
       return m_window.target()
           .renderer()
@@ -777,7 +777,7 @@ namespace app {
          .discordTimestamps = true}
     );
     const float topicHeight = std::min(180.0F, description.height);
-    const bool controls = permissions & (api::manageChannel | api::managePermissions);
+    const bool controls = can::editChannel(grant);
     const float controlsY = 142 + (channel->topic && !channel->topic->empty() ? topicHeight + Style::cardPadding : 0);
     const float chipsY = controlsY + (controls ? 42 : 0);
     struct Chip {
@@ -864,11 +864,11 @@ namespace app {
              Action::OpenUrl, area.url}
         );
     float controlX = x;
-    if (permissions & api::managePermissions) {
+    if (can::managePermissions(grant)) {
       button(*root, {controlX, y + controlsY, 181, 30, Action::AddChannelAccess, {}}, "Add members or roles");
       controlX += 191;
     }
-    if (permissions & api::manageChannel)
+    if (can::manageChannel(grant))
       button(*root, {controlX, y + controlsY, 112, 30, Action::EditChannel, {}}, "Edit Channel");
     // button() accepts node-local coordinates; convert only these intro hits.
     for (std::size_t i = hitsBegin; i < m_hits.size(); ++i) {
@@ -1151,11 +1151,10 @@ namespace app {
     m_channelFormTopic = copy.topic.value_or("");
     m_channelFormNsfw = copy.nsfw.value_or(false);
     m_channelFormRateLimit = copy.rateLimitPerUser.value_or(0);
-    const auto permissions = channelPermissionsFor(copy.id).value_or(0);
-    m_channelEditPage = kind == "channel-access" ? "access"
-        : kind == "channel-edit" && !(permissions & api::manageChannel) && (permissions & api::managePermissions)
-        ? "permissions"
-        : "overview";
+    const auto grant = channelGrantFor(copy.id);
+    m_channelEditPage = kind == "channel-access"                                                ? "access"
+        : kind == "channel-edit" && !can::manageChannel(grant) && can::managePermissions(grant) ? "permissions"
+                                                                                                : "overview";
     m_channelPermissionTarget = m_guildId;
     m_channelPermissionType = 0;
     m_channelPermissionDraft.clear();
@@ -1194,9 +1193,9 @@ namespace app {
       const bool access = m_dialogKind == "channel-access" || m_channelEditPage == "access";
       const bool permissions = access || m_channelEditPage == "permissions";
       const bool category = m_channelEditOriginal.type == 4;
-      const auto capabilities = channelPermissionsFor(m_channelEditOriginal.id).value_or(0);
-      const bool canManage = (capabilities & api::manageChannel) != 0;
-      const bool canPermissions = (capabilities & api::managePermissions) != 0;
+      const auto capabilities = channelGrantFor(m_channelEditOriginal.id);
+      const bool canManage = can::manageChannel(capabilities);
+      const bool canPermissions = can::managePermissions(capabilities);
       const bool changed = m_channelFormName != m_channelEditOriginal.name
           || (!category && m_channelFormTopic != m_channelEditOriginal.topic.value_or(""))
           || (!category && m_channelFormNsfw != m_channelEditOriginal.nsfw.value_or(false))
@@ -1613,13 +1612,15 @@ namespace app {
             {1ULL << 25, "Use Voice Activity", "Allows members to speak without using Push to Talk.", false}
         };
         for (const auto& permission : rows) {
-          if (permission.bit >= (1ULL << 20)
-              && (permission.bit
-                  & ((1ULL << 20) | (1ULL << 21) | (1ULL << 22) | (1ULL << 23) | (1ULL << 24) | (1ULL << 25)))
-              && !category
-              && m_channelEditOriginal.type != 2)
-            continue;
-          if (permission.bit == (1ULL << 9) && !category && m_channelEditOriginal.type != 2)
+          namespace p = api::permission;
+          constexpr auto voiceOnly = p::connect
+              | p::speak
+              | p::muteMembers
+              | p::deafenMembers
+              | p::moveMembers
+              | p::useVoiceActivity
+              | p::stream;
+          if ((permission.bit & voiceOnly) && !category && m_channelEditOriginal.type != 2)
             continue;
           const float titleWidth = std::max(70.0F, permissionWidth - 112);
           const float heading = textHeight(permission.name, Style::fontSizeCaption, titleWidth, FontWeight::SemiBold);
@@ -1789,10 +1790,10 @@ namespace app {
       label(*content, 22, ry + Style::borderWidth, width - 84, roles[i].name, Style::fontSizeDescription, foreground);
     }
     root.addChild(std::move(content));
-    const auto permissions = channelPermissionsFor(m_channelEditOriginal.id).value_or(0);
-    if (permissions & (api::manageChannel | api::managePermissions))
+    const auto grant = channelGrantFor(m_channelEditOriginal.id);
+    if (can::editChannel(grant))
       button(root, {x + Style::spaceXl, y + height - 52, 112, 32, Action::EditChannel, {}}, "Edit Channel");
-    if (permissions & api::managePermissions)
+    if (can::managePermissions(grant))
       button(root, {x + 146, y + height - 52, 181, 32, Action::AddChannelAccess, {}}, "Add members or roles");
     if (m_channelDetailErrors.contains(m_channelEditOriginal.id)) {
       label(
@@ -1804,9 +1805,7 @@ namespace app {
     m_tooltip.clear();
   }
   bool ClientApplication::channelFeatureAction(const Hit& hit) {
-    const auto permissions =
-        channelPermissionsFor(m_dialogKind.starts_with("channel-") ? m_channelEditOriginal.id : m_channelId)
-            .value_or(0);
+    const auto grant = channelGrantFor(m_dialogKind.starts_with("channel-") ? m_channelEditOriginal.id : m_channelId);
     switch (hit.action) {
     case Action::SlashFilter:
       filterSlashCommands(hit.id);
@@ -1888,11 +1887,11 @@ namespace app {
       if (m_dialogPending)
         break;
       if (hit.id == "nsfw") {
-        if (permissions & api::manageChannel)
+        if (can::manageChannel(grant))
           m_channelFormNsfw = !m_channelFormNsfw;
         break;
       }
-      if (!(permissions & api::managePermissions))
+      if (!can::managePermissions(grant))
         break;
       std::uint64_t bit = api::viewChannel;
       int state = 0;
@@ -1950,11 +1949,11 @@ namespace app {
       openChannelDialog("channel-info");
       break;
     case Action::EditChannel:
-      if (permissions & (api::manageChannel | api::managePermissions))
+      if (can::editChannel(grant))
         openChannelDialog("channel-edit", m_dialogKind.starts_with("channel-") ? m_channelEditOriginal.id : "");
       break;
     case Action::AddChannelAccess:
-      if (permissions & api::managePermissions) {
+      if (can::managePermissions(grant)) {
         if (m_dialogKind == "channel-edit") {
           m_channelEditPage = "access";
           m_channelReturnToPermissions = true;
@@ -1987,7 +1986,7 @@ namespace app {
           .revision = ++m_channelFeatureSerial
       };
       if (hit.action == Action::SaveChannelEdit) {
-        if (!(permissions & api::manageChannel)
+        if (!can::manageChannel(grant)
             && (m_channelFormName != m_channelEditOriginal.name
                 || m_channelFormTopic != m_channelEditOriginal.topic.value_or("")
                 || m_channelFormNsfw != m_channelEditOriginal.nsfw.value_or(false)
@@ -2002,7 +2001,7 @@ namespace app {
         if (m_channelEditOriginal.type != 4
             && m_channelFormRateLimit != m_channelEditOriginal.rateLimitPerUser.value_or(0))
           action.channelRateLimit = m_channelFormRateLimit;
-        if (!m_channelPermissionDraft.empty() && !(permissions & api::managePermissions)) {
+        if (!m_channelPermissionDraft.empty() && !can::managePermissions(grant)) {
           m_dialogError = "You no longer have permission to change this channel's permissions.";
           break;
         }
@@ -2021,7 +2020,7 @@ namespace app {
           break;
         }
       } else {
-        if (!(permissions & api::managePermissions))
+        if (!can::managePermissions(grant))
           break;
         if (!api::validSnowflake(m_channelAccessTarget)) {
           m_dialogError = "Choose a role or member first.";
@@ -2182,7 +2181,7 @@ namespace app {
         m_channelPermissionPending.erase(action.permissionBit);
       }
       if (!m_channelPermissionPending.empty() && action.kind != api::InteractionKind::GrantChannelAccess) {
-        if (!(channelPermissionsFor(action.channel).value_or(0) & api::managePermissions)) {
+        if (!can::managePermissions(channelAccess(action.guild, action.channel))) {
           m_dialogPending = false;
           m_dialogAction.reset();
           m_dialogError = "Your remaining changes were not saved because your permissions changed.";

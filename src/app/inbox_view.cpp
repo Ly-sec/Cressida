@@ -750,7 +750,7 @@ namespace app {
         if (std::ranges::none_of(
                 m_privateChannels, [&](const auto& dm) { return dm.id == channel && dm.isMessageRequest(); }
             )
-            && m_unreadTimeline.cursor(channel)
+            && visibleUnread(guild, channel)
             && (m_inboxMuted || (!channelMuted(channel) && (guild.empty() || !m_userDirectory.muted(guild))))
             && (!m_inboxGuild || m_dmMode || guild == m_guildId))
           m_inboxUnread.emplace_back(channel, guild);

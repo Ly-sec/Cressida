@@ -341,7 +341,7 @@ namespace app {
             state.guild, m_account.id, m_roleDirectory.owner(state.guild), m_roleDirectory.allRoles(state.guild),
             m_roleDirectory.memberships(state.guild, m_account.id), synthetic
         );
-        if (!(permissions.value_or(0) & ((1ULL << 3) | (1ULL << 26)))) {
+        if (!api::permission::allows(permissions, api::permission::changeNickname)) {
           state.error = "Your current roles do not allow you to change your nickname in this server.";
           m_window.invalidate();
           return true;

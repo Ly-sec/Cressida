@@ -656,7 +656,7 @@ namespace app {
           .revision = ++m_dialogGeneration,
           .content = autoModerationEmbed(*message)->description,
           .customId = std::string(autoModerationField(autoModerationEmbed(*message), "decision_id")),
-          .markAutoModerationFeedback = (selectedChannelPermissions().value_or(0) & api::manageMessages) != 0
+          .markAutoModerationFeedback = can::manageMessages(channelGrantFor(m_channelId))
       };
     }
     m_window.invalidate();

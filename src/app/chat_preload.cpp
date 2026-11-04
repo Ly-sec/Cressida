@@ -21,9 +21,7 @@ namespace app {
             && !channel->isThread())
         || (channel->type == 12 && !channel->joined.value_or(false)))
       return false;
-    const auto permissions = channelPermissionsFor(channel->isThread() ? channel->parentId : id);
-    constexpr std::uint64_t historyPermission = 1ULL << 16;
-    return permissions && (*permissions & api::viewChannel) && (*permissions & historyPermission);
+    return channelAllows(m_guildId, id, api::permission::readMessageHistory);
   }
 
   std::string ClientApplication::hoveredPreloadChat() const {

@@ -109,7 +109,7 @@ namespace app {
       return;
     const auto* channel = serverChannel(m_dialogAction->guild, m_dialogAction->channel);
     const auto permissions = serverChannelPermissions(m_dialogAction->guild, m_dialogAction->channel);
-    if (!channel || !permissions || !(*permissions & 1)) {
+    if (!channel || !permissions || !api::permission::allows(permissions, api::permission::createInstantInvite)) {
       m_dialogError = !channel
           ? "This server's channels are not available yet. Reopen the invite after they finish loading."
           : !permissions

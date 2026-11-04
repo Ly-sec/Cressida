@@ -43,7 +43,7 @@ namespace app {
       view.guild = state.guild;
     }
     const auto access = serverSettingsAccess();
-    if (access.self != access.owner && !(access.permissions.value_or(0) & ((1ULL << 3) | (1ULL << 7)))) {
+    if (access.self != access.owner && !api::permission::allows(access.permissions, api::permission::viewAuditLog)) {
       view.error = "You need View Audit Log permission to view this server's administrative history.";
       return;
     }
@@ -278,7 +278,7 @@ namespace app {
       prepareServerAuditDemo();
     const auto access = serverSettingsAccess();
     const bool permitted =
-        access.self == access.owner || (access.permissions.value_or(0) & ((1ULL << 3) | (1ULL << 7)));
+        access.self == access.owner || api::permission::allows(access.permissions, api::permission::viewAuditLog);
     float cursor = 0;
     const auto retained = [&](const std::string& id) {
       std::unique_ptr<Node> saved;

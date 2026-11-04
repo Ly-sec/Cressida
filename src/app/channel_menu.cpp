@@ -11,7 +11,6 @@
 namespace app {
   using namespace theme;
   namespace {
-    constexpr std::uint64_t invitePermission = 1;
     bool submenu(ChannelMenuKind kind) {
       return kind == ChannelMenuKind::MuteMenu
           || kind == ChannelMenuKind::NotifyMenu
@@ -92,8 +91,8 @@ namespace app {
     m_contextChannel = channel ? channel->id : "";
     m_contextMessage.clear();
     m_contextUser.clear();
-    const auto permissions = channel ? channelPermissionsFor(channel->id).value_or(0) : guildPermissions().value_or(0);
-    const auto guild = guildPermissions().value_or(0);
+    const auto grant = channel ? channelAccess(m_guildId, channel->id) : ChannelGrant{};
+    const bool manageGuildChannels = api::permission::allows(guildPermissions(), api::permission::manageChannels);
     const bool category = channel && channel->type == 4;
     const auto add = [&](ChannelMenuKind kind, const std::string& label, const char* icon = "",
                          bool danger = false) -> ContextMenuControlEntry& {
@@ -113,14 +112,12 @@ namespace app {
       hide.checkmark = true;
       hide.toggleState = m_channelListPreferences.hideMuted ? 1 : 0;
       separate();
-      if (guild & api::manageChannel) {
+      if (manageGuildChannels) {
         add(ChannelMenuKind::CreateText, "Create Channel", "hash");
         add(ChannelMenuKind::CreateCategory, "Create Category", "folder-plus");
       }
       if (std::ranges::any_of(m_channels, [&](const auto& value) {
-            return value.type != 4
-                && !value.isThread()
-                && (channelPermissionsFor(value.id).value_or(0) & invitePermission);
+            return value.type != 4 && !value.isThread() && can::createInvite(channelAccess(m_guildId, value.id));
           }))
         add(ChannelMenuKind::Invite, "Invite to Server", "user-plus");
     } else {
@@ -129,7 +126,7 @@ namespace app {
         if (m_preferences.logDeletedMessages || m_preferences.logEditHistory)
           add(ChannelMenuKind::ClearLog, "Clear Message Log", "eraser", true);
         separate();
-        if (permissions & invitePermission)
+        if (can::createInvite(grant))
           add(ChannelMenuKind::Invite, "Invite to Channel", "user-plus");
         const bool pinned =
             std::ranges::find(m_channelListPreferences.pinned, channel->id) != m_channelListPreferences.pinned.end();
@@ -146,22 +143,22 @@ namespace app {
                                              : "Mute Channel",
           "bell-off");
       add(ChannelMenuKind::NotifyMenu, "Notification Settings", "bell");
-      if (!channel->isThread() && !category && (permissions & api::manageChannel)) {
+      if (!channel->isThread() && !category && can::manageChannel(grant)) {
         separate();
         add(ChannelMenuKind::MoveMenu, "Move to…", "folder");
       }
-      if (!channel->isThread() && (permissions & (api::manageChannel | api::managePermissions))) {
+      if (!channel->isThread() && can::editChannel(grant)) {
         separate();
         add(ChannelMenuKind::Edit, category ? "Edit Category" : "Edit Channel", "pencil");
-        if (!category && (permissions & api::manageChannel) && (guild & api::manageChannel))
+        if (!category && can::manageChannel(grant) && manageGuildChannels)
           add(ChannelMenuKind::Duplicate, "Duplicate Channel", "copy");
       }
-      const auto createPermissions = category ? permissions
-          : channel->parentId.empty()         ? guild
-                                              : channelPermissionsFor(channel->parentId).value_or(0);
-      if (createPermissions & api::manageChannel)
+      const bool createHere = category ? can::manageChannel(grant)
+          : channel->parentId.empty()  ? manageGuildChannels
+                                       : can::manageChannel(channelAccess(m_guildId, channel->parentId));
+      if (createHere)
         add(ChannelMenuKind::CreateText, "Create Text Channel", "hash");
-      if (!channel->isThread() && (permissions & api::manageChannel))
+      if (!channel->isThread() && can::manageChannel(grant))
         add(ChannelMenuKind::Delete, category ? "Delete Category" : "Delete Channel", "trash", true);
       separate();
       if (m_preferences.developerMode || m_demo)
@@ -229,10 +226,10 @@ namespace app {
         add(ChannelMenuKind::Notify, label, level, {}, m_userDirectory.notificationLevel(command.channel) == level);
     } else {
       const auto source = std::ranges::find(m_channels, command.channel, &api::Channel::id);
-      if (guildPermissions().value_or(0) & api::manageChannel)
+      if (api::permission::allows(guildPermissions(), api::permission::manageChannels))
         add(ChannelMenuKind::Move, "No Category", 0, "", source != m_channels.end() && source->parentId.empty());
       for (const auto& category : m_channels)
-        if (category.type == 4 && (channelPermissionsFor(category.id).value_or(0) & api::manageChannel))
+        if (category.type == 4 && can::manageChannel(channelAccess(m_guildId, category.id)))
           add(ChannelMenuKind::Move, category.name, 0, category.id,
               source != m_channels.end() && source->parentId == category.id);
     }
@@ -270,8 +267,8 @@ namespace app {
     const api::Channel* channel = found == m_channels.end() ? nullptr : &*found;
     if (!command.channel.empty() && (!channel || m_deletedChannels.contains(command.channel)))
       return true;
-    const auto permissions = channelPermissionsFor(command.channel).value_or(0);
-    const auto guild = guildPermissions().value_or(0);
+    const auto grant = channelAccess(command.guild, command.channel);
+    const bool manageGuildChannels = api::permission::allows(guildPermissions(), api::permission::manageChannels);
     const auto fail = [&](const std::string& error) {
       closeDialog();
       m_dialogKind = "sidebar-error";
@@ -280,9 +277,9 @@ namespace app {
       m_window.invalidate();
     };
     using Kind = ChannelMenuKind;
-    if ((command.kind == Kind::Edit && !(permissions & (api::manageChannel | api::managePermissions)))
+    if ((command.kind == Kind::Edit && !can::editChannel(grant))
         || ((command.kind == Kind::Delete || command.kind == Kind::Move || command.kind == Kind::Duplicate)
-            && !(permissions & api::manageChannel))) {
+            && !can::manageChannel(grant))) {
       fail("You no longer have permission to manage this channel.");
       return true;
     }
@@ -317,7 +314,7 @@ namespace app {
       if (channel && channel->type == 4) {
         targets.clear();
         for (const auto& child : m_channels)
-          if (child.parentId == command.channel)
+          if (child.parentId == command.channel && channelActivityVisible(m_guildId, child.id))
             targets.push_back(child.id);
       }
       for (const auto& target : targets) {
@@ -360,8 +357,10 @@ namespace app {
       if (command.kind == Kind::Move) {
         if (channel && channel->parentId == command.argument)
           return true;
-        const auto destination = command.argument.empty() ? guild : channelPermissionsFor(command.argument).value_or(0);
-        if (!(destination & api::manageChannel)) {
+        const bool destination = command.argument.empty()
+            ? manageGuildChannels
+            : can::manageChannel(channelAccess(command.guild, command.argument));
+        if (!destination) {
           fail("You cannot move this channel into that category.");
           return true;
         }
@@ -383,7 +382,7 @@ namespace app {
                   return a.id == b.id && a.type == b.type && a.allow == b.allow && a.deny == b.deny;
                 }
             )
-            && (permissions & api::managePermissions)) {
+            && can::managePermissions(grant)) {
           m_dialogKind = "sidebar-move";
           m_dialogTitle = "Sync permissions?";
           m_window.invalidate();
@@ -404,7 +403,7 @@ namespace app {
         const auto parent = command.kind == Kind::CreateText && channel
             ? (channel->type == 4 ? channel->id : channel->parentId)
             : std::string{};
-        if (!((parent.empty() ? guild : channelPermissionsFor(parent).value_or(0)) & api::manageChannel)) {
+        if (!(parent.empty() ? manageGuildChannels : can::manageChannel(channelAccess(command.guild, parent)))) {
           fail("You cannot create channels here.");
           return true;
         }
@@ -413,7 +412,7 @@ namespace app {
         if (!parent.empty())
           action.parentId = parent;
       } else if (command.kind == Kind::Duplicate) {
-        if (!(guild & api::manageChannel)) {
+        if (!manageGuildChannels) {
           fail("You cannot create channels in this server.");
           return true;
         }
@@ -425,14 +424,14 @@ namespace app {
           const auto at = std::ranges::find_if(m_channels, [&](const auto& candidate) {
             return candidate.type != 4
                 && !candidate.isThread()
-                && (channelPermissionsFor(candidate.id).value_or(0) & invitePermission);
+                && can::createInvite(channelAccess(command.guild, candidate.id));
           });
           if (at == m_channels.end()) {
             fail("No channel is available for creating an invite.");
             return true;
           }
           action.channel = at->id;
-        } else if (!(permissions & invitePermission)) {
+        } else if (!can::createInvite(grant)) {
           fail("You cannot create invites for this channel.");
           return true;
         }
@@ -476,21 +475,21 @@ namespace app {
       m_window.invalidate();
       return;
     }
-    const auto permissions = serverChannelPermissions(action.guild, action.channel).value_or(0);
-    const auto guild = serverGuildPermissions(action.guild).value_or(0);
+    const auto grant = channelAccess(action.guild, action.channel);
+    const auto guild = serverGuildPermissions(action.guild);
+    const bool hasParent = action.parentId && !action.parentId->empty();
+    const auto parentGrant = hasParent ? channelAccess(action.guild, *action.parentId) : ChannelGrant{};
     bool allowed = false;
     using Kind = api::InteractionKind;
     if (action.kind == Kind::CreateChannel)
-      allowed = (action.parentId && !action.parentId->empty()
-                     ? serverChannelPermissions(action.guild, *action.parentId).value_or(0)
-                     : guild)
-          & api::manageChannel;
+      allowed =
+          hasParent ? can::manageChannel(parentGrant) : api::permission::allows(guild, api::permission::manageChannels);
     else if (action.kind == Kind::DuplicateChannel)
-      allowed = (permissions & api::manageChannel) && (guild & api::manageChannel);
+      allowed = can::manageChannel(grant) && api::permission::allows(guild, api::permission::manageChannels);
     else if (action.kind == Kind::DeleteChannel)
-      allowed = permissions & api::manageChannel;
+      allowed = can::manageChannel(grant);
     else if (action.kind == Kind::CreateInvite)
-      allowed = permissions & invitePermission;
+      allowed = can::createInvite(grant);
     if (!allowed) {
       m_dialogError = "Your permissions changed. Reopen the menu to try again.";
       m_window.invalidate();
@@ -508,10 +507,9 @@ namespace app {
       }
       action.user = m_account.id;
       if (action.privateChannel) {
-        const auto accessPermissions = action.parentId && !action.parentId->empty()
-            ? serverChannelPermissions(action.guild, *action.parentId).value_or(0)
-            : guild;
-        if (!(accessPermissions & api::managePermissions)) {
+        const bool managePermissions = hasParent ? can::managePermissions(parentGrant)
+                                                 : api::permission::allows(guild, api::permission::managePermissions);
+        if (!managePermissions) {
           m_dialogError = "You need Manage Permissions to create a private channel.";
           return;
         }
@@ -550,15 +548,15 @@ namespace app {
       if (m_dialogPending)
         return true;
       auto action = *m_dialogAction;
-      if (!(channelPermissionsFor(action.channel).value_or(0) & api::manageChannel)
+      if (!can::manageChannel(channelAccess(action.guild, action.channel))
           || !action.parentId
-          || !(channelPermissionsFor(*action.parentId).value_or(0) & api::manageChannel)) {
+          || !can::manageChannel(channelAccess(action.guild, *action.parentId))) {
         m_dialogError = "Your permissions changed. Reopen the menu to try again.";
         m_window.invalidate();
         return true;
       }
       action.syncPermissions = hit.id == "sync";
-      if (action.syncPermissions && !(channelPermissionsFor(action.channel).value_or(0) & api::managePermissions))
+      if (action.syncPermissions && !can::managePermissions(channelAccess(action.guild, action.channel)))
         return true;
       m_dialogAction = action;
       if (startInteraction(action))

@@ -135,7 +135,7 @@ namespace app {
     std::clog << "Channel feature replay step " << step << '\n';
     if (step == 0) {
       require(
-          selectedChannel()->topic && selectedChannelPermissions().value_or(0) & api::manageChannel,
+          selectedChannel()->topic && can::manageChannel(channelGrantFor(m_channelId)),
           "Project channel topic and actor permissions"
       );
       require(
@@ -307,7 +307,7 @@ namespace app {
       changed.members["1"] = {};
       m_roleDirectory.apply({false, {changed}});
       require(
-          !(selectedChannelPermissions().value_or(0) & api::manageChannel),
+          !can::manageChannel(channelGrantFor(m_channelId)),
           "Losing management permissions hides privileged channel actions"
       );
       auto reply = m_messages.front();

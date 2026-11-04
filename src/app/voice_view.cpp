@@ -137,13 +137,11 @@ namespace app {
         return;
       bool canSpeak = true;
       if (!m_dmMode) {
-        constexpr std::uint64_t connectPermission = 1ULL << 20, speakPermission = 1ULL << 21;
-        const auto permissions = channelPermissionsFor(id).value_or(0);
-        if (!(permissions & api::viewChannel) || !(permissions & connectPermission)) {
+        if (!channelAllows(m_guildId, id, api::permission::connect)) {
           m_status = "You do not have permission to join this voice channel.";
           return;
         }
-        canSpeak = (permissions & speakPermission) != 0;
+        canSpeak = channelAllows(m_guildId, id, api::permission::speak);
       }
       if (!confirmed && m_preferences.confirmVoiceJoin) {
         m_pendingVoiceJoinChannel = id;

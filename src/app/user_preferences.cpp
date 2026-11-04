@@ -230,7 +230,7 @@ namespace app {
               (position + static_cast<int>(channels.size()) + (name == "next_channel" ? 1 : -1)) % channels.size();
           if (channels[position].type == 4 || channels[position].type == 2 || channels[position].type == 13)
             continue;
-          if (!m_dmMode && !(channelPermissionsFor(channels[position].id).value_or(0) & (1ULL << 10)))
+          if (!m_dmMode && !channelAccess(m_guildId, channels[position].id).granted())
             continue;
           selectChannel(channels[position].id);
           break;
@@ -261,8 +261,6 @@ namespace app {
   bool ClientApplication::spoilersVisible(const std::string& message) const {
     if (m_preferences.spoilerMode == 2 || m_revealedSpoilers.contains(message))
       return true;
-    return m_preferences.spoilerMode == 1
-        && !m_dmMode
-        && (channelPermissionsFor(m_channelId).value_or(0) & (1ULL << 13));
+    return m_preferences.spoilerMode == 1 && !m_dmMode && channelAllows(m_guildId, m_channelId, api::manageMessages);
   }
 } // namespace app

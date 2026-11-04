@@ -65,7 +65,9 @@ namespace app {
   std::vector<api::Channel> ClientApplication::searchChannels() const {
     std::map<std::string, api::Channel> known;
     const auto add = [&](const api::Channel& channel) {
-      if (api::validSnowflake(channel.id) && channel.type != 4)
+      if (api::validSnowflake(channel.id)
+          && channel.type != 4
+          && (m_dmMode || channelAccess(m_guildId, channel.id).granted()))
         known[channel.id] = channel;
     };
     if (!m_dmMode)

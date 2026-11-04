@@ -51,6 +51,9 @@ namespace app {
       api::Channel background{"201", "background-chat", 0};
       background.lastMessageId = "9100";
       m_guildChannels["2"] = {background};
+      m_roleDirectory.apply(
+          {false, {{.guild = m_guildId, .owner = m_account.id}, {.guild = "2", .owner = m_account.id}}}
+      );
       m_channels.front().lastMessageId = "9000";
     } else if (step == 1)
       open();

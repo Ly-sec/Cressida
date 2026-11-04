@@ -220,12 +220,7 @@ namespace app {
       if (!channel || channel->kind() == api::ChannelType::GuildCategory)
         continue;
       const auto* parent = channel->isThread() ? serverChannel(guild.id, channel->parentId) : nullptr;
-      const auto permissions = serverChannelPermissions(guild.id, parent ? parent->id : id);
-      if (!permissions || !(*permissions & api::viewChannel))
-        return unknown;
-      if (channel->kind() == api::ChannelType::PrivateThread
-          && !channel->joined.value_or(false)
-          && !(permissions.value_or(0) & api::manageThreads))
+      if (!channelAccess(guild.id, id).granted())
         return unknown;
       if (channel->isThread() && !parent)
         return unknown;

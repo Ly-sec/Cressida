@@ -43,7 +43,7 @@ namespace app {
           guild = server.id;
           break;
         }
-    if (!guild.empty() && m_userDirectory.muted(guild))
+    if (!guild.empty() && (m_userDirectory.muted(guild) || !channelActivityVisible(guild, channel)))
       return;
     const auto dm = std::ranges::find(m_privateChannels, channel, &api::Channel::id);
     if (guild.empty() && dm == m_privateChannels.end())

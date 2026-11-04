@@ -344,7 +344,9 @@ namespace app {
       button(
           root, {x + (Style::spaceXl - Style::spaceXxs), y + height - 48, 120, 30, Action::ThreadMore, {}}, "Load more"
       );
-    if (parent != m_channels.end() && (parent->type == 0 || parent->type == 5))
+    if (parent != m_channels.end()
+        && (parent->type == 0 || parent->type == 5)
+        && messageActionAllowed(can::createPublicThread))
       button(
           root, {x + width - 164, y + height - 48, 142, 30, Action::CreateThread, m_threadParent}, "Create Thread", true
       );
@@ -383,6 +385,13 @@ namespace app {
     const auto c = std::ranges::find(m_channels, parent, &api::Channel::id);
     if (m_dmMode || c == m_channels.end() || (c->type != 0 && c->type != 5))
       return;
+    if (!(m_demo && !m_demoOverlay.starts_with("permissions-cycle"))
+        && (message.empty() || !m_threads.find(m_guildId, message))
+        && !channelCan(m_guildId, parent, can::createPublicThread)) {
+      m_status = "You do not have permission to create threads in this channel.";
+      m_window.invalidate();
+      return;
+    }
     const auto parentId = parent, messageId = message;
     closeDialog();
     closeContext();

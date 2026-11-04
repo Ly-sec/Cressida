@@ -64,6 +64,14 @@ Changes to roles or channel access update the composer while you are connected.
 Your existing draft, reply, attachments and stickers are kept when access
 changes. Restoring access does not send or retry a message automatically.
 
+In server channels, actions you do not have permission for are hidden. For
+example, **Reply**, **Add Reaction** and **Create Thread** do not appear without
+the matching channel permission, and pasted images are refused without Attach
+Files. You can still join an existing reaction when you can read the message
+history. Actions also stay hidden while permissions are loading. Cressida checks
+the permission again when you use an action, so a role change cannot leave a
+stale button working.
+
 ## Edit and format your draft
 
 Right-click the message input or inline message editor for **Undo**, **Redo**,

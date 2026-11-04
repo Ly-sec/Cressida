@@ -525,6 +525,11 @@ namespace app {
       }
       if (!m_connected || m_demo || m_channelId.empty() || !m_fieldFocused)
         return;
+      if (!selectedCan(can::attachFiles)) {
+        m_status = "You do not have permission to attach files in this channel.";
+        m_window.invalidate();
+        return;
+      }
       api::Upload upload{
           "pasted-image-"
               + std::to_string(++m_attachmentSerial)
@@ -1417,13 +1422,14 @@ namespace app {
       );
 
       drawServerRail(root, railFrame.y + railFrame.height);
+      const std::string activityGuild = m_dmMode ? std::string{} : m_guildId;
       auto listedChannels = m_channels;
       if (m_dmMode && !m_dmSearch.empty())
         std::erase_if(listedChannels, [&](const auto& channel) { return !dmMatches(channelName(channel)); });
       const auto visibleChannels = channelListRows(
           listedChannels, m_collapsedCategories, m_channelId, m_channelListPreferences,
           [&](const auto& id) { return channelMuted(id); },
-          [&](const auto& id) { return m_unreadTimeline.mentions(id); },
+          [&](const auto& id) { return visibleMentions(activityGuild, id); },
           [&](const auto& channel) { return m_dmMode || serverChannelVisible(channel); },
           [this](const auto& channel) { return voiceMembersHeight(channel); }
       );
@@ -1458,8 +1464,8 @@ namespace app {
           continue;
         activity.add(
             channel.id, channelTop + row.top - m_channelScroll, row.height,
-            channel.id != m_channelId && m_unreadTimeline.cursor(channel.id).has_value(),
-            m_unreadTimeline.mentions(channel.id), channelMuted(channel.id)
+            channel.id != m_channelId && visibleUnread(activityGuild, channel.id),
+            visibleMentions(activityGuild, channel.id), channelMuted(channel.id)
         );
       }
       const auto activityFrame = [&](const SidebarActivityEdge& edge, bool above) {
@@ -1513,8 +1519,9 @@ namespace app {
           continue;
         }
         const bool selected = channel.id == m_channelId;
-        const int mentions = m_unreadTimeline.mentions(channel.id);
+        const int mentions = visibleMentions(activityGuild, channel.id);
         const bool unread = (m_unreadChannels.contains(channel.id) || m_unreadDMs.contains(channel.id))
+            && channelActivityVisible(activityGuild, channel.id)
             && (!channelMuted(channel.id) || mentions > 0);
         const float rowX = layout::Sidebar::railWidth + layout::Sidebar::rowInset;
         const float rowWidth = sidebarWidth - layout::Sidebar::rowInset * 2;
@@ -2756,12 +2763,7 @@ namespace app {
                   if (guild != m_guilds.end() && channels != m_guildChannels.end()) {
                     const auto at = std::ranges::find(channels->second, card.channel, &api::Channel::id);
                     if (at != channels->second.end()) {
-                      const auto permissions = api::channelPermissions(
-                          card.guild, m_account.id, m_roleDirectory.owner(card.guild),
-                          m_roleDirectory.allRoles(card.guild), m_roleDirectory.memberships(card.guild, m_account.id),
-                          *at
-                      );
-                      if (permissions && (*permissions & api::viewChannel))
+                      if (channelAccess(card.guild, at->id).granted())
                         origin = &*at;
                     }
                   }
@@ -3090,12 +3092,15 @@ namespace app {
                   {bodyWidth - 62 - toolbarWidth, y - Style::spaceXs, 28, 26, Action::CopyMessage, message.id}, "copy",
                   "Copy text"
               );
-              if (!message.deleted && !compactSystemNotice(message.type) && message.type != autoModerationActionType)
+              if (!message.deleted
+                  && !compactSystemNotice(message.type)
+                  && message.type != autoModerationActionType
+                  && replyAllowed())
                 iconButton(
                     *messageContent, {bodyWidth - 156, y - Style::spaceXs, 28, 26, Action::Reply, message.id},
                     "corner-up-left", "Reply"
                 );
-              if (!message.deleted)
+              if (!message.deleted && messageActionAllowed(can::addReaction))
                 iconButton(
                     *messageContent, {bodyWidth - 126, y - Style::spaceXs, 28, 26, Action::AddReaction, message.id},
                     "mood-smile", "Add reaction"
@@ -4008,8 +4013,7 @@ namespace app {
     if (state == m_channelHistoryState.end() || !channel || m_deletedChannels.contains(id))
       return false;
     if (!m_dmMode) {
-      const auto permissions = channelPermissionsFor(channel->isThread() ? channel->parentId : id);
-      if (!permissions || !(*permissions & api::viewChannel) || !(*permissions & (1ULL << 16)))
+      if (!channelAllows(m_guildId, id, api::permission::readMessageHistory))
         return false;
     }
     auto latest = channel->lastMessageId;
@@ -4033,7 +4037,7 @@ namespace app {
         return {};
       return api::MemberListIdentity{m_guildId + "/thread/" + id, id, true};
     }
-    if (!(channelPermissionsFor(id).value_or(0) & api::viewChannel))
+    if (!channelGrantFor(id).granted())
       return {};
     for (const auto& role : m_roleDirectory.allRoles(m_guildId))
       if (role.id == m_guildId && role.permissions)
@@ -4305,7 +4309,7 @@ namespace app {
     for (const auto& row : channelListRows(
              m_channels, m_collapsedCategories, m_channelId, m_channelListPreferences,
              [&](const auto& id) { return channelMuted(id); },
-             [&](const auto& channel) { return m_unreadTimeline.mentions(channel); },
+             [&](const auto& channel) { return visibleMentions(m_dmMode ? std::string{} : m_guildId, channel); },
              [&](const auto& channel) { return m_dmMode || serverChannelVisible(channel); },
              [this](const auto& channel) { return voiceMembersHeight(channel); }
          )) {
@@ -4518,7 +4522,7 @@ namespace app {
         m_window.invalidate();
         return;
       }
-      const bool external = m_dmMode || (selectedChannelPermissions().value_or(0) & (1ULL << 37));
+      const bool external = selectedCan(can::useExternalStickers);
       if (api::stickerUnavailable(sticker, m_dmMode ? "" : m_guildId, m_account.premiumType.value_or(0), external)
               .empty())
         stickerIds.push_back(sticker.id);
@@ -6061,7 +6065,7 @@ namespace app {
       const auto rows = channelListRows(
           channels, m_collapsedCategories, m_channelId, m_channelListPreferences,
           [&](const auto& id) { return channelMuted(id); },
-          [&](const auto& id) { return m_unreadTimeline.mentions(id); },
+          [&](const auto& id) { return visibleMentions(m_dmMode ? std::string{} : m_guildId, id); },
           [&](const auto& channel) { return m_dmMode || serverChannelVisible(channel); },
           [this](const auto& channel) { return voiceMembersHeight(channel); }
       );
@@ -6074,8 +6078,9 @@ namespace app {
       const float maximum = std::max(0.0F, content - (accountTop - listTop - Style::cardPadding));
       for (const auto& row : rows)
         if (row.channel->id == hit.id) {
-          const int mentions = m_unreadTimeline.mentions(hit.id);
-          if (mentions == 0 && (!m_unreadTimeline.cursor(hit.id) || channelMuted(hit.id)))
+          const auto guild = m_dmMode ? std::string{} : m_guildId;
+          const int mentions = visibleMentions(guild, hit.id);
+          if (mentions == 0 && (!visibleUnread(guild, hit.id) || channelMuted(hit.id)))
             break;
           m_scrolling.stop(m_channelScroll);
           m_channelScroll =

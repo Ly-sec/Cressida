@@ -13,7 +13,6 @@ namespace app {
   namespace {
     constexpr float percentage = 100;
     constexpr float volumeStep = .1F;
-    constexpr std::uint64_t streamPermission = 1ULL << 9;
     int number(std::string_view text) {
       int result = 0;
       const auto parsed = std::from_chars(text.data(), text.data() + text.size(), result);
@@ -233,15 +232,7 @@ namespace app {
         return false;
       if (m_voiceGuild.empty())
         return true;
-      const auto* channel = serverChannel(m_voiceGuild, m_voiceState.channel);
-      return channel
-          && (api::channelPermissions(
-                  m_voiceGuild, m_account.id, m_roleDirectory.owner(m_voiceGuild),
-                  m_roleDirectory.allRoles(m_voiceGuild), m_roleDirectory.memberships(m_voiceGuild, m_account.id),
-                  *channel
-              )
-                  .value_or(0)
-              & streamPermission);
+      return channelAllows(m_voiceGuild, m_voiceState.channel, api::permission::stream);
     };
     if (action == "open") {
       if (m_voiceState.phase != voice::Phase::Connected && m_voiceState.phase != voice::Phase::WaitingForParticipants) {
@@ -249,15 +240,7 @@ namespace app {
         return;
       }
       if (!m_voiceGuild.empty()) {
-        const auto* channel = serverChannel(m_voiceGuild, m_voiceState.channel);
-        const auto permissions = channel ? api::channelPermissions(
-                                               m_voiceGuild, m_account.id, m_roleDirectory.owner(m_voiceGuild),
-                                               m_roleDirectory.allRoles(m_voiceGuild),
-                                               m_roleDirectory.memberships(m_voiceGuild, m_account.id), *channel
-                                           )
-                                               .value_or(0)
-                                         : 0;
-        if (!(permissions & streamPermission)) {
+        if (!channelAllows(m_voiceGuild, m_voiceState.channel, api::permission::stream)) {
           m_status = "You do not have permission to share in this voice channel.";
           return;
         }

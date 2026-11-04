@@ -17,10 +17,10 @@ Cressida accepts local IPC activity connections from applications running as
 your desktop user. The settings page lists applications that have submitted an
 activity, with **Block** and **Allow** controls for individual applications.
 
-An application's activity clears when it sends a clear, disconnects, or when
-the process it reported exits. Some bridges, such as browser extensions, report
-a long-running process like the browser itself, or run inside a sandbox with
-its own process IDs. Their activity stays until the bridge sends a clear or
+An application's activity clears when it sends a clear, disconnects, or when the
+process it reported exits. Some bridges, such as browser extensions, report a
+long-running process like the browser itself, or run inside a sandbox with its
+own process IDs. Their activity stays until the bridge sends a clear or
 disconnects.
 
 Turning **Enable RPC** off clears local publications and closes the local

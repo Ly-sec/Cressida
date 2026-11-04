@@ -204,10 +204,12 @@ namespace app {
       m_contextMessage = message->id;
       m_contextUser = message->authorId;
       if (!message->deleted) {
-        add(Action::AddReaction, "Add Reaction");
+        if (messageActionAllowed(can::addReaction))
+          add(Action::AddReaction, "Add Reaction");
         if (!message->reactions.empty())
           add(Action::ViewReactions, "View Reactions");
-        separator();
+        if (messageActionAllowed(can::addReaction) || !message->reactions.empty())
+          separator();
       }
       if (!message->deleted
           && message->authorId == m_account.id
@@ -219,7 +221,10 @@ namespace app {
         add(Action::EditMessage, "Edit Message");
       if (api::canRemoveMessageEmbeds(*message, m_account.id, channelPermissionsFor(m_contextChannel)))
         add(Action::RemoveEmbeds, "Remove Embeds");
-      if (!message->deleted && !compactSystemNotice(message->type) && message->type != autoModerationActionType)
+      if (!message->deleted
+          && !compactSystemNotice(message->type)
+          && message->type != autoModerationActionType
+          && replyAllowed())
         add(Action::Reply, "Reply");
       const auto selected = std::ranges::find(m_channels, m_channelId, &api::Channel::id);
       if (!message->deleted
@@ -227,10 +232,11 @@ namespace app {
           && message->type != autoModerationActionType
           && !m_dmMode
           && selected != m_channels.end()
-          && (selected->type == 0 || selected->type == 5))
-        add(Action::CreateThread,
-            message->hasThread || message->thread || m_threads.find(m_guildId, message->id) ? "Open Thread"
-                                                                                            : "Create Thread");
+          && (selected->type == 0 || selected->type == 5)) {
+        const bool existing = message->hasThread || message->thread || m_threads.find(m_guildId, message->id);
+        if (existing || messageActionAllowed(can::createPublicThread))
+          add(Action::CreateThread, existing ? "Open Thread" : "Create Thread");
+      }
 
       if (messagePinnable(*message))
         add(message->pinned ? Action::UnpinMessage : Action::PinMessage,
@@ -371,7 +377,11 @@ namespace app {
         ContextMenuControl::preferredWidth(m_window.target().renderer(), m_contextEntries),
         m_contextMessage.empty() ? 210.0F : 230.0F, std::max(230.0F, w - Style::spaceLg)
     );
-    const float header = m_contextMessage.empty() || m_messageLog.known(m_contextChannel, m_contextMessage) ? 0 : 58;
+    const float header = m_contextMessage.empty()
+            || m_messageLog.known(m_contextChannel, m_contextMessage)
+            || !messageActionAllowed(can::addReaction)
+        ? 0
+        : 58;
     const auto fullHeight = m_contextControl->preferredHeight();
     const float height = std::min(fullHeight + header, h - Style::spaceGroup);
     m_contextFullHeight = fullHeight + header;
@@ -855,6 +865,27 @@ namespace app {
       m_status = "Demo mode is read-only.";
       return false;
     }
+    if ((action.kind == Kind::AddReaction || action.kind == Kind::CreateThread) && !m_dmMode) {
+      const auto& guild = action.guild.empty() ? m_guildId : action.guild;
+      bool joining = false;
+      if (action.kind == Kind::AddReaction && action.channel == m_channelId)
+        if (const auto message = std::ranges::find(m_messages, action.message, &api::Message::id);
+            message != m_messages.end())
+          joining = std::ranges::any_of(message->reactions, [&](const api::Reaction& reaction) {
+            return api::reactionKey(reaction) == action.emoji;
+          });
+      const bool existingThread =
+          action.kind == Kind::CreateThread && !action.message.empty() && m_threads.find(guild, action.message);
+      const bool allowed = action.kind == Kind::CreateThread
+          ? existingThread || channelCan(guild, action.channel, can::createPublicThread)
+          : channelCan(guild, action.channel, joining ? can::joinReaction : can::addReaction);
+      if (!allowed) {
+        m_status = action.kind == Kind::CreateThread ? "You do not have permission to create threads in this channel."
+                                                     : "You do not have permission to add reactions in this channel.";
+        m_window.invalidate();
+        return false;
+      }
+    }
     if (action.kind == Kind::Mute || action.kind == Kind::Unmute || action.kind == Kind::ChannelNotifications)
       action.stateRevision = m_userDirectory.notificationRevision(action.channel);
     if (action.kind == Kind::GuildNotifications)
@@ -930,7 +961,7 @@ namespace app {
         m_window.copy(guild);
       else if (guild == m_guildId) {
         const auto channel = std::ranges::find_if(m_channels, [&](const auto& value) {
-          return value.type != 4 && !value.isThread() && (channelPermissionsFor(value.id).value_or(0) & 1);
+          return value.type != 4 && !value.isThread() && can::createInvite(channelGrantFor(value.id));
         });
         if (channel != m_channels.end())
           openChannelInvite({.kind = api::InteractionKind::CreateInvite, .channel = channel->id, .guild = guild});
@@ -1863,7 +1894,7 @@ namespace app {
       }
       rx += chip + 6;
     }
-    if (addButton && !message.deleted) {
+    if (addButton && !message.deleted && messageActionAllowed(can::addReaction)) {
       if (rx + Style::spaceWide > width) {
         rx = 0;
         ry += Style::space2Xl;

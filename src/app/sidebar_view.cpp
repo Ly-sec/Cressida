@@ -165,6 +165,7 @@ namespace app {
     for (int i = 0; i < 50; ++i)
       m_channels.push_back({std::to_string(1100 + i), "channel-" + std::to_string(i), 0, i + 2, "100"});
     m_guildChannels[m_guildId] = m_channels;
+    m_roleDirectory.apply({false, {{.guild = m_guildId, .owner = m_account.id}}});
     m_channelListPreferences = {};
     m_collapsedCategories.clear();
     m_channelScroll = 0;

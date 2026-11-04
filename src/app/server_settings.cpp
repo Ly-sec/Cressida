@@ -28,7 +28,9 @@ namespace app {
   using Section = api::GuildSettingsSection;
   using Verb = api::GuildSettingsVerb;
   namespace {
-    constexpr std::uint64_t administrator = 1ULL << 3, manageGuild = 1ULL << 5, manageRoles = 1ULL << 28;
+    namespace p = api::permission;
+    constexpr std::uint64_t administrator = p::administrator, manageGuild = p::manageGuild,
+                            manageRoles = p::manageRoles;
     struct Page {
       const char* id;
       const char* name;
@@ -43,41 +45,43 @@ namespace app {
         {"boosts", "Boost Status", "SERVER", Section::Boosts, manageGuild},
         {"roles", "Roles", "PEOPLE", Section::Roles, manageRoles},
         {"members", "Members", "PEOPLE", Section::Members,
-         (1ULL << 1)
-             | (1ULL << 2)
+         p::kickMembers
+             | p::banMembers
              | manageRoles
-             | (1ULL << 27)
-             | (1ULL << 40)
-             | (1ULL << 22)
-             | (1ULL << 23)
-             | (1ULL << 24)},
+             | p::manageNicknames
+             | p::moderateMembers
+             | p::muteMembers
+             | p::deafenMembers
+             | p::moveMembers},
         {"invites", "Invites", "PEOPLE", Section::Invites, manageGuild},
-        {"applications", "Member Applications", "PEOPLE", Section::JoinRequests, 1ULL << 1, "COMMUNITY"},
-        {"emoji", "Emoji", "EXPRESSIONS", Section::Emoji, (1ULL << 30) | (1ULL << 43)},
-        {"stickers", "Stickers", "EXPRESSIONS", Section::Stickers, (1ULL << 30) | (1ULL << 43)},
-        {"soundboard", "Soundboard", "EXPRESSIONS", Section::Soundboard, (1ULL << 30) | (1ULL << 43)},
+        {"applications", "Member Applications", "PEOPLE", Section::JoinRequests, p::kickMembers, "COMMUNITY"},
+        {"emoji", "Emoji", "EXPRESSIONS", Section::Emoji, p::manageGuildExpressions | p::createGuildExpressions},
+        {"stickers", "Stickers", "EXPRESSIONS", Section::Stickers,
+         p::manageGuildExpressions | p::createGuildExpressions},
+        {"soundboard", "Soundboard", "EXPRESSIONS", Section::Soundboard,
+         p::manageGuildExpressions | p::createGuildExpressions},
         {"integrations", "Integrations", "APPS", Section::Integrations, manageGuild},
         {"commands", "App Permissions", "APPS", Section::InstalledApplications, manageGuild | manageRoles},
-        {"webhooks", "Webhooks", "APPS", Section::Webhooks, 1ULL << 29},
+        {"webhooks", "Webhooks", "APPS", Section::Webhooks, p::manageWebhooks},
         {"safety", "Safety Setup", "MODERATION", Section::Overview, manageGuild},
         {"security", "Security Actions", "MODERATION", Section::IncidentActions, manageGuild},
         {"automod", "AutoMod", "MODERATION", Section::AutoModeration, manageGuild},
-        {"audit", "Audit Log", "MODERATION", Section::AuditLog, 1ULL << 7},
-        {"bans", "Bans", "MODERATION", Section::Bans, 1ULL << 2},
+        {"audit", "Audit Log", "MODERATION", Section::AuditLog, p::viewAuditLog},
+        {"bans", "Bans", "MODERATION", Section::Bans, p::banMembers},
         {"community", "Community", "COMMUNITY", Section::Overview, manageGuild},
         {"access", "Access", "COMMUNITY", Section::Access, manageGuild, "COMMUNITY"},
         {"discovery", "Discovery", "COMMUNITY", Section::Discovery, manageGuild, "COMMUNITY"},
-        {"insights", "Insights", "COMMUNITY", Section::Insights, 1ULL << 19, "COMMUNITY"},
+        {"insights", "Insights", "COMMUNITY", Section::Insights, p::viewGuildInsights, "COMMUNITY"},
         {"onboarding", "Onboarding", "COMMUNITY", Section::Onboarding, manageGuild, "COMMUNITY"},
         {"guide", "Server Guide", "COMMUNITY", Section::ServerGuide, manageGuild, "COMMUNITY"},
         {"welcome", "Welcome Screen", "COMMUNITY", Section::Welcome, manageGuild, "COMMUNITY"},
         {"screening", "Rules Screening", "COMMUNITY", Section::MembershipScreening, manageGuild, "COMMUNITY"},
-        {"events", "Scheduled Events", "COMMUNITY", Section::Events, (1ULL << 33) | (1ULL << 44)},
+        {"events", "Scheduled Events", "COMMUNITY", Section::Events, p::manageEvents | p::createEvents},
         {"monetization", "Monetization", "MONETIZATION", Section::MonetizationRequirements, manageGuild, "COMMUNITY"},
         {"widget", "Widget", "ADVANCED", Section::Widget, manageGuild},
         {"vanity", "Custom Invite Link", "ADVANCED", Section::Vanity, manageGuild, "VANITY_URL"},
         {"templates", "Server Templates", "ADVANCED", Section::Templates, manageGuild},
-        {"prune", "Prune Members", "DANGER ZONE", Section::Prune, manageGuild | (1ULL << 1)},
+        {"prune", "Prune Members", "DANGER ZONE", Section::Prune, manageGuild | p::kickMembers},
         {"ownership", "Transfer Ownership", "DANGER ZONE", Section::Overview, 0},
         {"delete", "Delete Server", "DANGER ZONE", Section::DeleteGuild, 0}
     };
@@ -1376,7 +1380,7 @@ namespace app {
             state.guild, m_account.id, access.owner, m_roleDirectory.allRoles(state.guild),
             m_roleDirectory.memberships(state.guild, m_account.id), c
         );
-        return c.type != 4 && !c.isThread() && permissions && (*permissions & 1);
+        return c.type != 4 && !c.isThread() && p::allows(permissions, p::createInstantInvite);
       });
       if (channel != cached.end()) {
         api::Interaction action;
@@ -3288,7 +3292,7 @@ namespace app {
           button(p, 0, cursor, 112, "Load more", "more");
           cursor += (Style::spaceSection - Style::spaceXxs);
         }
-        if (state.page == "members" && (admin || (access.permissions && (*access.permissions & (1ULL << 1))))) {
+        if (state.page == "members" && (admin || p::allows(access.permissions, p::kickMembers))) {
           finishCategory();
           section("Inactive members");
           detail("Prune inactive members", "Remove members who have been inactive for seven days and have no roles.");
@@ -3756,7 +3760,7 @@ namespace app {
             const bool checked = found != actions.end();
             toggleCallback(
                 "automod-action-" + std::to_string(type), title, description, checked,
-                type != 3 || admin || (access.permissions && (*access.permissions & (1ULL << 40))),
+                type != 3 || admin || p::allows(access.permissions, p::moderateMembers),
                 [this, actions, type, alertChannel](bool enabled) mutable {
                   eraseJson(actions, [&](const auto& action) { return action.value("type", 0) == type; });
                   if (enabled) {

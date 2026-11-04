@@ -63,6 +63,10 @@ channel with that activity. This scrolls the sidebar without opening the channel
 or marking it as read. Channels hidden by a collapsed category or **Hide Muted**
 do not contribute ordinary unread activity.
 
+Unread markers, mention counts, inbox entries, notifications and search
+suggestions only include channels you can view. While Cressida is still loading
+your server roles, it hides that activity rather than guessing.
+
 Automatic read receipts are grouped while you read active conversations. Local
 unread indicators update immediately. Explicit **Mark as Read** actions are sent
 immediately.

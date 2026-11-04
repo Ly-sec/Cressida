@@ -38,7 +38,7 @@ namespace app {
         : serverGuildPermissions(m_dialogAction->guild);
     if (!permissions)
       m_dialogError = "Server permissions are not available yet. Reopen this action after the server finishes loading.";
-    else if (!(*permissions & api::manageChannel))
+    else if (!api::permission::allows(permissions, api::permission::manageChannels))
       m_dialogError = "You no longer have permission to create channels in this server.";
     m_window.invalidate();
   }
@@ -64,9 +64,9 @@ namespace app {
         m_dialogAction->channelType = type;
     } else if (hit.action == Action::ChannelCreatePrivate) {
       const auto permissions = m_dialogAction->parentId && !m_dialogAction->parentId->empty()
-          ? serverChannelPermissions(m_dialogAction->guild, *m_dialogAction->parentId).value_or(0)
-          : serverGuildPermissions(m_dialogAction->guild).value_or(0);
-      if (permissions & api::managePermissions) {
+          ? serverChannelPermissions(m_dialogAction->guild, *m_dialogAction->parentId)
+          : serverGuildPermissions(m_dialogAction->guild);
+      if (api::permission::allows(permissions, api::permission::managePermissions)) {
         m_dialogAction->privateChannel = !m_dialogAction->privateChannel;
         m_dialogAction->channelAccess.clear();
       }
@@ -318,9 +318,9 @@ namespace app {
           foreground, FontWeight::Medium
       );
       const auto permissions = action.parentId && !action.parentId->empty()
-          ? serverChannelPermissions(action.guild, *action.parentId).value_or(0)
-          : serverGuildPermissions(action.guild).value_or(0);
-      const bool canPrivate = permissions & api::managePermissions;
+          ? serverChannelPermissions(action.guild, *action.parentId)
+          : serverGuildPermissions(action.guild);
+      const bool canPrivate = api::permission::allows(permissions, api::permission::managePermissions);
       const std::string key = "toggle:channel-create-private";
       std::unique_ptr<Node> saved;
       if (auto old = m_detachedInputs.find(key); old != m_detachedInputs.end()) {
@@ -387,9 +387,10 @@ namespace app {
     validated.text = m_dialogText;
     validated.user = m_account.id;
     const auto createPermissions = action.parentId && !action.parentId->empty()
-        ? serverChannelPermissions(action.guild, *action.parentId).value_or(0)
-        : serverGuildPermissions(action.guild).value_or(0);
-    const bool valid = (createPermissions & api::manageChannel) && api::interactionRequest(validated).has_value();
+        ? serverChannelPermissions(action.guild, *action.parentId)
+        : serverGuildPermissions(action.guild);
+    const bool valid = api::permission::allows(createPermissions, api::permission::manageChannels)
+        && api::interactionRequest(validated).has_value();
     const std::string caption = m_dialogPending               ? "Creating…"
         : action.privateChannel && !m_channelCreateAccessStep ? "Next"
         : category                                            ? "Create Category"

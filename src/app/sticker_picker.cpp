@@ -140,7 +140,7 @@ namespace app {
   std::string ClientApplication::stickerRestriction(const api::Sticker& sticker) const {
     if (const auto restriction = selectedChannelWriteRestriction(); !restriction.empty())
       return restriction;
-    const bool external = m_dmMode || m_demo || (selectedChannelPermissions().value_or(0) & (1ULL << 37));
+    const bool external = m_demo || selectedCan(can::useExternalStickers);
     const auto reason =
         api::stickerUnavailable(sticker, m_dmMode ? "" : m_guildId, m_account.premiumType.value_or(0), external);
     return !reason.empty() && m_preferences.emojiImageLinks && !api::stickerImageLink(sticker).empty() ? "" : reason;
@@ -224,7 +224,7 @@ namespace app {
         focusControl("composer");
         return;
       }
-      const bool external = m_dmMode || m_demo || (selectedChannelPermissions().value_or(0) & (1ULL << 37));
+      const bool external = m_demo || selectedCan(can::useExternalStickers);
       const bool link =
           !api::stickerUnavailable(sticker, m_dmMode ? "" : m_guildId, m_account.premiumType.value_or(0), external)
                .empty();
@@ -491,7 +491,7 @@ namespace app {
           root, gridX, y + height - Style::spaceGroup, gridWidth, sticker.name, Style::fontSizeCaption, foreground,
           FontWeight::SemiBold
       );
-      const bool external = m_dmMode || m_demo || (selectedChannelPermissions().value_or(0) & (1ULL << 37));
+      const bool external = m_demo || selectedCan(can::useExternalStickers);
       const auto native =
           api::stickerUnavailable(sticker, m_dmMode ? "" : m_guildId, m_account.premiumType.value_or(0), external);
       const auto reason = stickerRestriction(sticker);

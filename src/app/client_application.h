@@ -5,6 +5,7 @@
 #include "api/member_list_identity.h"
 #include "api/message_search.h"
 #include "app/autocomplete.h"
+#include "app/channel_access.h"
 #include "app/channel_invite.h"
 #include "app/channel_menu.h"
 #include "app/chat_cache.h"
@@ -892,7 +893,19 @@ namespace app {
     const std::vector<api::Channel>& serverChannels(const std::string& guild) const;
     const api::Channel* serverChannel(const std::string& guild, const std::string& channel) const;
     std::optional<std::uint64_t> serverChannelPermissions(const std::string& guild, const std::string& channel) const;
-    bool serverChannelReadable(const std::string& guild, const std::string& channel) const;
+    const api::Channel* serverChannelTarget(const std::string& guild, const std::string& channel) const;
+    ChannelGrant channelAccess(const std::string& guild, const std::string& channel) const;
+    int visibleMentions(const std::string& guild, const std::string& channel) const;
+    bool visibleUnread(const std::string& guild, const std::string& channel) const;
+    bool channelAllows(const std::string& guild, const std::string& channel, std::uint64_t bits) const;
+    // Current-server grant; Unknown in DM mode.
+    ChannelGrant channelGrantFor(const std::string& channel) const;
+    // Action checks that always pass in direct messages, where no server permissions apply.
+    bool channelCan(const std::string& guild, const std::string& channel, bool (*action)(const ChannelGrant&)) const;
+    bool selectedCan(bool (*action)(const ChannelGrant&)) const;
+    bool messageActionAllowed(bool (*action)(const ChannelGrant&)) const;
+    bool replyAllowed() const;
+    bool channelActivityVisible(const std::string& guild, const std::string& channel) const;
     std::vector<std::pair<std::string, std::string>> serverSettingsPages(const std::string& guild) const;
     bool serverMenuEntry(int id);
     void openServerSubmenu(int id, float center);

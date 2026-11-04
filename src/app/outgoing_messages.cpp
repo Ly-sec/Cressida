@@ -48,6 +48,10 @@ namespace app {
       return false;
     if ((!m_connected && !m_demo) || m_channelId.empty() || (m_demo && !m_demoOverlay.starts_with("outgoing-cycle")))
       return false;
+    if (!uploads.empty() && !messageActionAllowed(can::attachFiles)) {
+      m_status = "You do not have permission to attach files in this channel.";
+      return false;
+    }
     std::size_t retained = 0, retainedTextures = 0, submittedTextures = 0;
     for (const auto& [_, pending] : m_pendingSends)
       for (const auto& image : pending.images) {

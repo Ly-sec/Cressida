@@ -432,6 +432,8 @@ gateway_pacing_test = executable('gateway_pacing_test', 'tests/gateway_pacing_te
 test('gateway_pacing', gateway_pacing_test)
 read_acknowledgements_test = executable('read_acknowledgements_test', 'tests/read_acknowledgements_test.cpp', dependencies: backend_dep)
 test('read_acknowledgements', read_acknowledgements_test)
+channel_access_test = executable('channel_access_test', 'tests/channel_access_test.cpp', dependencies: backend_dep)
+test('channel_access', channel_access_test)
 rest_transfer_test = executable('rest_transfer_test', 'tests/rest_transfer_test.cpp',
   include_directories: include_directories('src'), dependencies: backend_deps)
 test('rest_transfer', rest_transfer_test)

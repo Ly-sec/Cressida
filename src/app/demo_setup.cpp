@@ -139,6 +139,7 @@ namespace app {
         }
         if (view.starts_with("inbox-cycle")) {
           m_demoOverlay = view;
+          m_roleDirectory.apply({false, {{.guild = m_guildId, .owner = m_account.id}}});
           if (view.ends_with("light"))
             m_preferences.theme = "light";
           if (view.ends_with("narrow"))
@@ -146,6 +147,7 @@ namespace app {
         }
         if (view.starts_with("search-cycle")) {
           m_demoOverlay = view;
+          m_roleDirectory.apply({false, {{.guild = m_guildId, .owner = m_account.id}}});
           m_channelPanel = "search";
           m_focusedInput = "channel-search";
           m_channelSearchText.clear();
@@ -1532,6 +1534,8 @@ namespace app {
           }
           // A collapsed folder exercises aggregation without counting icons twice.
           m_folders = {{"", "", 0, {"1"}}, {"50", "Creative spaces", 0x8A76C7, {"2", "3"}}};
+          for (const auto& guild : m_guilds)
+            m_roleDirectory.apply({false, {{.guild = guild.id, .owner = m_account.id}}});
           m_messages.back().content = "Hi <@11>, check <#102>. `literal <@11>`";
           m_messages.back().mentions = {{"11", "Maya"}};
           if (view.starts_with("unread-badge-cycle")) {

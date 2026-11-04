@@ -1,5 +1,6 @@
 #include "api/guild_settings.h"
 
+#include "api/channel_features.h"
 #include "api/history.h"
 
 #include <algorithm>
@@ -19,12 +20,14 @@ namespace api {
     using Json = nlohmann::json;
     using Section = GuildSettingsSection;
     using Verb = GuildSettingsVerb;
-    constexpr std::uint64_t invite = 1ULL, kick = 1ULL << 1, ban = 1ULL << 2, admin = 1ULL << 3,
-                            manageChannels = 1ULL << 4, manageGuild = 1ULL << 5, audit = 1ULL << 7,
-                            muteMembers = 1ULL << 22, deafenMembers = 1ULL << 23, moveMembers = 1ULL << 24,
-                            nicknames = 1ULL << 27, manageRoles = 1ULL << 28, webhooks = 1ULL << 29,
-                            expressions = 1ULL << 30, manageEvents = 1ULL << 33, moderate = 1ULL << 40,
-                            createExpressions = 1ULL << 43, createEvents = 1ULL << 44;
+    namespace p = permission;
+    constexpr std::uint64_t invite = p::createInstantInvite, kick = p::kickMembers, ban = p::banMembers,
+                            admin = p::administrator, manageChannels = p::manageChannels, manageGuild = p::manageGuild,
+                            audit = p::viewAuditLog, muteMembers = p::muteMembers, deafenMembers = p::deafenMembers,
+                            moveMembers = p::moveMembers, nicknames = p::manageNicknames, manageRoles = p::manageRoles,
+                            webhooks = p::manageWebhooks, expressions = p::manageGuildExpressions,
+                            manageEvents = p::manageEvents, moderate = p::moderateMembers,
+                            createExpressions = p::createGuildExpressions, createEvents = p::createEvents;
 
     bool text(const Json& value, std::size_t min, std::size_t max, bool multiline = false) {
       if (!value.is_string())
@@ -2052,7 +2055,7 @@ namespace api {
         && (request.resourceId == access.self || request.resourceId == "@me")
         && keys(request.values, {"nick"})
         && request.values.contains("nick"))
-      return owner || (access.permissions && (*access.permissions & ((1ULL << 26) | admin)));
+      return owner || p::allows(access.permissions, p::changeNickname);
     if (request.section == Section::DeleteGuild
         || request.section == Section::OwnershipCode
         || (request.section == Section::Overview && request.values.contains("owner_id")))

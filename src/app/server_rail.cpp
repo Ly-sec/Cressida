@@ -29,7 +29,7 @@ namespace app {
     std::map<std::string, int> mentions;
     for (const auto& [channel, guild] : m_unreadGuilds)
       if (const auto count = m_unreadTimeline.mentions(channel);
-          !guild.empty() && count > 0 && serverChannelReadable(guild, channel))
+          !guild.empty() && count > 0 && channelActivityVisible(guild, channel))
         mentions[guild] = std::min(1000000, mentions[guild] + count);
     struct Row {
       const api::Guild* guild = nullptr;
@@ -256,7 +256,7 @@ namespace app {
             return state.second == guild.id
                 && m_unreadChannels.contains(state.first)
                 && !channelMuted(state.first)
-                && serverChannelReadable(guild.id, state.first);
+                && channelActivityVisible(guild.id, state.first);
           });
       if (selected || over || unread)
         rectangle(

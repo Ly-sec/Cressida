@@ -581,7 +581,7 @@ namespace app::layout {
     static constexpr float groupHeight = Style::spaceXl;
     static constexpr float top = Window::titlebarHeight + ChannelHeader::height + Floating::inset + Style::spaceSm;
     static constexpr float bottomInset = Composer::bottomInset + Style::spaceXs;
-    static constexpr float groupTextTop = (groupHeight - Style::fontSizeMini) / 2;
+    static constexpr float groupTextTop = (groupHeight - Style::fontSizeDescription) / 2 - Style::spaceXxs;
     static constexpr float groupIconTop = (groupHeight - Style::baseGlyphSize) / 2;
     static constexpr float rowHitHeight = rowHeight - Style::spaceXxs;
     static float viewportHeight(float windowHeight) { return std::max(0.0F, windowHeight - bottomInset - top); }

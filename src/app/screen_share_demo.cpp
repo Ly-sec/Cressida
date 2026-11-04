@@ -15,7 +15,7 @@ namespace app {
     m_settingsOpen = false;
     m_sharingAudioExpanded = m_sharingAdvanced = false;
     m_account.premiumType = 2;
-    voiceAction("join:107");
+    voiceAction("confirmed-join:107");
     m_drafts[m_channelId] = "Keep this draft while sharing";
     auto frame = std::make_shared<voice::VideoFrame>();
     frame->width = 320;

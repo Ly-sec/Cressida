@@ -286,6 +286,8 @@ namespace app {
             settings.*member = field->get<float>();
         if (const auto field = at->find("push_to_talk"); field != at->end() && field->is_boolean())
           settings.pushToTalk = field->get<bool>();
+        if (const auto field = at->find("confirm_join"); field != at->end() && field->is_boolean())
+          result.confirmVoiceJoin = field->get<bool>();
         settings = voice::sanitizeAudioSettings(std::move(settings));
       }
       if (const auto at = value.find("sharing"); at != value.end() && at->is_object()) {
@@ -482,7 +484,8 @@ namespace app {
             {"input_volume", preferences.voice.inputVolume},
             {"output_volume", preferences.voice.outputVolume},
             {"threshold", preferences.voice.threshold},
-            {"push_to_talk", preferences.voice.pushToTalk}}},
+            {"push_to_talk", preferences.voice.pushToTalk},
+            {"confirm_join", preferences.confirmVoiceJoin}}},
           {"sharing",
            {{"resolution", preferences.sharing.resolution},
             {"frame_rate", preferences.sharing.frameRate},

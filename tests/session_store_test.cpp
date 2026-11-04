@@ -98,6 +98,7 @@ int main() {
       const auto voicePath = std::filesystem::path(directory) / "voice.json";
       app::SessionStore store(voicePath);
       app::Preferences preferences;
+      preferences.confirmVoiceJoin = false;
       preferences.voice = {
           .inputDevice = "test-microphone",
           .outputDevice = "test-headset",
@@ -125,6 +126,11 @@ int main() {
           "Voice device and activation preferences persist without restoring a microphone state"
       );
       require(
+          !restarted.preferences("123").confirmVoiceJoin
+              && app::SessionStore(voicePath).preferences("456").confirmVoiceJoin,
+          "Voice join confirmation persists independently per account and defaults on"
+      );
+      require(
           restarted.preferences("456").voice == voice::AudioSettings{}
               && restarted.startupPreferences().voice == voice::AudioSettings{},
           "Voice preferences stay isolated to the signed-in account"
@@ -139,7 +145,8 @@ int main() {
               && malformed.voice.outputVolume <= voice::maximumAudioVolume
               && malformed.voice.inputVolume >= 0
               && malformed.voice.threshold == voice::defaultActivityThreshold
-              && !malformed.voice.pushToTalk,
+              && !malformed.voice.pushToTalk
+              && malformed.confirmVoiceJoin,
           "Malformed voice preferences are bounded without discarding unrelated settings"
       );
     }

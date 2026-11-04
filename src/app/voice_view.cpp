@@ -124,8 +124,10 @@ namespace app {
       releasePushToTalk();
       m_voiceState.deafened = m_voiceDeafened;
       configureVoice();
-    } else if (action.starts_with("join:")) {
-      const auto id = action.substr(5);
+    } else if (action.starts_with("join:") || action.starts_with("confirmed-join:")) {
+      const bool confirmed = action.starts_with("confirmed-join:");
+      const auto id =
+          action.substr(confirmed ? std::string_view("confirmed-join:").size() : std::string_view("join:").size());
       const auto channel = std::ranges::find(m_channels, id, &api::Channel::id);
       if (channel == m_channels.end()
           || channel->isMessageRequest()
@@ -133,6 +135,7 @@ namespace app {
         return;
       if (voiceBarVisible() && m_voiceState.channel == id && m_voiceState.phase != voice::Phase::Failed)
         return;
+      bool canSpeak = true;
       if (!m_dmMode) {
         constexpr std::uint64_t connectPermission = 1ULL << 20, speakPermission = 1ULL << 21;
         const auto permissions = channelPermissionsFor(id).value_or(0);
@@ -140,9 +143,20 @@ namespace app {
           m_status = "You do not have permission to join this voice channel.";
           return;
         }
-        if (!(permissions & speakPermission))
-          m_voiceMuted = true;
+        canSpeak = (permissions & speakPermission) != 0;
       }
+      if (!confirmed && m_preferences.confirmVoiceJoin) {
+        m_pendingVoiceJoinChannel = id;
+        m_dialogKind = "voice-join";
+        m_dialogTitle = m_dmMode ? "Join voice call?" : "Join voice channel?";
+        m_dialogText = channel->name.empty() ? "Voice conversation" : channel->name;
+        m_dialogError.clear();
+        m_dialogPending = false;
+        m_dialogAction.reset();
+        m_window.invalidate();
+        return;
+      }
+      m_voiceMuted = !canSpeak || m_voiceMuted;
       releasePushToTalk();
       m_voiceGuild = m_dmMode ? "" : m_guildId;
       auto settings = m_preferences.voice;
@@ -191,6 +205,15 @@ namespace app {
   }
   void ClientApplication::drawVoiceSettings(UserSettingsForm& form) {
     auto& settings = m_preferences.voice;
+    form.section("Joining voice");
+    form.toggle(
+        "voice-confirm-join", "Confirm before joining",
+        "Ask before joining a voice channel or call. Double-clicking a server voice channel follows this setting.",
+        m_preferences.confirmVoiceJoin, [this](bool enabled) {
+          m_preferences.confirmVoiceJoin = enabled;
+          savePreferences();
+        }
+    );
     const auto chooseDevice = [&](bool input) {
       const auto& available = input ? m_voiceAudioState.inputs : m_voiceAudioState.outputs;
       const auto& current = input ? settings.inputDevice : settings.outputDevice;

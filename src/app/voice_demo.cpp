@@ -30,6 +30,7 @@ namespace app {
     m_voiceMuted = m_voiceDeafened = m_voicePtt = false;
     m_voicePttKey = 0;
     m_preferences.voice = {};
+    m_preferences.confirmVoiceJoin = true;
     m_preferences.keybinds.erase("push_to_talk");
     if (view.ends_with("light"))
       m_preferences.theme = "light";
@@ -284,14 +285,44 @@ namespace app {
       }
       clickAction(Action::Channel, std::string(voiceDemoChannel));
       require(
+          m_channelId == voiceDemoChannel && !voiceBarVisible(),
+          "Selecting a voice-channel row opens its chat without joining"
+      );
+      require(m_drafts["101"] == voiceDemoDraft, "Opening voice chat preserves the previous conversation draft");
+      break;
+    case 9:
+      clickAction(Action::Channel, std::string(voiceDemoChannel));
+      require(
+          m_dialogKind == "voice-join" && !voiceBarVisible(),
+          "Double-clicking a voice channel asks for confirmation without joining"
+      );
+      break;
+    case 10: {
+      bool emphasizedChannel = false;
+      const auto inspect = [&](auto&& self, const Node& node) -> void {
+        if (node.type() == NodeType::Text) {
+          const auto& text = static_cast<const TextNode&>(node);
+          emphasizedChannel |= text.text() == "Voice lounge" && text.fontWeight() == FontWeight::Bold;
+        }
+        for (const auto& child : node.children())
+          self(self, *child);
+      };
+      inspect(inspect, *m_scene);
+      require(
+          emphasizedChannel && m_dialogBounds.height < 230,
+          "The compact dynamic confirmation emphasizes the channel name"
+      );
+      clickAction(Action::SubmitDialog);
+      require(
           m_voiceState.phase == voice::Phase::Connected
               && m_voiceState.channel == voiceDemoChannel
-              && m_voiceState.encrypted,
-          "Clicking a real voice-channel row joins the simulated encrypted conversation"
+              && m_voiceState.encrypted
+              && m_dialogKind.empty(),
+          "Confirming the join connects the simulated encrypted conversation"
       );
-      require(m_drafts["101"] == voiceDemoDraft, "Joining voice preserves the previous conversation draft");
       break;
-    case 9: {
+    }
+    case 11: {
       require(
           speakingVisible(), "A speaking participant paints a visible success-color avatar ring and emphasized name"
       );
@@ -351,7 +382,7 @@ namespace app {
         participant.speaking = false;
       break;
     }
-    case 10:
+    case 12:
       require(!speakingVisible(), "A participant returning to silence removes the painted speaking indicator");
       clickAction(Action::VoiceAction, "settings");
       require(
@@ -361,7 +392,7 @@ namespace app {
       ptt();
       require(!m_voicePtt, "Covered settings controls cannot activate native push to talk");
       break;
-    case 11:
+    case 13:
       require(
           m_preferences.voice.inputDevice == "demo-mic-two"
               && m_preferences.voice.outputDevice == "demo-output-two"
@@ -376,7 +407,7 @@ namespace app {
       m_scrolling.stop(m_channelScroll);
       m_channelScroll = 0;
       break;
-    case 12:
+    case 14:
       clickAction(Action::VoiceAction, "leave");
       require(
           !voiceBarVisible() && !m_voicePtt && m_voiceState.phase == voice::Phase::Disconnected,
@@ -388,12 +419,12 @@ namespace app {
           "Returning to the original chat retains its draft without account requests"
       );
       m_voiceRoster.clear();
-      voiceAction("join:" + std::string(voiceDemoChannel));
+      voiceAction("confirmed-join:" + std::string(voiceDemoChannel));
       m_voiceState.phase = voice::Phase::WaitingForParticipants;
       m_voiceState.encrypted = false;
       m_voiceState.participants = {{m_account.id, false}};
       break;
-    case 13: {
+    case 15: {
       bool connected = false, alone = false;
       const auto inspect = [&](auto&& self, const Node& node) -> void {
         if (node.type() == NodeType::Text) {
@@ -417,13 +448,13 @@ namespace app {
       clickAction(Action::VoiceAction, "leave");
       break;
     }
-    case 14:
+    case 16:
       require(
           !voiceBarVisible() && m_voiceRoster.count(m_guildId, std::string(voiceDemoChannel)) == 0,
           "Leaving a solo channel removes its local participant and connected state"
       );
       break;
-    case 15: {
+    case 17: {
       const float height = m_window.height() + layout::Window::titlebarHeight - m_window.titlebarHeight();
       const auto account = layout::accountFrame(height, chatLeft());
       for (const auto& frame : account.voice)
@@ -444,18 +475,18 @@ namespace app {
       require(m_contextOpen && m_voiceMenuInput == true, "The input caret opens its native settings card");
       break;
     }
-    case 16:
+    case 18:
       require(!m_voiceAudioState.running && !m_voiceAudioState.testing, "Opening the input card never starts capture");
       clickWidget("popup:voice-device");
       break;
-    case 17:
+    case 19:
       chooseLast();
       require(
           m_preferences.voice.inputDevice == "demo-mic-two" && m_contextOpen,
           "The input device chooser preserves its parent settings card"
       );
       break;
-    case 18: {
+    case 20: {
       const auto output = m_preferences.voice.outputVolume;
       clickWidget("popup:voice-volume", .75F);
       require(
@@ -465,7 +496,7 @@ namespace app {
       clickWidget("popup:voice-mode");
       break;
     }
-    case 19:
+    case 21:
       require(isSelectDropdownOpen(), "Input mode opens a bounded native chooser");
       m_window.key({.symbol = XKB_KEY_Home});
       m_window.key({.symbol = XKB_KEY_Return});
@@ -474,18 +505,18 @@ namespace app {
       require(!m_contextOpen && !m_voiceMenuInput, "Escape dismisses the input card");
       clickWidget("account-voice:output-menu");
       break;
-    case 20:
+    case 22:
       require(m_contextOpen && m_voiceMenuInput == false, "The output caret opens a separate settings card");
       clickWidget("popup:voice-device");
       break;
-    case 21:
+    case 23:
       chooseLast();
       require(
           m_preferences.voice.outputDevice == "demo-output-two" && m_contextOpen,
           "The output card chooses a playback device without closing the card"
       );
       break;
-    case 22: {
+    case 24: {
       const auto input = m_preferences.voice.inputVolume;
       clickWidget("popup:voice-volume", .25F);
       require(
@@ -499,7 +530,7 @@ namespace app {
       );
       break;
     }
-    case 23: {
+    case 25: {
       const auto volume = m_preferences.voice.outputVolume;
       const auto stale = m_widgets.find("popup:voice-volume");
       require(
@@ -517,6 +548,24 @@ namespace app {
       std::clog << "Offline permanent voice controls, device and volume cards, calls and focus lifecycle passed\n";
       break;
     }
+    case 26:
+      require(m_settingsOpen, "The voice replay remains in voice settings before changing join confirmation");
+      clickWidget("user-account-toggle:voice-confirm-join");
+      require(!m_preferences.confirmVoiceJoin, "The native voice setting disables join confirmation");
+      m_window.key({.symbol = XKB_KEY_Escape});
+      require(!m_settingsOpen, "Escape returns to the voice chat after changing its join preference");
+      break;
+    case 27:
+      clickAction(Action::Channel, std::string(voiceDemoChannel));
+      require(!voiceBarVisible(), "A single click opens voice chat without joining when confirmation is disabled");
+      clickAction(Action::Channel, std::string(voiceDemoChannel));
+      require(
+          m_voiceState.channel == voiceDemoChannel && voiceBarVisible() && m_dialogKind.empty(),
+          "Double-clicking a voice channel joins directly when confirmation is disabled"
+      );
+      clickAction(Action::VoiceAction, "leave");
+      std::clog << "Offline voice join confirmation replay passed\n";
+      break;
     default:
       require(false, "The voice replay has a fixed bounded frame count");
     }

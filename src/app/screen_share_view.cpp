@@ -539,6 +539,10 @@ namespace app {
         if ((m_dmMode ? std::string{} : m_guildId) != parsed->guild)
           return;
         voiceAction("join:" + parsed->channel);
+        if (m_dialogKind == "voice-join") {
+          m_pendingVoiceJoinStream = key;
+          return;
+        }
         if (m_voiceState.channel != parsed->channel || m_voiceState.phase == voice::Phase::Failed)
           return;
         m_pendingStreamWatch = key;

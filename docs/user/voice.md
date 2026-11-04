@@ -6,9 +6,14 @@ description:
 
 ## Join a conversation
 
-Choose a server, then click a voice channel in its sidebar or use its phone
-button. You need permission to view and connect to the channel. If you can
-connect but cannot speak, Cressida joins with your microphone muted.
+Choose a server, then click a voice channel in its sidebar to open its chat
+without joining. Double-click the channel or use the phone button in its header
+to start joining. By default, Cressida asks you to confirm first. You need
+permission to view and connect to the channel. If you can connect but cannot
+speak, Cressida joins with your microphone muted.
+
+To skip the prompt, turn off **Confirm before joining** in **Settings → Voice &
+Video**. This preference is saved separately for each account.
 
 In a direct or group conversation, use the header's phone button to join an
 existing call. Starting a call that rings other people and incoming-call

@@ -67,9 +67,10 @@ Automatic read receipts are grouped while you read active conversations. Local
 unread indicators update immediately. Explicit **Mark as Read** actions are sent
 immediately.
 
-Click a voice channel or its phone button to join. The sidebar then provides
-mute, deafen and disconnect controls. See [Voice chat](voice.md) for audio
-settings and current limits.
+Click a voice channel to open its chat without joining. Double-click it or use
+the phone button in the channel header to start joining, then confirm. The
+sidebar provides mute, deafen and disconnect controls. See
+[Voice chat](voice.md) for audio settings and current limits.
 
 The member list shows names, avatars, activity summaries and presence
 indicators, with role or status group headings. These details update as changes

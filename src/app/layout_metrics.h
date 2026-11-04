@@ -1091,6 +1091,43 @@ namespace app::layout {
       return {x, icon.y, std::max(0.0F, disconnect.x - Style::spaceXs - x), icon.height};
     }
   };
+  struct VoiceJoinDialog {
+    static constexpr float maximumWidth = Style::signInMaximumWidth;
+    static constexpr float padding = Style::spaceLg;
+    static constexpr float gap = Style::spaceSm;
+    static constexpr float buttonGap = Style::spaceSm;
+    static constexpr float closeSize = Style::controlHeightSm;
+    static constexpr float buttonHeight = Style::controlHeightSm;
+    static constexpr float buttonPadding = Style::spaceLg;
+  };
+  struct VoiceJoinDialogFrames {
+    Frame dialog, title, channel, detail, close, cancel, join;
+  };
+  inline VoiceJoinDialogFrames voiceJoinDialogFrames(
+      float windowWidth, float windowHeight, float width, float titleHeight, float channelHeight, float detailHeight,
+      float cancelWidth, float joinWidth
+  ) {
+    using D = VoiceJoinDialog;
+    const float boundedWidth = std::clamp(width, 0.0F, std::min(D::maximumWidth, windowWidth - Style::space2Xl));
+    const float contentWidth = std::max(0.0F, boundedWidth - D::padding * 2);
+    const float height =
+        D::padding * 2 + titleHeight + D::gap + channelHeight + D::gap + detailHeight + D::gap + D::buttonHeight;
+    const float x = (windowWidth - boundedWidth) / 2;
+    const float y = std::max(Style::windowTitlebarHeight + Style::spaceSm, (windowHeight - height) / 2);
+    const float titleY = y + D::padding;
+    const float channelY = titleY + titleHeight + D::gap;
+    const float detailY = channelY + channelHeight + D::gap;
+    const float footerY = detailY + detailHeight + D::gap;
+    return {
+        {x, y, boundedWidth, height},
+        {x + D::padding, titleY, std::max(0.0F, contentWidth - D::closeSize - D::gap), titleHeight},
+        {x + D::padding, channelY, contentWidth, channelHeight},
+        {x + D::padding, detailY, contentWidth, detailHeight},
+        {x + boundedWidth - D::padding - D::closeSize, titleY, D::closeSize, D::closeSize},
+        {x + boundedWidth - D::padding - cancelWidth - D::buttonGap - joinWidth, footerY, cancelWidth, D::buttonHeight},
+        {x + boundedWidth - D::padding - joinWidth, footerY, joinWidth, D::buttonHeight}
+    };
+  }
   struct ActivityCard {
     static constexpr float inset = Style::spaceMd;
     static constexpr float gap = Style::spaceSm;

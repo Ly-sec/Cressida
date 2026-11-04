@@ -1111,6 +1111,8 @@ namespace app {
       m_dialogError = m_status;
   }
   void ClientApplication::closeDialog() {
+    m_pendingVoiceJoinChannel.clear();
+    m_pendingVoiceJoinStream.clear();
     m_serverAccessList = {};
     m_serverAccessStage.clear();
     const auto link = std::exchange(m_composerLink, {});
@@ -1292,6 +1294,10 @@ namespace app {
     m_tooltip.clear();
   }
   void ClientApplication::drawDialog(Node& root, float w, float h) {
+    if (m_dialogKind == "voice-join") {
+      drawVoiceJoinDialog(root, w, h);
+      return;
+    }
     if (m_dialogKind == "guild-access") {
       drawServerAccess(root, w, h);
       return;
@@ -1405,6 +1411,7 @@ namespace app {
           m_dialogPending                                                                              ? "Saving…"
               : m_dialogAction && m_dialogAction->kind == api::InteractionKind::AutoModerationFeedback ? "Send report"
               : m_dialogKind == "thread-create"                                                        ? "Create Thread"
+              : m_dialogKind == "voice-join"                                                           ? "Join"
               : m_dialogKind == "confirm"                                                              ? "Confirm"
                                                                                                        : "Save",
           true
@@ -1412,7 +1419,86 @@ namespace app {
     }
     m_tooltip.clear();
   }
+  void ClientApplication::drawVoiceJoinDialog(Node& root, float w, float h) {
+    using D = layout::VoiceJoinDialog;
+    auto& renderer = m_window.target().renderer();
+    const auto& channel = m_dialogText;
+    const std::string detail = "Your microphone follows its current settings.";
+    const float maximumWidth = std::min(D::maximumWidth, w - Style::space2Xl);
+    const auto titleMetrics = renderer.measureText(m_dialogTitle, Style::fontSizeHeading, FontWeight::SemiBold, 0, 1);
+    const auto channelNatural = renderer.measureText(channel, Style::fontSizeSection, FontWeight::Bold);
+    const auto detailNatural = renderer.measureText(detail, Style::fontSizeBody, FontWeight::Normal);
+    const auto cancelNatural = renderer.measureText("Cancel", Style::fontSizeBody, FontWeight::Medium);
+    const auto joinNatural = renderer.measureText("Join", Style::fontSizeBody, FontWeight::Medium);
+    const float cancelWidth = cancelNatural.width + D::buttonPadding * 2;
+    const float joinWidth = joinNatural.width + D::buttonPadding * 2;
+    const float actionsWidth = cancelWidth + D::buttonGap + joinWidth;
+    const float naturalContentWidth =
+        std::max({titleMetrics.width + D::closeSize + D::gap, channelNatural.width, detailNatural.width, actionsWidth});
+    const float width = std::min(maximumWidth, naturalContentWidth + D::padding * 2);
+    const float contentWidth = std::max(0.0F, width - D::padding * 2);
+    const auto channelMetrics = renderer.measureText(channel, Style::fontSizeSection, FontWeight::Bold, contentWidth);
+    const auto detailMetrics = renderer.measureText(detail, Style::fontSizeBody, FontWeight::Normal, contentWidth);
+    const auto frames = layout::voiceJoinDialogFrames(
+        w, h, width, titleMetrics.bottom - titleMetrics.top, channelMetrics.bottom - channelMetrics.top,
+        detailMetrics.bottom - detailMetrics.top, cancelWidth, joinWidth
+    );
+    rectangle(
+        root, 0, layout::Window::titlebarHeight, w, h - layout::Window::titlebarHeight,
+        Color{0, 0, 0, Style::modalBackdropOpacity}
+    );
+    m_hits.push_back({0, layout::Window::titlebarHeight, w, h - layout::Window::titlebarHeight, Action::None, {}});
+    m_dialogBounds = {frames.dialog.x, frames.dialog.y, frames.dialog.width, frames.dialog.height, Action::None, {}};
+    rectangle(
+        root, frames.dialog.x, frames.dialog.y, frames.dialog.width, frames.dialog.height, sidebar, Style::radiusXl
+    );
+    m_hits.push_back(m_dialogBounds);
+    label(
+        root, frames.title.x, frames.title.y, frames.title.width, m_dialogTitle, Style::fontSizeHeading, foreground,
+        FontWeight::SemiBold
+    );
+    iconButton(
+        root, {frames.close.x, frames.close.y, frames.close.width, frames.close.height, Action::CloseDialog, {}}, "x",
+        "Cancel join"
+    );
+    label(
+        root, frames.channel.x, frames.channel.y, frames.channel.width, channel, Style::fontSizeSection, foreground,
+        FontWeight::Bold, 0
+    );
+    label(
+        root, frames.detail.x, frames.detail.y, frames.detail.width, detail, Style::fontSizeBody, muted,
+        FontWeight::Normal, 0
+    );
+    button(
+        root, {frames.cancel.x, frames.cancel.y, frames.cancel.width, frames.cancel.height, Action::CloseDialog, {}},
+        "Cancel", false, false, true, true
+    );
+    button(
+        root, {frames.join.x, frames.join.y, frames.join.width, frames.join.height, Action::SubmitDialog, {}}, "Join",
+        true, false, true, true
+    );
+    m_tooltip.clear();
+  }
   void ClientApplication::submitDialog() {
+    if (m_dialogKind == "voice-join") {
+      const auto channel = std::exchange(m_pendingVoiceJoinChannel, {});
+      const auto stream = std::exchange(m_pendingVoiceJoinStream, {});
+      if (channel.empty())
+        return;
+      closeDialog();
+      voiceAction("confirmed-join:" + channel);
+      if (!stream.empty()
+          && m_voiceState.channel == channel
+          && m_voiceState.phase != voice::Phase::Failed
+          && m_voiceState.phase != voice::Phase::Disconnected) {
+        m_pendingStreamWatch = stream;
+        m_voiceStageOpen = true;
+        m_shareOpen = false;
+        m_streamFocus = stream;
+        selectChannel(channel);
+      }
+      return;
+    }
     if (m_dialogKind == "composer-link") {
       submitComposerLink();
       return;

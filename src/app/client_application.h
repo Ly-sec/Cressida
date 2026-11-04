@@ -97,7 +97,8 @@ namespace app {
     static constexpr int mediaGalleryReplayFrames = 13;
     static constexpr int imageMenuReplayFrames = 13;
     static constexpr int trayReplayFrames = 4;
-    static constexpr int voiceReplayFrames = 24;
+    static constexpr int voiceReplayFrames = 28;
+    static constexpr auto voiceChannelDoubleClickInterval = std::chrono::milliseconds{400};
     static constexpr int rpcReplayFrames = 12;
     static constexpr int sharingReplayFrames = 33;
     static constexpr int imeReplayFrames = 14;
@@ -524,6 +525,7 @@ namespace app {
     void updateMessage(const std::string& channel, const std::string& id, const api::MessagePatch& patch);
     void logMessageEdit(const api::Message& before, const api::Message& after);
     void drawMessageDialog(Node& root, float width, float height);
+    void drawVoiceJoinDialog(Node& root, float width, float height);
     void demoDeletedStep();
     void drawProfileCard(Node& root, float width, float height);
     bool profileAction(const Hit& hit);
@@ -1116,6 +1118,10 @@ namespace app {
     voice::State m_voiceState;
     api::VoiceRoster m_voiceRoster;
     std::string m_voiceGuild;
+    std::string m_pendingVoiceJoinChannel;
+    std::string m_pendingVoiceJoinStream;
+    std::string m_lastVoiceRowClick;
+    std::chrono::steady_clock::time_point m_lastVoiceRowClickAt{};
     voice::AudioState m_voiceAudioState;
     Timer m_voiceJoinTimer;
     bool m_voiceMuted = false, m_voiceDeafened = false, m_voicePtt = false;

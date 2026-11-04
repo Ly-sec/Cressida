@@ -1262,6 +1262,21 @@ namespace app {
               return;
             }
           }
+          if (hit.action == Action::Channel && !m_dmMode) {
+            const auto channel = std::ranges::find(m_channels, hit.id, &api::Channel::id);
+            if (channel != m_channels.end() && channel->type == 2) {
+              const auto now = std::chrono::steady_clock::now();
+              const bool doubleClick =
+                  hit.id == m_lastVoiceRowClick && now - m_lastVoiceRowClickAt <= voiceChannelDoubleClickInterval;
+              m_lastVoiceRowClick = doubleClick ? std::string{} : hit.id;
+              m_lastVoiceRowClickAt = now;
+              activate(hit);
+              if (doubleClick)
+                voiceAction("join:" + hit.id);
+              return;
+            }
+          }
+          m_lastVoiceRowClick.clear();
           activate(hit);
           return;
         }
@@ -9162,9 +9177,6 @@ namespace app {
       break;
     case Action::Channel:
       m_pendingDiscordLink.reset();
-      if (const auto channel = std::ranges::find(m_channels, hit.id, &api::Channel::id);
-          channel != m_channels.end() && channel->type == 2)
-        voiceAction("join:" + hit.id);
       selectChannel(hit.id);
       break;
     case Action::VoiceAction:

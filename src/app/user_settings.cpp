@@ -504,8 +504,8 @@ namespace app {
     m_settingsNavRight = frameX + navWidth + Style::spaceXs;
     rectangle(root, 0, 36, m_settingsNavRight, h - layout::Window::titlebarHeight, sidebar);
     label(
-        root, frameX + Style::spaceMd, 58, navWidth - Style::spaceXl, "SETTINGS", settings::navigationTitle.size, muted,
-        settings::navigationTitle.weight
+        root, frameX + Style::spaceMd, 58, navWidth - Style::spaceXl, "SETTINGS", settings::navigationTitle.size,
+        foreground, settings::navigationTitle.weight
     );
     auto& search = inputControl(
         root, frameX + Style::spaceXs, 82, navWidth - Style::spaceSm, 32, "settings:search", m_settingsFields["search"],

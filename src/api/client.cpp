@@ -2808,12 +2808,14 @@ namespace api {
             if (command.interaction->kind == InteractionKind::MoveGuild)
               body = guildMovePatch(
                   *snapshot, command.interaction->guild, command.interaction->text,
-                  command.interaction->content.empty() ? std::nullopt : std::make_optional(command.interaction->content)
+                  command.interaction->content.empty() ? std::nullopt
+                                                       : std::make_optional(command.interaction->content),
+                  command.interaction->organizationGuilds
               );
             else if (command.interaction->kind == InteractionKind::EditGuildFolder)
               body = guildFolderPatch(*snapshot, *command.interaction->folderChange);
             else if (command.interaction->kind == InteractionKind::ReorderGuilds)
-              body = guildRailPatch(*snapshot, *command.interaction->railMove);
+              body = guildRailPatch(*snapshot, *command.interaction->railMove, command.interaction->organizationGuilds);
             else
               body = guildPrivacyPatch(*snapshot, command.interaction->guild, *command.interaction->guildPrivacy);
           }

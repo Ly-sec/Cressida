@@ -144,14 +144,17 @@ namespace app {
       m_openFolders = {"10"};
       m_folderMotion.clear();
     };
-    const auto acknowledge = [&](bool anonymous = false) {
+    const auto acknowledge = [&](bool anonymous = false, bool newlyJoined = false) {
       require(m_demoRailMove.has_value(), "Release records one typed organization operation");
       const nlohmann::json snapshot{
           {"settings",
-           anonymous ? "CgIYKnIkCgoKCAEAAAAAAAAACgoKCAIAAAAAAAAACgoKCAMAAAAAAAAA"
-                     : "CgIYKnIkChYKEAEAAAAAAAAAAgAAAAAAAAASAggKCgoKCAMAAAAAAAAA"}
+           newlyJoined
+               ? (anonymous ? "CgIYKnIYCgoKCAEAAAAAAAAACgoKCAIAAAAAAAAA" : "CgIYKnIYChYKEAEAAAAAAAAAAgAAAAAAAAASAggK")
+               : (anonymous ? "CgIYKnIkCgoKCAEAAAAAAAAACgoKCAIAAAAAAAAACgoKCAMAAAAAAAAA"
+                            : "CgIYKnIkChYKEAEAAAAAAAAAAgAAAAAAAAASAggKCgoKCAMAAAAAAAAA")}
       };
-      const auto patch = api::guildRailPatch(snapshot, *m_demoRailMove);
+      const std::vector<std::string> joined = newlyJoined ? std::vector<std::string>{"3"} : std::vector<std::string>{};
+      const auto patch = api::guildRailPatch(snapshot, *m_demoRailMove, joined);
       api::Event event;
       event.interaction =
           api::Interaction{.kind = api::InteractionKind::ReorderGuilds, .guild = "1", .railMove = m_demoRailMove};
@@ -174,7 +177,7 @@ namespace app {
       require(m_railDrag && m_railDrag->active, "Drag capture survives a scene rebuild");
       m_window.released();
       require(m_demoRailMove->placement == api::RailPlacement::Into, "Middle drops group servers");
-      acknowledge();
+      acknowledge(false, true);
       require(
           m_folders.front().guildIds == std::vector<std::string>{"1", "2", "3"}, "Acknowledged drops update membership"
       );
@@ -182,7 +185,7 @@ namespace app {
     } else if (step == 2) {
       drag(Action::Folder, "10", Action::Guild, "3", 1 - R::dropEdgeFraction / 2);
       m_window.released();
-      acknowledge();
+      acknowledge(false, true);
     } else if (step == 3) {
       require(
           m_folders.back().id == "10" && hit(Action::Guild, "3").y < hit(Action::Folder, "10").y,
@@ -203,7 +206,7 @@ namespace app {
     } else if (step == 6) {
       drag(Action::Guild, "1", Action::Guild, "3", 1 - R::dropEdgeFraction / 2);
       m_window.released();
-      acknowledge();
+      acknowledge(false, true);
       require(
           m_folders.back().id.empty() && m_folders.back().guildIds == std::vector<std::string>{"1"},
           "Dragging out creates a correctly positioned standalone server"
@@ -215,7 +218,7 @@ namespace app {
     } else if (step == 8) {
       drag(Action::Guild, "3", Action::Guild, "1", 0.5F);
       m_window.released();
-      acknowledge(true);
+      acknowledge(true, true);
       require(
           !m_folders.front().id.empty() && m_folders.front().guildIds == std::vector<std::string>{"1", "3"},
           "A central server drop creates a folder through the same versioned writer"

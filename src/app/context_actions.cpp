@@ -843,6 +843,21 @@ namespace app {
       action.stateRevision = m_userDirectory.guildNotificationRevision(action.guild);
     if (action.kind == Kind::MoveGuild || action.kind == Kind::EditGuildFolder || action.kind == Kind::ReorderGuilds)
       action.stateRevision = m_guildLayoutRevision;
+    if (action.kind == Kind::MoveGuild || action.kind == Kind::ReorderGuilds) {
+      action.organizationGuilds.clear();
+      const auto capture = [&](const std::string& id) {
+        if (std::ranges::find(m_guilds, id, &api::Guild::id) != m_guilds.end())
+          action.organizationGuilds.push_back(id);
+      };
+      if (action.kind == Kind::MoveGuild)
+        capture(action.guild);
+      else if (action.railMove) {
+        if (!action.railMove->sourceFolder)
+          capture(action.railMove->source);
+        if (!action.railMove->targetFolder)
+          capture(action.railMove->target);
+      }
+    }
     const auto key = interactionKey(action);
     if (m_pendingInteractions.contains(key))
       return false;

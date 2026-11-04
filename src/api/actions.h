@@ -109,6 +109,7 @@ namespace api {
     std::optional<std::size_t> focusedOption;
     std::vector<Upload> commandUploads;
     std::string reactionAfter;
+    std::vector<std::string> organizationGuilds; // Captured session membership, never sent as JSON.
   };
   std::optional<MessagePatch> removedEmbedsPatch(const Interaction& action, const nlohmann::json& response);
   std::optional<nlohmann::json>

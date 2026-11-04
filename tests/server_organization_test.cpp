@@ -206,6 +206,70 @@ int main() {
     require(
         loose.folders[2].guildIds == std::vector<std::string>{"404"}, "Standalone servers support relative ordering"
     );
+    const std::vector<std::string> joined{"505", "606"};
+    const auto newServerPatch =
+        api::guildRailPatch(snapshot, {"505", "0", false, true, api::RailPlacement::Before}, joined);
+    const auto newServerLayout = api::parseGuildLayout(newServerPatch);
+    require(
+        newServerPatch["required_data_version"] == 42
+            && newServerLayout.folders.front().guildIds == std::vector<std::string>{"505"}
+            && newServerLayout.folders[1].guildIds == original.folders[0].guildIds
+            && newServerLayout.folders[1].name == original.folders[0].name
+            && newServerLayout.positions == original.positions,
+        "A newly joined server absent from both saved lists can move to the top without losing saved metadata"
+    );
+    const auto newTarget = api::parseGuildLayout(
+        api::guildRailPatch(snapshot, {"303", "505", false, false, api::RailPlacement::After}, joined)
+    );
+    require(
+        newTarget.folders[2].guildIds == std::vector<std::string>{"505"}
+            && newTarget.folders[3].guildIds == std::vector<std::string>{"303"},
+        "A newly joined server can serve as a relative drop anchor"
+    );
+    const auto newGroup = api::parseGuildLayout(
+        api::guildRailPatch(snapshot, {"505", "606", false, false, api::RailPlacement::Into}, joined)
+    );
+    require(
+        !newGroup.folders.back().id.empty()
+            && newGroup.folders.back().guildIds == std::vector<std::string>{"606", "505"}
+            && newGroup.positions == original.positions,
+        "Two newly joined servers can form a folder without changing deprecated positions"
+    );
+    const auto newMember = api::parseGuildLayout(api::guildMovePatch(snapshot, "505", "7", {}, joined));
+    require(
+        newMember.folders[1].guildIds == std::vector<std::string>{"202", "505"}
+            && newMember.positions == original.positions,
+        "Explicit folder moves accept captured session membership absent from saved organization"
+    );
+    require(
+        api::guildRailPatch(
+            snapshot, {"101", "999", false, false, api::RailPlacement::After}, std::vector<std::string>{"101", "999"}
+        )["settings"]
+            == api::guildRailPatch(snapshot, {"101", "999", false, false, api::RailPlacement::After})["settings"],
+        "Session membership already in the snapshot leaves the existing patch byte-identical"
+    );
+    const Json emptyOrganization{{"settings", "CgIYKg=="}};
+    require(
+        api::parseGuildLayout(
+            api::guildRailPatch(emptyOrganization, {"505", "606", false, false, api::RailPlacement::Before}, joined)
+        )
+                .folders.front()
+                .guildIds
+            == std::vector<std::string>{"505"},
+        "Joined servers can establish the first saved order on an account with no organization group"
+    );
+    rejects(
+        [&] { api::guildRailPatch(snapshot, {"505", "303"}); },
+        "An absent server without captured membership remains an invalid drag source"
+    );
+    rejects(
+        [&] { api::guildRailPatch(snapshot, {"505", "707"}, joined); },
+        "Captured membership cannot authorize an unknown drop anchor"
+    );
+    rejects(
+        [&] { api::guildRailPatch(snapshot, {"505", "303"}, std::vector<std::string>{"505", "0606"}); },
+        "Captured membership requires canonical server identities"
+    );
     require(
         api::guildRailPatch(snapshot, {"202", "7", false, true, api::RailPlacement::Into})["settings"]
             == fixtures.at("noop"),
@@ -240,7 +304,7 @@ int main() {
       );
     for (const auto name : {"duplicate_guild", "duplicate_folder", "malformed_fixed", "missing_version"})
       rejects(
-          [&] { api::guildRailPatch(fixture(name), {"101", "7", false, true, api::RailPlacement::Into}); },
+          [&] { api::guildRailPatch(fixture(name), {"101", "7", false, true, api::RailPlacement::Into}, joined); },
           "Drag writes validate fresh versions and complete snapshots"
       );
     const auto moved = api::guildMovePatch(snapshot, "101", "7");

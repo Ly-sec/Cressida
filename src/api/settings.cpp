@@ -684,6 +684,31 @@ namespace api {
         settingsId(value);
       return result;
     }
+    std::string organizationSnapshot(const nlohmann::json& snapshot, std::span<const std::string> joinedGuilds) {
+      auto bytes = organizationSnapshot(snapshot);
+      if (joinedGuilds.empty())
+        return bytes;
+      constexpr std::size_t maximumJoinedGuilds = 10000;
+      if (joinedGuilds.size() > maximumJoinedGuilds)
+        throw std::runtime_error("Too many joined servers in account organization");
+      const auto group = nestedField(bytes, 14).value_or("");
+      const auto positions = organizationIds(group, 2);
+      std::set<std::string> known(positions.begin(), positions.end());
+      Wire folders(group);
+      while (folders.next())
+        if (folders.field == 1 && folders.type == 2)
+          for (const auto& id : organizationIds(folders.data, 1, 100))
+            known.insert(id);
+      std::string added;
+      for (const auto& id : joinedGuilds) {
+        const auto number = settingsId(id);
+        if (known.insert(id).second)
+          added += field(1, fixedId(1, number));
+      }
+      if (!added.empty())
+        bytes += field(14, added);
+      return bytes;
+    }
     // Keep untouched wire fields byte for byte. Filtering a packed list changes
     // only its length and selected IDs, including for future/unknown guilds.
     std::string removeOrganizationId(std::string_view bytes, unsigned id, std::uint64_t guild) {
@@ -764,7 +789,7 @@ namespace api {
 
   nlohmann::json guildMovePatch(
       const nlohmann::json& snapshot, const std::string& guild, const std::string& folderId,
-      const std::optional<std::string>& newFolderName
+      const std::optional<std::string>& newFolderName, std::span<const std::string> joinedGuilds
   ) {
     const auto guildNumber = settingsId(guild);
     if (!folderId.empty() && settingsId(folderId, true) > std::numeric_limits<std::int64_t>::max())
@@ -780,7 +805,7 @@ namespace api {
       // nlohmann validates UTF-8 before any encoded request can be produced.
       (void)nlohmann::json(*newFolderName).dump();
     }
-    const auto bytes = organizationSnapshot(snapshot);
+    const auto bytes = organizationSnapshot(snapshot, joinedGuilds);
     const auto version = organizationVersion(bytes);
     const auto group = nestedField(bytes, 14).value_or("");
     struct Folder {
@@ -893,10 +918,13 @@ namespace api {
       return false;
     }
   }
-  nlohmann::json guildRailPatch(const nlohmann::json& snapshot, const GuildRailMove& move) {
+  nlohmann::json
+  guildRailPatch(const nlohmann::json& snapshot, const GuildRailMove& move, std::span<const std::string> joinedGuilds) {
     if (!validRailMove(move))
       throw std::runtime_error("Invalid server drag target");
-    auto layout = parseGuildLayout(snapshot);
+    const auto bytes = organizationSnapshot(snapshot, joinedGuilds);
+    const nlohmann::json current{{"settings", encode64(bytes)}};
+    auto layout = parseGuildLayout(current);
     const auto find = [&](const std::string& id, bool folder) {
       return std::ranges::find_if(layout.folders, [&](const auto& entry) {
         return folder ? entry.id == id : std::ranges::find(entry.guildIds, id) != entry.guildIds.end();
@@ -911,9 +939,8 @@ namespace api {
         throw std::runtime_error("The dragged folder no longer exists");
       validationGuild = source->guildIds.front();
     }
-    const auto validation = guildMovePatch(snapshot, validationGuild, source == layout.folders.end() ? "" : source->id);
+    const auto validation = guildMovePatch(current, validationGuild, source == layout.folders.end() ? "" : source->id);
     (void)validation;
-    const auto bytes = organizationSnapshot(snapshot);
     const auto version = organizationVersion(bytes);
     const auto group = nestedField(bytes, 14).value_or("");
     struct Record {

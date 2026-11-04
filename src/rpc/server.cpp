@@ -9,12 +9,15 @@
 #include <cstring>
 #include <deque>
 #include <fcntl.h>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <poll.h>
 #include <set>
+#include <signal.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/un.h>
 #include <thread>
 #include <unistd.h>
@@ -48,6 +51,22 @@ namespace rpc {
       const auto parsed = std::from_chars(value.data(), value.data() + value.size(), number);
       return parsed.ec == std::errc{} && parsed.ptr == value.data() + value.size() && number;
     }
+    // A reported process ID is only meaningful when the peer shares this process's PID namespace.
+    bool sharedProcessNamespace(pid_t peer) {
+      if (peer <= 0)
+        return false;
+      std::error_code error;
+      const auto own = std::filesystem::read_symlink("/proc/self/ns/pid", error);
+      if (error)
+        return false;
+      const auto other = std::filesystem::read_symlink("/proc/" + std::to_string(peer) + "/ns/pid", error);
+      return !error && own == other;
+    }
+    void closeProcess(int& fd) {
+      if (fd >= 0)
+        ::close(std::exchange(fd, -1));
+    }
+    bool processGone(pid_t process) { return ::kill(process, 0) != 0 && errno == ESRCH; }
     bool eventName(const std::string& event) {
       return event == "ACTIVITY_JOIN" || event == "ACTIVITY_SPECTATE" || event == "ACTIVITY_JOIN_REQUEST";
     }
@@ -68,7 +87,9 @@ namespace rpc {
       std::string application, input, output;
       std::set<std::string> subscriptions;
       Clock::time_point created = Clock::now();
-      bool ready = false;
+      bool ready = false, local = false;
+      pid_t process = 0;
+      int processFd = -1;
     };
     struct Reply {
       std::uint64_t session = 0, connection = 0, revision = 0;
@@ -134,6 +155,14 @@ namespace rpc {
       }
       return -1;
     }
+    static void watch(Peer& peer, pid_t process) {
+      if (process == peer.process)
+        return;
+      closeProcess(peer.processFd);
+      peer.process = peer.local ? process : 0;
+      if (peer.process)
+        peer.processFd = static_cast<int>(::syscall(SYS_pidfd_open, peer.process, 0));
+    }
     bool frame(Peer& peer, std::uint32_t opcode, const std::string& body, const Configuration& active) {
       if (opcode == pingOpcode) {
         peer.output += packet(pongOpcode, body);
@@ -197,13 +226,21 @@ namespace rpc {
       const auto& args = value["args"];
       Update update{active.session, peer.identity, ++peer.revision, peer.application, command, nonce};
       if (command == "SET_ACTIVITY") {
-        if (!args.contains("pid") || !args["pid"].is_number_integer() || args["pid"] <= 0)
+        if (!args.contains("pid")
+            || !args["pid"].is_number_integer()
+            || args["pid"] <= 0
+            || args["pid"] > std::numeric_limits<pid_t>::max())
           return reject("Provide the application's process ID.");
         if (args.contains("activity") && !args["activity"].is_null()) {
           auto parsed = parseActivity(peer.application, args["activity"]);
           if (!parsed)
             return reject(parsed.error());
           update.activity = std::move(*parsed);
+        }
+        watch(peer, update.activity ? args["pid"].get<pid_t>() : 0);
+        if (update.activity && peer.process && peer.processFd < 0 && processGone(peer.process)) {
+          update.activity.reset();
+          watch(peer, 0);
         }
       } else if (command == "SEND_ACTIVITY_JOIN_INVITE" || command == "CLOSE_ACTIVITY_REQUEST") {
         if (!args.contains("user_id") || !args["user_id"].is_string() || !id(args["user_id"].get<std::string>()))
@@ -222,8 +259,10 @@ namespace rpc {
       std::string bound;
       std::uint64_t nextIdentity = 0;
       const auto closeAll = [&] {
-        for (auto& peer : peers)
+        for (auto& peer : peers) {
           ::close(peer.fd);
+          closeProcess(peer.processFd);
+        }
         peers.clear();
         if (listener >= 0)
           ::close(std::exchange(listener, -1));
@@ -266,14 +305,23 @@ namespace rpc {
         std::vector<pollfd> descriptors{{wake.fd(), POLLIN, 0}, {listener, POLLIN, 0}};
         for (const auto& peer : peers)
           descriptors.push_back({peer.fd, static_cast<short>(POLLIN | (peer.output.empty() ? 0 : POLLOUT)), 0});
+        for (const auto& peer : peers)
+          descriptors.push_back({peer.processFd, POLLIN, 0});
         const int timeout = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(idlePoll).count());
         const int count = ::poll(descriptors.data(), descriptors.size(), timeout);
         if (count < 0 && errno != EINTR)
           break;
         wake.drain();
+        const auto polled = peers.size();
         for (std::size_t i = peers.size(); i-- > 0;) {
           auto& peer = peers[i];
           const auto flags = descriptors[i + 2].revents;
+          if (peer.process
+              && ((descriptors[i + 2 + polled].revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL))
+                  || (peer.processFd < 0 && processGone(peer.process)))) {
+            watch(peer, 0);
+            publish({active.session, peer.identity, ++peer.revision, peer.application, {}, {}, {}, {}, true});
+          }
           bool keep = !(flags & (POLLERR | POLLHUP | POLLNVAL))
               && std::ranges::find(active.blocked, peer.application) == active.blocked.end();
           if (keep && (flags & POLLIN)) {
@@ -317,6 +365,7 @@ namespace rpc {
             if (peer.ready)
               publish({active.session, peer.identity, ++peer.revision, peer.application, {}, {}, {}, {}, true});
             ::close(peer.fd);
+            closeProcess(peer.processFd);
             peers.erase(peers.begin() + static_cast<std::ptrdiff_t>(i));
           }
         }
@@ -328,7 +377,7 @@ namespace rpc {
             if (peers.size() < maximumConnections
                 && ::getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &credentials, &size) == 0
                 && credentials.uid == ::getuid())
-              peers.push_back({.fd = fd, .identity = ++nextIdentity});
+              peers.push_back({.fd = fd, .identity = ++nextIdentity, .local = sharedProcessNamespace(credentials.pid)});
             else
               ::close(fd);
           }

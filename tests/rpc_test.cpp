@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
 
@@ -26,6 +27,30 @@ namespace {
     frame += body;
     for (const char byte : frame)
       require(::send(fd, &byte, 1, MSG_NOSIGNAL) == 1, "Fragmented private IPC frames are accepted");
+  }
+  std::vector<rpc::Update> awaitUpdates(rpc::Server& server) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (std::chrono::steady_clock::now() < deadline) {
+      pollfd event{server.eventFd(), POLLIN, 0};
+      (void)::poll(&event, 1, 200);
+      if (auto updates = server.drain(); !updates.empty())
+        return updates;
+    }
+    return {};
+  }
+  pid_t sleeper() {
+    const pid_t child = ::fork();
+    if (!child) {
+      ::pause();
+      ::_exit(0);
+    }
+    require(child > 0, "A synthetic activity process starts");
+    return child;
+  }
+  void stop(pid_t child) {
+    ::kill(child, SIGKILL);
+    int status = 0;
+    require(::waitpid(child, &status, 0) == child, "The synthetic activity process is reaped");
   }
   Json receiveFrame(int fd) {
     std::string bytes;
@@ -241,6 +266,40 @@ int main() {
           receiveFrame(fd)["data"]["secret"] == "synthetic-secret",
           "Join events reach only subscribed application peers"
       );
+      auto child = sleeper();
+      sendFrame(fd, 1, {{"cmd", "SET_ACTIVITY"}, {"nonce", "two"}, {"args", {{"pid", child}, {"activity", fields}}}});
+      updates = awaitUpdates(server);
+      require(updates.size() == 1 && updates.front().activity, "A tracked process publishes its activity");
+      server.complete(updates.front(), updates.front().activity);
+      require(receiveFrame(fd)["nonce"] == "two", "The tracked activity is acknowledged");
+      stop(child);
+      updates = awaitUpdates(server);
+      require(
+          updates.size() == 1 && updates.front().disconnected && !updates.front().activity,
+          "An activity clears when its reporting process exits, even while the bridge stays connected"
+      );
+      sendFrame(fd, 1, {{"cmd", "SET_ACTIVITY"}, {"nonce", "three"}, {"args", {{"pid", child}, {"activity", fields}}}});
+      updates = awaitUpdates(server);
+      require(
+          updates.size() == 1 && !updates.front().disconnected && !updates.front().activity,
+          "An activity reported for an exited process is published as a clear"
+      );
+      server.complete(updates.front(), {});
+      require(receiveFrame(fd)["nonce"] == "three", "The bridge connection survives a process-exit clear");
+      child = sleeper();
+      sendFrame(fd, 1, {{"cmd", "SET_ACTIVITY"}, {"nonce", "four"}, {"args", {{"pid", child}, {"activity", fields}}}});
+      updates = awaitUpdates(server);
+      require(updates.size() == 1 && updates.front().activity, "A replacement process publishes its activity");
+      server.complete(updates.front(), updates.front().activity);
+      require(receiveFrame(fd)["nonce"] == "four", "The replacement activity is acknowledged");
+      sendFrame(fd, 1, {{"cmd", "SET_ACTIVITY"}, {"nonce", "five"}, {"args", {{"pid", child}}}});
+      updates = awaitUpdates(server);
+      require(updates.size() == 1 && !updates.front().activity, "A null activity clears explicitly");
+      server.complete(updates.front(), {});
+      require(receiveFrame(fd)["nonce"] == "five", "The explicit clear is acknowledged");
+      stop(child);
+      std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+      require(server.drain().empty(), "An explicitly cleared activity stops tracking its process");
       ::close(fd);
       server.configure({});
     }

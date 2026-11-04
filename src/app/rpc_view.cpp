@@ -91,7 +91,7 @@ namespace app {
       const auto previous = m_rpcApplications.find(update.connection);
       if (update.disconnected || (update.command == "SET_ACTIVITY" && !update.activity)) {
         if (previous != m_rpcApplications.end()) {
-          if (!update.disconnected && previous->second.replyPending)
+          if (previous->second.replyPending)
             m_rpc.complete(previous->second.request, {}, "Activity was cleared.");
           previous->second.revoked->store(true);
           m_rpcApplications.erase(previous);

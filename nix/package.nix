@@ -42,6 +42,7 @@
   libpulseaudio,
   pipewire,
   doCheck ? false,
+  rev ? "unknown",
 }:
 stdenv.mkDerivation {
   pname = "cressida";
@@ -123,7 +124,10 @@ stdenv.mkDerivation {
     wrapProgram "$out/bin/cressida" \
       --prefix XDG_DATA_DIRS : "${shared-mime-info}/share"
   '';
-
+  postPatch = ''
+    substituteInPlace meson.build \
+      --replace-fail "cressida_git_revision_config.set('VCS_TAG', 'unknown')" "cressida_git_revision_config.set('VCS_TAG', '${rev}')"
+  '';
   meta = {
     description = "Cressida — native C++ Discord desktop client";
     mainProgram = "cressida";

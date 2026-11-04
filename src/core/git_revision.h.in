@@ -1,0 +1,3 @@
+#pragma once
+
+#define CRESSIDA_GIT_REVISION "@VCS_TAG@"

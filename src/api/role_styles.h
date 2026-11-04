@@ -23,6 +23,14 @@ namespace api {
     std::string icon, unicodeEmoji;
     std::optional<std::string> permissions;
   };
+  // Display-name metadata from a member payload. An absent `nick` field leaves
+  // the stored nickname unchanged; an explicit null or empty string clears it.
+  struct MemberName {
+    std::optional<std::string> nick;
+    bool nickPresent = false;
+    std::string user;
+    bool operator==(const MemberName&) const = default;
+  };
   struct GuildRoleUpdate {
     std::string guild;
     bool removed = false, replaceRoles = false;
@@ -30,6 +38,7 @@ namespace api {
     std::vector<ColoredRole> roles;
     std::vector<std::string> removedRoles, removedMembers;
     std::map<std::string, std::vector<std::string>> members;
+    std::map<std::string, MemberName> names;
     std::optional<std::string> owner;
   };
   struct RoleUpdates {
@@ -48,6 +57,9 @@ namespace api {
     std::string roleName(const std::string& guild, const std::string& role) const;
     std::optional<std::vector<std::string>> memberships(const std::string& guild, const std::string& user) const;
     std::string owner(const std::string& guild) const;
+    // The member's current server nickname, or their account name once the
+    // server has reported that no nickname is set. Empty when unknown.
+    std::optional<std::string> memberName(const std::string& guild, const std::string& user) const;
     std::optional<RoleColors> colors(
         const std::string& guild, const std::string& user,
         const std::optional<std::vector<std::string>>& fallbackRoles = {}
@@ -67,8 +79,9 @@ namespace api {
       std::string owner;
       std::map<std::string, ColoredRole> roles;
       std::map<std::string, std::vector<std::string>> members;
+      std::map<std::string, MemberName> names;
     };
     std::map<std::string, GuildRoles> m_guilds;
-    std::size_t m_memberCount = 0;
+    std::size_t m_memberCount = 0, m_nameCount = 0;
   };
 } // namespace api

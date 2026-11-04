@@ -244,6 +244,77 @@ int main() {
         motion.phase("name", false, start + std::chrono::seconds(1)) == 0 && !motion.active(),
         "Hover leave, disabled motion and overlays restore static rendering"
     );
+
+    api::RoleDirectory names;
+    const auto apply = [&](std::string_view type, const json& data) { names.apply(api::parseRoleUpdates(type, data)); };
+    apply("READY", json{{"guilds", json::array({{{"id", "1"}}, {{"id", "2"}}})}});
+    require(!names.memberName("1", "500"), "Unknown members have no server name");
+    apply(
+        "MESSAGE_CREATE",
+        json{
+            {"guild_id", "1"},
+            {"author", {{"id", "500"}, {"username", "para"}, {"global_name", "Para"}}},
+            {"member", {{"nick", "Para Nick"}, {"roles", json::array()}}}
+        }
+    );
+    require(names.memberName("1", "500") == "Para Nick", "Message members supply server nicknames");
+    require(!names.memberName("2", "500"), "Server nicknames stay scoped to their server");
+    apply(
+        "GUILD_MEMBER_UPDATE",
+        json{{"guild_id", "1"}, {"user", {{"id", "500"}, {"username", "para"}}}, {"roles", "invalid"}}
+    );
+    require(names.memberName("1", "500") == "Para Nick", "Absent nicknames retain the previous value");
+    apply(
+        "GUILD_MEMBER_UPDATE",
+        json{
+            {"guild_id", "1"},
+            {"user", {{"id", "500"}, {"username", "para"}, {"global_name", "Para"}}},
+            {"nick", "Renamed"},
+            {"roles", "invalid"}
+        }
+    );
+    require(names.memberName("1", "500") == "Renamed", "Live nickname changes replace older names");
+    apply(
+        "GUILD_MEMBER_UPDATE",
+        json{
+            {"guild_id", "1"},
+            {"user", {{"id", "500"}, {"username", "para"}, {"global_name", "Para"}}},
+            {"nick", nullptr}
+        }
+    );
+    require(names.memberName("1", "500") == "Para", "Cleared nicknames restore the account name");
+    apply(
+        "GUILD_MEMBER_UPDATE",
+        json{{"guild_id", "1"}, {"user", {{"id", "500"}, {"username", "para"}}}, {"nick", "Again"}}
+    );
+    apply(
+        "GUILD_MEMBER_UPDATE", json{{"guild_id", "1"}, {"user", {{"id", "500"}, {"username", "para"}}}, {"nick", ""}}
+    );
+    require(names.memberName("1", "500") == "para", "Empty nicknames clear to the username");
+    apply("GUILD_MEMBERS_CHUNK", json{{"guild_id", "1"}, {"members", json::array({{{"user_id", "501"}}})}});
+    require(!names.memberName("1", "501"), "Members without known name data keep the message fallback");
+    apply(
+        "GUILD_MEMBERS_CHUNK",
+        json{
+            {"guild_id", "1"},
+            {"members",
+             json::array(
+                 {{{"user", {{"id", "502"}, {"username", "bad"}}}, {"nick", "line\nbreak"}},
+                  {{"user", {{"id", "503"}, {"username", "long"}}}, {"nick", std::string(200, 'x')}},
+                  {{"user", {{"id", "bad"}, {"username", "invalid"}}}, {"nick", "Nobody"}}}
+             )}
+        }
+    );
+    require(names.memberName("1", "502") == "bad", "Control characters in nicknames are rejected");
+    require(names.memberName("1", "503") == "long", "Oversized nicknames are rejected");
+    require(!names.memberName("1", "bad"), "Invalid member IDs are ignored");
+    apply("GUILD_MEMBER_REMOVE", json{{"guild_id", "1"}, {"user", {{"id", "500"}}}});
+    require(!names.memberName("1", "500"), "Departed members lose their server name");
+    apply("GUILD_MEMBER_ADD", json{{"guild_id", "2"}, {"user", {{"id", "600"}, {"username", "six"}}}, {"nick", "Six"}});
+    apply("GUILD_DELETE", json{{"id", "2"}});
+    require(!names.memberName("2", "600"), "Leaving a server clears its member names");
+    apply("READY", json{{"guilds", json::array({{{"id", "1"}}})}});
+    require(!names.memberName("1", "502"), "A fresh READY clears all member names");
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;

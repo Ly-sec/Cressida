@@ -49,6 +49,7 @@ namespace api {
     UserUpdates consume(std::string_view type, const nlohmann::json& data);
     void apply(const UserUpdates& update);
     std::string name(const std::string& user, const std::string& fallback) const;
+    std::optional<std::string> alias(const std::string& user) const;
     std::string status(const std::string& user, const std::string& fallback = "offline") const;
     UserCustomStatus customStatus(const std::string& user) const;
     std::vector<rpc::Activity> activities(const std::string& user) const;

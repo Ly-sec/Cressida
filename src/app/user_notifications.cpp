@@ -91,7 +91,7 @@ namespace app {
           conversation = "#" + location->name;
       } else if (dm != m_privateChannels.end() && dm->kind() == api::ChannelType::GroupDirectMessage)
         conversation = channelName(*dm);
-      notice.title = desktopMessageTitle(userName(message.authorId, message.author), conversation, serverName);
+      notice.title = desktopMessageTitle(userName(message.authorId, message.author, guild), conversation, serverName);
       if (!m_preferences.notificationPrivacy) {
         const auto guildRoles = m_roleDirectory.allRoles(guild);
         notice.body = desktopMessagePreview(message, [&](char kind, const std::string& id) -> std::string {
@@ -109,11 +109,11 @@ namespace app {
           }
           const auto mentioned = message.mentions.find(id);
           if (mentioned != message.mentions.end())
-            return userName(id, mentioned->second);
+            return userName(id, mentioned->second, guild);
           if (id == message.authorId)
-            return userName(id, message.author);
+            return userName(id, message.author, guild);
           const auto user = lookupUser(id);
-          return user.name == "Unknown user" ? "" : userName(id, user.name);
+          return user.name == "Unknown user" ? "" : userName(id, user.name, guild);
         });
       }
     }

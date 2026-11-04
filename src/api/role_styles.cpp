@@ -56,6 +56,13 @@ namespace api {
       }
       return result;
     }
+    constexpr std::size_t maximumMemberName = 128;
+    constexpr std::size_t maximumMemberNames = 20000;
+    bool displayable(const std::string& name) {
+      return !name.empty()
+          && name.size() <= maximumMemberName
+          && std::ranges::none_of(name, [](unsigned char c) { return c < 32 || c == 127; });
+    }
     bool higher(const ColoredRole& a, const ColoredRole& b) {
       if (a.position != b.position)
         return a.position > b.position;
@@ -85,9 +92,26 @@ namespace api {
       auto id = text(value, "user_id");
       if (value.contains("user"))
         id = text(value["user"], "id");
-      if (validSnowflake(id) && update.members.size() < 10000)
+      if (!validSnowflake(id))
+        return;
+      if (update.members.size() < 10000)
         if (auto roles = parseMemberRoles(value))
           update.members[id] = std::move(*roles);
+      MemberName name;
+      if (const auto nick = value.find("nick"); nick != value.end() && (nick->is_null() || nick->is_string())) {
+        name.nickPresent = true;
+        if (nick->is_string() && displayable(nick->get_ref<const std::string&>()))
+          name.nick = nick->get<std::string>();
+      }
+      if (const auto user = value.find("user"); user != value.end() && user->is_object()) {
+        auto account = text(*user, "global_name");
+        if (!displayable(account))
+          account = text(*user, "username");
+        if (displayable(account))
+          name.user = std::move(account);
+      }
+      if ((name.nickPresent || !name.user.empty()) && (update.names.contains(id) || update.names.size() < 10000))
+        update.names[id] = std::move(name);
     };
     auto guild = [&](const Json& value) {
       GuildRoleUpdate update;
@@ -113,7 +137,7 @@ namespace api {
       }
       if (value.contains("member") && value["member"].is_object() && data.contains("user")) {
         auto own = value["member"];
-        own["user_id"] = text(data["user"], "id");
+        own["user"] = data["user"];
         member(update, own);
       }
       if (value.contains("members") && value["members"].is_array())
@@ -157,7 +181,7 @@ namespace api {
       if (data.contains("member") && data["member"].is_object() && data.contains("author")) {
         GuildRoleUpdate update{.guild = text(data, "guild_id")};
         auto value = data["member"];
-        value["user_id"] = text(data["author"], "id");
+        value["user"] = data["author"];
         member(update, value);
         result.guilds.push_back(std::move(update));
       }
@@ -197,6 +221,7 @@ namespace api {
     if (updates.reset) {
       m_guilds.clear();
       m_memberCount = 0;
+      m_nameCount = 0;
     }
     for (const auto& update : updates.guilds) {
       if (!validSnowflake(update.guild))
@@ -204,6 +229,7 @@ namespace api {
       if (update.removed) {
         if (const auto at = m_guilds.find(update.guild); at != m_guilds.end()) {
           m_memberCount -= at->second.members.size();
+          m_nameCount -= at->second.names.size();
           m_guilds.erase(at);
         }
         continue;
@@ -226,8 +252,25 @@ namespace api {
         }
       for (const auto& id : update.removedRoles)
         target.roles.erase(id);
-      for (const auto& id : update.removedMembers)
+      for (const auto& id : update.removedMembers) {
         m_memberCount -= target.members.erase(id);
+        m_nameCount -= target.names.erase(id);
+      }
+      for (const auto& [id, name] : update.names) {
+        auto found = target.names.find(id);
+        if (found == target.names.end()) {
+          if (!validSnowflake(id) || m_nameCount >= maximumMemberNames)
+            continue;
+          found = target.names.emplace(id, MemberName{}).first;
+          ++m_nameCount;
+        }
+        if (name.nickPresent) {
+          found->second.nick = name.nick;
+          found->second.nickPresent = true;
+        }
+        if (!name.user.empty())
+          found->second.user = name.user;
+      }
       for (const auto& [id, roles] : update.members)
         if (validSnowflake(id) && roles.size() <= 250) {
           const bool exists = target.members.contains(id);
@@ -266,6 +309,21 @@ namespace api {
       return {};
     auto m = g->second.members.find(user);
     return m == g->second.members.end() ? std::optional<std::vector<std::string>>{} : m->second;
+  }
+  std::optional<std::string> RoleDirectory::memberName(const std::string& guild, const std::string& user) const {
+    const auto server = m_guilds.find(guild);
+    if (server == m_guilds.end())
+      return {};
+    const auto found = server->second.names.find(user);
+    if (found == server->second.names.end())
+      return {};
+    if (found->second.nick)
+      return found->second.nick;
+    // An account name alone cannot override a nickname carried by a message
+    // until the server has reported this member's nickname state.
+    if (found->second.nickPresent && !found->second.user.empty())
+      return found->second.user;
+    return {};
   }
   std::string RoleDirectory::owner(const std::string& guild) const {
     auto i = m_guilds.find(guild);

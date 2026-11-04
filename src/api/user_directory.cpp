@@ -193,6 +193,10 @@ namespace api {
     const auto found = m_names.find(user);
     return found == m_names.end() ? fallback : found->second;
   }
+  std::optional<std::string> UserDirectory::alias(const std::string& user) const {
+    const auto found = m_names.find(user);
+    return found == m_names.end() ? std::nullopt : std::optional(found->second);
+  }
   std::string UserDirectory::status(const std::string& user, const std::string& fallback) const {
     const auto found = m_statuses.find(user);
     return found == m_statuses.end() ? fallback : found->second;

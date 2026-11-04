@@ -352,7 +352,8 @@ namespace app {
             notice.body = bounded(
                 saved.message
                     ? desktopMessagePreview(
-                          *saved.message, [&](char, const std::string& id) { return userName(id, "Unknown user"); }
+                          *saved.message,
+                          [&](char, const std::string& id) { return userName(id, "Unknown user", saved.guild); }
                       )
                     : saved.summary
             );
@@ -828,7 +829,7 @@ namespace app {
         preview.stickers.clear();
         preview.forwarded.reset();
         for (auto& [id, name] : preview.mentions)
-          name = userName(id, name);
+          name = userName(id, name, row.guild);
         if (m_userDirectory.relationship(preview.authorId) == 2 || m_userDirectory.ignored(preview.authorId))
           preview.content = "Message from a blocked user.";
         body = layoutRichMessage(
@@ -936,12 +937,15 @@ namespace app {
           const auto& replyMessage = *row.message->reply;
           label(
               *list, layout::Inbox::bodyLeft, by, inner - layout::Inbox::bodyLeft - Style::spaceMd,
-              "↳ " + replyMessage.author + ": " + bounded(notificationMessagePreview(replyMessage.content)),
+              "↳ "
+                  + userName(replyMessage.authorId, replyMessage.author, row.guild)
+                  + ": "
+                  + bounded(notificationMessagePreview(replyMessage.content)),
               Style::fontSizeDescription, muted
           );
           by += reply;
         }
-        const auto author = userName(row.message->authorId, row.message->author);
+        const auto author = userName(row.message->authorId, row.message->author, row.guild);
         avatar(*list, Style::spaceMd, by, layout::Inbox::avatar, row.message->avatar, author, row.message->authorId);
         label(
             *list, layout::Inbox::bodyLeft, by, inner - layout::Inbox::bodyLeft - Style::spaceSection * 3, author,

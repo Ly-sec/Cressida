@@ -1039,6 +1039,8 @@ namespace app {
     void upsertMessage(api::Message message);
     void saveSelection();
     std::string userName(const std::string& id, const std::string& fallback) const;
+    // Personal nickname, then the server nickname in `guild`, then fallback.
+    std::string userName(const std::string& id, const std::string& fallback, const std::string& guild) const;
     std::string userStatus(const std::string& id, const std::string& fallback = "offline") const;
     std::string channelName(const api::Channel& channel) const;
     void updateDmMembers();

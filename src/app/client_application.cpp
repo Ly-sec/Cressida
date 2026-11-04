@@ -6660,7 +6660,17 @@ namespace app {
   }
 
   std::string ClientApplication::userName(const std::string& id, const std::string& fallback) const {
-    return m_userDirectory.name(id, fallback);
+    return userName(id, fallback, m_dmMode ? std::string{} : m_guildId);
+  }
+
+  std::string
+  ClientApplication::userName(const std::string& id, const std::string& fallback, const std::string& guild) const {
+    if (auto alias = m_userDirectory.alias(id))
+      return std::move(*alias);
+    if (!guild.empty())
+      if (auto member = m_roleDirectory.memberName(guild, id))
+        return std::move(*member);
+    return fallback;
   }
 
   std::string ClientApplication::userStatus(const std::string& id, const std::string& fallback) const {

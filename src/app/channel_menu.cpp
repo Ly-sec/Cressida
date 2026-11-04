@@ -23,6 +23,12 @@ namespace app {
       return {};
     return serverChannelPermissions(m_guildId, id);
   }
+  bool ClientApplication::messagePinnable(const api::Message& message) const {
+    const bool privateChannel = std::ranges::contains(m_privateChannels, message.channelId, &api::Channel::id);
+    return api::canPinMessage(
+        message, privateChannel, privateChannel ? std::nullopt : channelPermissionsFor(message.channelId)
+    );
+  }
   std::optional<std::uint64_t> ClientApplication::guildPermissions() const {
     api::Channel base;
     base.overwrites.emplace();

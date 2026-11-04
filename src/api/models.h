@@ -287,6 +287,7 @@ namespace api {
     std::vector<std::string> mentionRoles;
     bool mentionEveryone = false;
     std::string editedTimestamp;
+    bool pinned = false;
     // Local session-only retention state; never read from or sent to Discord.
     bool deleted = false;
     std::optional<ForwardedMessage> forwarded;
@@ -313,6 +314,7 @@ namespace api {
     std::optional<std::string> webhookId;
     std::optional<std::vector<std::string>> mentionRoles;
     std::optional<bool> mentionEveryone;
+    std::optional<bool> pinned;
     std::optional<std::string> editedTimestamp;
     std::optional<std::optional<ForwardedMessage>> forwarded;
     std::optional<std::vector<Sticker>> stickers;

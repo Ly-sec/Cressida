@@ -34,6 +34,44 @@ int main() {
     deletable.deleted = false;
     deletable.id = "invalid";
     require(!canDeleteMessage(deletable, "2", manageMessages), "Deletion requires valid message identities");
+    Message pinnable{.id = "20", .channelId = "10", .authorId = "1"};
+    require(canPinMessage(pinnable, true), "Direct conversations allow pinning without server permissions");
+    require(!canPinMessage(pinnable, false), "Unknown server permissions do not grant pinning");
+    require(!canPinMessage(pinnable, false, manageChannel), "Manage Channels does not grant pinning");
+    require(canPinMessage(pinnable, false, pinMessages), "Pin Messages permits pinning");
+    require(canPinMessage(pinnable, false, manageMessages), "Manage Messages permits pinning");
+    for (const int type : {replyMessageType, 20, 23}) {
+      pinnable.type = type;
+      require(canPinMessage(pinnable, true), "Replies and application responses can be pinned");
+    }
+    pinnable.type = 6;
+    require(!canPinMessage(pinnable, true), "System notices cannot be pinned");
+    pinnable.type = defaultMessageType;
+    pinnable.flags = messageEphemeral;
+    require(!canPinMessage(pinnable, true), "Private responses cannot be pinned");
+    pinnable.flags = 0;
+    pinnable.deleted = true;
+    require(!canPinMessage(pinnable, true), "Retained deleted messages cannot be pinned");
+    pinnable.deleted = false;
+    pinnable.id = "invalid";
+    require(!canPinMessage(pinnable, true), "Pinning requires valid message identities");
+    const auto pinRequest = interactionRequest({.kind = Kind::PinMessage, .channel = "10", .message = "20"});
+    require(
+        pinRequest && pinRequest->method == "PUT" && pinRequest->path == "/channels/10/messages/pins/20",
+        "Pinning uses the message pin route"
+    );
+    const auto unpinRequest = interactionRequest({.kind = Kind::UnpinMessage, .channel = "10", .message = "20"});
+    require(
+        unpinRequest && unpinRequest->method == "DELETE" && unpinRequest->path == "/channels/10/messages/pins/20",
+        "Unpinning deletes the message pin"
+    );
+    require(
+        !interactionRequest({.kind = Kind::PinMessage, .channel = "10", .message = "20/x"}),
+        "Pin routes reject malformed identities"
+    );
+    const auto pinnedPatch = parseMessagePatch(json{{"id", "20"}, {"channel_id", "10"}, {"pinned", true}});
+    require(pinnedPatch.pinned == true, "Message updates carry pinned state");
+    require(!parseMessagePatch(json{{"id", "20"}, {"channel_id", "10"}}).pinned, "Absent pinned state is preserved");
     const auto deleteRequest = interactionRequest({.kind = Kind::DeleteMessage, .channel = "10", .message = "20"});
     require(
         deleteRequest && deleteRequest->method == "DELETE" && deleteRequest->path == "/channels/10/messages/20",

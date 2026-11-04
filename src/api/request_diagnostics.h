@@ -67,6 +67,8 @@ namespace api::request_diagnostics {
        "/users/@me/application-command-index",
        "/channels/:id/messages",
        "/channels/:id/messages/search",
+       "/channels/:id/messages/pins",
+       "/channels/:id/messages/pins/:id",
        "/channels/:id/messages/:id",
        "/channels/:id/messages/:id/ack",
        "/channels/:id/messages/:id/bookmarks",

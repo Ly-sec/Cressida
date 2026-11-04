@@ -525,6 +525,8 @@ namespace api {
     }
     if (value.contains("mention_everyone") && value["mention_everyone"].is_boolean())
       patch.mentionEveryone = value["mention_everyone"].get<bool>();
+    if (value.contains("pinned") && value["pinned"].is_boolean())
+      patch.pinned = value["pinned"].get<bool>();
     if (value.contains("mention_roles") && value["mention_roles"].is_array()) {
       patch.mentionRoles.emplace();
       for (const auto& role : value["mention_roles"])
@@ -732,6 +734,8 @@ namespace api {
       message.mentionRoles = *mentionRoles;
     if (mentionEveryone)
       message.mentionEveryone = *mentionEveryone;
+    if (pinned)
+      message.pinned = *pinned;
     if (type)
       message.type = *type;
     if (webhookId)

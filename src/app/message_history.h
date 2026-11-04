@@ -123,6 +123,7 @@ namespace app {
       merge(combined.mentions, patch.mentions);
       merge(combined.mentionRoles, patch.mentionRoles);
       merge(combined.mentionEveryone, patch.mentionEveryone);
+      merge(combined.pinned, patch.pinned);
       merge(combined.reply, patch.reply);
       merge(combined.forwarded, patch.forwarded);
       merge(combined.reactions, patch.reactions);

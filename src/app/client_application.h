@@ -241,6 +241,8 @@ namespace app {
       CancelMessageEdit,
       CompleteText,
       DeleteMessage,
+      PinMessage,
+      UnpinMessage,
       CopyLink,
       CopyId,
       MentionUser,
@@ -558,6 +560,7 @@ namespace app {
     void clearChannelFeatures();
     void closeChannelPanel();
     std::optional<std::uint64_t> channelPermissionsFor(const std::string& channel) const;
+    bool messagePinnable(const api::Message& message) const;
     std::optional<std::uint64_t> guildPermissions() const;
     bool openChannelContext(const Hit& target, float x, float y);
     void openChannelCreate(api::Interaction action);

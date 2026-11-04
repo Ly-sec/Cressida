@@ -142,6 +142,22 @@ keeps the message and shows an error; it does not retry automatically.
 Private app responses use their local dismiss action instead. See
 [Slash commands](slash-commands.md) for app responses.
 
+## Pin a message
+
+Right-click a message and choose **Pin Message**. A confirmation shows the
+channel name and a preview of the message as it appears in chat, including
+formatting, images, embeds and stickers. Spoilers stay hidden, and your image
+and embed display settings apply. Choose **Oh yeah. Pin it** to pin it or
+**Cancel** to close without changes. Messages that are already pinned offer
+**Unpin Message** instead; confirm with **Remove it please**.
+
+You can pin messages in direct and group conversations. In a server channel, you
+need **Pin Messages** or **Manage Messages**. Cressida checks your current
+permission again when you confirm. After the pin succeeds, an open pins panel
+refreshes. A failed request keeps the dialog open with an error and does not
+retry automatically. System notices, private app responses and deleted messages
+cannot be pinned.
+
 ## Search messages
 
 Click the search field in the upper right or press **Ctrl+F**. The menu offers

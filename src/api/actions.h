@@ -17,6 +17,8 @@ namespace api {
     EditMessage,
     RemoveEmbeds,
     DeleteMessage,
+    PinMessage,
+    UnpinMessage,
     Block,
     Unblock,
     AddFriend,
@@ -69,6 +71,8 @@ namespace api {
   bool
   canRemoveMessageEmbeds(const Message& message, std::string_view self, std::optional<std::uint64_t> permissions = {});
   bool canDeleteMessage(const Message& message, std::string_view self, std::optional<std::uint64_t> permissions = {});
+  // Direct and group conversations allow every participant to pin; server channels need a permission.
+  bool canPinMessage(const Message& message, bool privateChannel, std::optional<std::uint64_t> permissions = {});
   inline constexpr std::size_t maxAutoModerationDecisionBytes = 128;
   inline constexpr std::size_t maxAutoModerationContentBytes = 16 * 1024;
   struct Interaction {

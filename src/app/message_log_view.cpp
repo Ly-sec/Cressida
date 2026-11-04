@@ -231,6 +231,8 @@ namespace app {
               entry.id != static_cast<int>(Action::Reply)
                   && entry.id != static_cast<int>(Action::EditMessage)
                   && entry.id != static_cast<int>(Action::DeleteMessage)
+                  && entry.id != static_cast<int>(Action::PinMessage)
+                  && entry.id != static_cast<int>(Action::UnpinMessage)
                   && entry.id != static_cast<int>(Action::AddReaction)
                   && entry.id != static_cast<int>(Action::CreateThread),
               "Deleted message menu must be read-only"

@@ -40,6 +40,10 @@ int main() {
       "Emoji names are opaque"
   );
   require(route("/users/@me/channels") == "/users/@me/channels", "Literal account endpoints stay specific");
+  require(
+      route("/channels/123/messages/pins/456") == "/channels/:id/messages/pins/:id",
+      "Message pin routes stay distinct from message routes"
+  );
   const auto activity = format(
       {.id = nextId(),
        .action = "activity-metadata",

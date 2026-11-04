@@ -563,7 +563,9 @@ namespace app {
           m_voiceState.channel == voiceDemoChannel && voiceBarVisible() && m_dialogKind.empty(),
           "Double-clicking a voice channel joins directly when confirmation is disabled"
       );
-      clickAction(Action::VoiceAction, "leave");
+      // The voice bar's hit targets appear only after the next draw.
+      voiceAction("leave");
+      require(!voiceBarVisible(), "Leaving after a direct join retires the call");
       std::clog << "Offline voice join confirmation replay passed\n";
       break;
     default:

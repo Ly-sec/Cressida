@@ -168,9 +168,11 @@ namespace app {
       case Action::UnblockUser:
         entry.icon = "user-check";
         break;
+      case Action::PinMessage:
+      case Action::UnpinMessage:
       case Action::PinConversation:
       case Action::UnpinConversation:
-        entry.icon = action == Action::PinConversation ? "pin" : "pinned-off";
+        entry.icon = action == Action::PinConversation || action == Action::PinMessage ? "pin" : "pinned-off";
         break;
 
       case Action::BookmarkMessage:
@@ -230,6 +232,9 @@ namespace app {
             message->hasThread || message->thread || m_threads.find(m_guildId, message->id) ? "Open Thread"
                                                                                             : "Create Thread");
 
+      if (messagePinnable(*message))
+        add(message->pinned ? Action::UnpinMessage : Action::PinMessage,
+            message->pinned ? "Unpin Message" : "Pin Message");
       if (!message->deleted && !(message->flags & 64)) {
         add(Action::BookmarkMessage, "Bookmark Message");
         add(Action::RemindMessage, "Remind Me");
@@ -808,6 +813,17 @@ namespace app {
       }
       action.messageFlags = message->flags;
     }
+    if (action.kind == Kind::PinMessage || action.kind == Kind::UnpinMessage) {
+      const auto message = std::ranges::find(m_messages, action.message, &api::Message::id);
+      if (action.channel != m_channelId
+          || message == m_messages.end()
+          || message->channelId != action.channel
+          || message->pinned != (action.kind == Kind::UnpinMessage)
+          || !messagePinnable(*message)) {
+        m_status = "This message is no longer available or you cannot change its pin.";
+        return false;
+      }
+    }
     if (action.kind == Kind::AutoModerationFeedback) {
       const auto message = std::ranges::find(m_messages, action.message, &api::Message::id);
       if (action.channel != m_channelId
@@ -830,6 +846,8 @@ namespace app {
             || action.kind == Kind::EditMessage
             || action.kind == Kind::RemoveEmbeds
             || action.kind == Kind::DeleteMessage
+            || action.kind == Kind::PinMessage
+            || action.kind == Kind::UnpinMessage
             || action.kind == Kind::CreateThread
             || action.kind == Kind::MessageButton))
       return false;
@@ -939,6 +957,8 @@ namespace app {
             || action == Action::EditMessage
             || action == Action::RemoveEmbeds
             || action == Action::DeleteMessage
+            || action == Action::PinMessage
+            || action == Action::UnpinMessage
             || action == Action::AddReaction
             || action == Action::CreateThread))
       return;
@@ -1076,6 +1096,23 @@ namespace app {
       m_dialogAction = request;
       if (m_dialogKind != "confirm")
         m_focusedInput = "dialog";
+      break;
+    case Action::PinMessage:
+    case Action::UnpinMessage:
+      if (m_contextChannel != m_channelId
+          || found == m_messages.end()
+          || found->channelId != m_contextChannel
+          || found->pinned != (action == Action::UnpinMessage)
+          || !messagePinnable(*found))
+        break;
+      request.kind = action == Action::PinMessage ? Kind::PinMessage : Kind::UnpinMessage;
+      m_dialogKind = "confirm";
+      ++m_dialogGeneration;
+      m_dialogTitle = action == Action::PinMessage ? "Pin It. Pin It Good." : "Unpin Message";
+      m_dialogText.clear();
+      m_dialogError.clear();
+      m_dialogPending = false;
+      m_dialogAction = request;
       break;
     case Action::EditMessage:
       if (m_contextChannel == m_channelId)
@@ -1368,7 +1405,11 @@ namespace app {
       drawProfileCard(root, w, h);
       return;
     }
-    if (m_dialogKind == "confirm" && m_dialogAction && m_dialogAction->kind == api::InteractionKind::DeleteMessage) {
+    if (m_dialogKind == "confirm"
+        && m_dialogAction
+        && (m_dialogAction->kind == api::InteractionKind::DeleteMessage
+            || m_dialogAction->kind == api::InteractionKind::PinMessage
+            || m_dialogAction->kind == api::InteractionKind::UnpinMessage)) {
       drawMessageDialog(root, w, h);
       return;
     }
@@ -1676,6 +1717,12 @@ namespace app {
         };
         inboxEvent(update);
       }
+    } else if (action.kind == Kind::PinMessage || action.kind == Kind::UnpinMessage) {
+      api::MessagePatch patch;
+      patch.pinned = action.kind == Kind::PinMessage;
+      updateMessage(action.channel, action.message, patch);
+      if (m_channelPanel == "pins" && action.channel == m_channelId)
+        requestChannelPage();
     } else if (action.kind == Kind::EditMessage && !m_messageLog.known(action.channel, action.message)) {
       const api::Message* prior = nullptr;
       if (action.channel == m_channelId) {

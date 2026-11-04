@@ -17,6 +17,18 @@ namespace api {
         && ((!self.empty() && message.authorId == self && message.webhookId.empty())
             || (permissions.value_or(0) & manageMessages));
   }
+  bool canPinMessage(const Message& message, bool privateChannel, std::optional<std::uint64_t> permissions) {
+    constexpr int applicationCommandMessage = 20, contextMenuCommandMessage = 23;
+    return !message.deleted
+        && validSnowflake(message.channelId)
+        && validSnowflake(message.id)
+        && !(message.flags & messageEphemeral)
+        && (message.type == defaultMessageType
+            || message.type == replyMessageType
+            || message.type == applicationCommandMessage
+            || message.type == contextMenuCommandMessage)
+        && (privateChannel || (permissions.value_or(0) & (pinMessages | manageMessages)));
+  }
   bool canRemoveMessageEmbeds(const Message& message, std::string_view self, std::optional<std::uint64_t> permissions) {
     constexpr int applicationCommandMessage = 20, contextMenuCommandMessage = 23;
     return !message.deleted
@@ -872,6 +884,13 @@ namespace api {
         request.body["allowed_mentions"]["parse"] = nlohmann::json::array();
       } else
         request.method = "DELETE";
+      break;
+    case Kind::PinMessage:
+    case Kind::UnpinMessage:
+      if (!validSnowflake(action.channel) || !validSnowflake(action.message))
+        return {};
+      request.path = "/channels/" + action.channel + "/messages/pins/" + action.message;
+      request.method = action.kind == Kind::PinMessage ? "PUT" : "DELETE";
       break;
     case Kind::CreateDm: {
       if (action.recipients.empty() || action.recipients.size() > 9)

@@ -355,14 +355,94 @@ namespace app {
     const auto message = std::ranges::find(m_messages, m_dialogAction->message, &api::Message::id);
     if (message == m_messages.end())
       return;
-    const float width = std::min(500.0F, w - Style::space2Xl), textWidth = width - 40;
-    const auto measured = m_window.target().renderer().measureText(
-        message->content, Style::fontSizeBody, FontWeight::Normal, textWidth - 54, 0
+    using Kind = api::InteractionKind;
+    const auto kind = m_dialogAction->kind;
+    const bool pin = kind == Kind::PinMessage, unpin = kind == Kind::UnpinMessage;
+    std::string destination;
+    if (const auto channel = std::ranges::find(m_channels, message->channelId, &api::Channel::id);
+        channel != m_channels.end())
+      destination = "#" + channel->name;
+    else if (const auto* thread = m_threads.find(m_guildId, message->channelId))
+      destination = "#" + thread->name;
+    else if (
+        const auto conversation = std::ranges::find(m_privateChannels, message->channelId, &api::Channel::id);
+        conversation != m_privateChannels.end()
+    )
+      destination = channelName(*conversation);
+    if (destination.empty() || destination == "#")
+      destination = "this conversation";
+    const std::string title = pin || unpin ? m_dialogTitle : "Delete message";
+    const std::string description = pin ? "Hey, just double-checking that you want to pin this message to "
+            + destination
+            + " for posterity and greatness?"
+        : unpin ? "You sure you want to remove this pinned message from " + destination + "?"
+                : "This message will be deleted for everyone.";
+    const std::string confirm = pin ? (m_dialogPending ? "Pinning…" : "Oh yeah. Pin it")
+        : unpin                     ? (m_dialogPending ? "Unpinning…" : "Remove it please")
+                                    : (m_dialogPending ? "Deleting…" : "Delete");
+    const float width = std::min(500.0F, w - Style::space2Xl), inset = Style::spaceRelaxed,
+                textWidth = width - inset * 2;
+    const float previewText = layout::Avatar::small + Style::spaceMd * 2;
+    auto& renderer = m_window.target().renderer();
+    const auto headingMetrics =
+        renderer.measureText(title, Style::fontSizeHeading, FontWeight::SemiBold, width - 72, 1);
+    const auto descriptionMetrics =
+        renderer.measureText(description, Style::fontSizeCaption, FontWeight::Normal, textWidth, 3);
+    const std::string author = userName(message->authorId, message->author);
+    const auto nameMetrics = renderer.measureText(author, Style::fontSizeCaption, FontWeight::SemiBold);
+    const float bodyLeft = previewText,
+                bodyWidth = std::max(Style::spaceSection, textWidth - previewText - Style::spaceMd);
+    const float bodyTop =
+        Style::spaceMd + std::max(Style::fontSizeCaption, nameMetrics.bottom - nameMetrics.top) + Style::spaceXs;
+    const auto measure = [&](std::string_view value, const MessageStyle& style) {
+      return renderer
+          .measureText(
+              messageMarkup(value, style), style.size, style.bold ? FontWeight::Bold : FontWeight::Normal, 0, 1,
+              TextAlign::Start, style.code ? "monospace" : "", TextEllipsize::End, true
+          )
+          .width;
+    };
+    auto displayed = *message;
+    for (auto& [id, name] : displayed.mentions)
+      name = userName(id, name);
+    if (!m_preferences.showEmbeds)
+      displayed.embeds.clear();
+    if (!m_preferences.showImages)
+      for (auto& attachment : displayed.attachments)
+        attachment.image.url.clear();
+    displayed.forwarded.reset();
+    displayed.reply.reset();
+    if (blockedMessage(*message)) {
+      displayed = {};
+      displayed.content = "Message from a blocked user.";
+    }
+    const auto body = layoutRichMessage(
+        displayed, bodyWidth, measure, Style::fontSizeCaption,
+        {.emojiImageLinks = m_preferences.emojiImageLinks && m_preferences.showImages,
+         .compact = true,
+         .unicodeEmoji = [this](std::string_view text) { return m_emojiCatalog.isUnicode(text); },
+         .channelMention = [this](auto guild, auto channel) { return channelMention(guild, channel); },
+         .roleMention =
+             [this](auto role) { return m_roleDirectory.roleName(m_dmMode ? "" : m_guildId, std::string(role)); },
+         .twelveHourClock = m_preferences.twelveHourClock,
+         .showEmbedIcons = m_preferences.showImages}
     );
-    const float previewHeight =
-        std::clamp(measured.bottom - measured.top + (Style::spaceGroup - Style::spaceXxs), 76.0F, 112.0F);
+    const float headingHeight = std::max(Style::fontSizeHeading + 4, headingMetrics.bottom - headingMetrics.top);
+    const float descriptionHeight =
+        std::max(Style::fontSizeCaption + 4, descriptionMetrics.bottom - descriptionMetrics.top);
+    const float footerHeight = Style::controlHeightSm + Style::spaceLg * 2;
     const float errorHeight = m_dialogError.empty() ? 0 : 38;
-    const float height = (160 + previewHeight) + errorHeight;
+    const float headingTop = inset + Style::borderWidth, descriptionTop = headingTop + headingHeight + Style::spaceSm,
+                previewTop = descriptionTop + descriptionHeight + Style::spaceMd;
+    // Keep the dialog inside the window; long messages and tall media are clipped.
+    const float chrome = previewTop + inset + errorHeight + footerHeight + bodyTop + Style::spaceMd;
+    const float bodyLimit = std::clamp(
+        h - layout::Window::titlebarHeight - Style::space2Xl * 2 - chrome, Style::spaceSection, Style::spaceSection * 8
+    );
+    const float bodyHeight = std::min(std::max(body.height, Style::fontSizeCaption), bodyLimit);
+    const float previewHeight =
+        std::max(bodyTop + bodyHeight + Style::spaceMd, layout::Avatar::small + Style::spaceMd * 2);
+    const float height = previewTop + previewHeight + inset + errorHeight + footerHeight;
     const float x = (w - width) / 2, y = std::max(44.0F, (h - height) / 2);
     const auto red = theme::destructive;
     rectangle(root, 0, 36, w, h - layout::Window::titlebarHeight, Color{0, 0, 0, .65F});
@@ -370,68 +450,180 @@ namespace app {
     rectangle(root, x, y, width, height, sidebar, Style::radiusXl);
     m_dialogBounds = {x, y, width, height, Action::None, {}};
     m_hits.push_back(m_dialogBounds);
-    label(
-        root, x + Style::spaceRelaxed, y + (Style::spaceRelaxed + Style::borderWidth), width - 72, "Delete message",
-        Style::fontSizeHeading, foreground, FontWeight::SemiBold
-    );
+    label(root, x + inset, y + headingTop, width - 72, title, Style::fontSizeHeading, foreground, FontWeight::SemiBold);
     iconButton(
         root, {x + width - 42, y + Style::spaceMd, 30, 30, m_dialogPending ? Action::None : Action::CloseDialog, {}},
         "x", "Close"
     );
     {
       label(
-          root, x + Style::spaceRelaxed, y + 58, textWidth, "This message will be deleted for everyone.",
-          Style::fontSizeCaption, foreground
+          root, x + inset, y + descriptionTop, textWidth, description, Style::fontSizeCaption, foreground,
+          FontWeight::Normal, 3
       );
       auto preview = std::make_unique<Node>();
-      preview->setPosition(x + Style::spaceRelaxed, y + 86);
+      preview->setPosition(x + inset, y + previewTop);
       preview->setSize(textWidth, previewHeight);
       preview->setClipChildren(true);
       rectangle(*preview, 0, 0, textWidth, previewHeight, background, Style::surfaceRadius);
-      avatar(*preview, 12, 12, layout::Avatar::small, message->avatar, message->author, message->authorId);
-      label(
-          *preview, 54, 12, textWidth - 66, userName(message->authorId, message->author), Style::fontSizeCaption,
-          foreground, FontWeight::SemiBold
+      avatar(
+          *preview, Style::spaceMd, Style::spaceMd, layout::Avatar::small, message->avatar, message->author,
+          message->authorId
       );
-      std::string excerpt = message->content;
-      if (excerpt.empty())
-        excerpt = message->attachments.empty() ? "[Message]" : message->attachments.front().filename;
-      label(*preview, 54, 33, textWidth - 66, excerpt, Style::fontSizeCaption, muted, FontWeight::Normal, 3);
+      label(
+          *preview, previewText, Style::spaceMd, textWidth - previewText - Style::spaceMd, author,
+          Style::fontSizeCaption, foreground, FontWeight::SemiBold
+      );
+      auto content = std::make_unique<Node>();
+      content->setPosition(bodyLeft, bodyTop);
+      content->setSize(bodyWidth, bodyHeight);
+      content->setClipChildren(true);
+      auto& out = *content;
+      for (const auto& box : body.boxes) {
+        if (box.y >= bodyHeight)
+          continue;
+        if (box.divider)
+          rectangle(out, box.x, box.y, box.width, box.height, raised);
+        else if (!box.link.empty())
+          rectangle(out, box.x, box.y, box.width, box.height, box.spoiler ? raised : panel, Style::controlRadius);
+        else if (box.inlineCode) {
+          rectangle(out, box.x, box.y, box.width, box.height, withAlpha(muted, .2F), Style::radiusSm);
+          rectangle(
+              out, box.x + Style::borderWidth, box.y + Style::borderWidth, box.width - Style::spaceXxs,
+              box.height - Style::spaceXxs, panel, Style::radiusXs
+          );
+        } else {
+          rectangle(
+              out, box.x, box.y, box.width, box.height,
+              box.quote       ? muted
+                  : box.embed ? sidebar
+                              : panel,
+              box.quote ? 0 : Style::radiusMd
+          );
+          if (box.embed && box.embedAccent)
+            rectangle(out, box.x, box.y, Style::spaceXxs + Style::borderWidth, box.height, rgbHex(box.color), 1);
+        }
+      }
+      for (const auto& area : messageSpoilerAreas(body))
+        if (area.y < bodyHeight)
+          rectangle(out, area.x, area.y, area.width, area.height, raised, Style::radiusSm);
+      for (const auto& run : body.runs) {
+        if (run.y >= bodyHeight || run.style.spoiler)
+          continue;
+        if (!run.image.empty()) {
+          if (!emojiImage(out, run.x, run.y, run.width, run.image))
+            label(out, run.x, run.y, run.width + Style::spaceXxs, "…", run.style.size, muted);
+          continue;
+        }
+        label(
+            out, run.x, run.y, std::max(1.0F, run.width + Style::spaceXxs), messageMarkup(run.text, run.style, false),
+            run.style.size,
+            run.style.historical || run.style.muted    ? muted
+                : run.style.syntax != CodeToken::Plain ? syntaxColor(run.style.syntax)
+                : (run.style.link.empty() || run.style.neutralLink) && !run.style.mention ? foreground
+                                                                                          : accent,
+            FontWeight::Normal, 1, true
+        );
+      }
+      drawMessageStrikes(out, body, 0, 0, foreground, false, {}, bodyHeight);
+      if (body.edited && body.edited->y < bodyHeight)
+        label(
+            out, body.edited->x, body.edited->y, body.edited->width + Style::spaceXxs, "(edited)", body.edited->size,
+            muted
+        );
+      if (m_preferences.showImages)
+        for (const auto& icon : body.embedIcons)
+          if (icon.frame.y < bodyHeight)
+            image(out, icon.frame.x, icon.frame.y, icon.frame.width, icon.url, icon.frame.width / 2);
+      for (const auto& pic : body.pictures) {
+        if (pic.y >= bodyHeight)
+          continue;
+        if (pic.spoiler) {
+          rectangle(out, pic.x, pic.y, pic.width, pic.height, raised, Style::radiusMd);
+          label(
+              out, pic.x + Style::spaceMd, pic.y + Style::spaceMd, pic.width - Style::spaceXl, "Spoiler",
+              Style::fontSizeDescription, muted
+          );
+          continue;
+        }
+        if (pic.sticker) {
+          picture(out, pic.x, pic.y, pic.width, pic.height, pic.media.url, 0, false, false, ImageFitMode::Contain);
+          continue;
+        }
+        const bool video = pic.video || !pic.videoSource.empty();
+        if (video)
+          rectangle(out, pic.x, pic.y, pic.width, pic.height, panel, Style::radiusMd);
+        picture(
+            out, pic.x, pic.y, pic.width, pic.height, pic.media.url, Style::radiusMd, true, !pic.videoSource.empty()
+        );
+        if (video) {
+          const float badge = Style::controlHeightSm;
+          rectangle(
+              out, pic.x + (pic.width - badge) / 2, pic.y + (pic.height - badge) / 2, badge, badge, panel, badge / 2
+          );
+          glyph(
+              out, pic.x + (pic.width - Style::glyphSizeMedium) / 2, pic.y + (pic.height - Style::glyphSizeMedium) / 2,
+              Style::glyphSizeMedium, "player-play", foreground
+          );
+        }
+      }
+      for (const auto& card : body.invites)
+        if (card.y < bodyHeight)
+          label(out, card.x, card.y, card.width, "Server invite: " + card.code, Style::fontSizeDescription, muted);
+      preview->addChild(std::move(content));
       root.addChild(std::move(preview));
     }
     if (!m_dialogError.empty())
       label(
-          root, x + Style::spaceRelaxed, y + height - 94, textWidth, m_dialogError, Style::fontSizeDescription, red,
-          FontWeight::Normal, 2
+          root, x + inset, y + height - footerHeight - errorHeight, textWidth, m_dialogError,
+          Style::fontSizeDescription, red, FontWeight::Normal, 2
       );
-    rectangle(root, x, y + height - 58, width, 58, panel, Style::radiusXl);
-    rectangle(root, x, y + height - 58, width, 12, panel);
+    rectangle(root, x, y + height - footerHeight, width, footerHeight, panel, Style::radiusXl);
+    rectangle(root, x, y + height - footerHeight, width, Style::radiusXl, panel);
+    const float buttonTop = y + height - footerHeight + Style::spaceLg;
+    const auto primaryFill = pin || unpin ? accent : red;
+    const auto primaryInk = pin || unpin ? ink : rgbHex(0xFFFFFF);
     const auto actionButton = [&](float bx, float bw, const std::string& caption, bool primary, bool enabled) {
       Hit hit{
-          bx, y + height - 44, bw, 32, enabled ? (primary ? Action::SubmitDialog : Action::CloseDialog) : Action::None,
+          bx,
+          buttonTop,
+          bw,
+          Style::controlHeightSm,
+          enabled ? (primary ? Action::SubmitDialog : Action::CloseDialog) : Action::None,
           {}
       };
       const bool over = enabled && hit.contains(m_pointerX, m_pointerY);
-      const auto fill = primary ? red : over ? raised : panel;
+      const auto fill = primary ? primaryFill : over ? raised : panel;
       rectangle(
-          root, hit.x, hit.y, bw, 32,
+          root, hit.x, hit.y, bw, hit.height,
           enabled ? (over && primary ? lerpColor(fill, foreground, .12F) : fill) : lerpColor(panel, fill, .4F),
           Style::radiusMd
       );
-      const auto metrics =
-          m_window.target().renderer().measureText(caption, Style::fontSizeCaption, FontWeight::Medium);
+      const auto metrics = renderer.measureText(caption, Style::fontSizeCaption, FontWeight::Medium);
       label(
-          root, hit.x + (bw - metrics.width) / 2, hit.y + (32 - (metrics.bottom - metrics.top)) / 2,
+          root, hit.x + (bw - metrics.width) / 2, hit.y + (hit.height - (metrics.bottom - metrics.top)) / 2,
           metrics.width + Style::spaceXxs, caption, Style::fontSizeCaption,
           !enabled       ? muted
               : !primary ? foreground
-                         : rgbHex(0xFFFFFF),
+                         : primaryInk,
           FontWeight::Medium
       );
       m_hits.push_back(hit);
     };
-    actionButton(x + width - 212, 80, "Cancel", false, !m_dialogPending);
-    actionButton(x + width - 126, 106, m_dialogPending ? "Deleting…" : "Delete", true, !m_dialogPending);
+    const auto buttonWidth = [&](const std::string& caption) {
+      return renderer.measureText(caption, Style::fontSizeCaption, FontWeight::Medium).width + Style::spaceXl * 2;
+    };
+    const float confirmWidth = std::max(
+        buttonWidth(confirm),
+        buttonWidth(
+            pin ? "Oh yeah. Pin it"
+                : unpin ? "Remove it please"
+                        : "Delete"
+        )
+    );
+    const float cancelWidth = buttonWidth("Cancel");
+    const float confirmX = x + width - inset - confirmWidth;
+    actionButton(confirmX - Style::spaceSm - cancelWidth, cancelWidth, "Cancel", false, !m_dialogPending);
+    actionButton(confirmX, confirmWidth, confirm, true, !m_dialogPending);
     m_tooltip.clear();
   }
 } // namespace app

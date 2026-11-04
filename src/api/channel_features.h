@@ -8,6 +8,7 @@ namespace api {
   inline constexpr std::uint64_t viewChannel = 1ULL << 10, manageChannel = 1ULL << 4, managePermissions = 1ULL << 28;
   inline constexpr std::uint64_t manageThreads = 1ULL << 34;
   inline constexpr std::uint64_t manageMessages = 1ULL << 13;
+  inline constexpr std::uint64_t pinMessages = 1ULL << 51;
   inline constexpr std::uint64_t sendMessages = 1ULL << 11, sendMessagesInThreads = 1ULL << 38;
   enum class MessageWriteAccess { Allowed, Unknown, Unsupported, Hidden, Denied, Archived, Locked, NotJoined };
   // Thread permissions must be resolved using the parent's overwrites.

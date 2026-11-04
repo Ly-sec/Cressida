@@ -2585,12 +2585,14 @@ namespace app {
             || view == "deleted-compact"
             || view == "deleted-cycle"
             || view == "message-edit"
-            || view == "message-delete") {
+            || view == "message-delete"
+            || view == "message-pin"
+            || view == "message-pin-light") {
           m_demoOverlay = view;
           m_showMembers = false;
           m_preferences.compact = view == "deleted-compact";
           m_preferences.logDeletedMessages = m_preferences.logEditHistory = true;
-          if (view == "deleted-light")
+          if (view == "deleted-light" || view == "message-pin-light")
             m_preferences.theme = "light";
           m_unreadTimeline.snapshot({});
           m_unreadTimeline.positioned();
@@ -2624,6 +2626,51 @@ namespace app {
             contextAction(view == "message-edit" ? Action::EditMessage : Action::DeleteMessage);
             if (view == "message-edit" && m_messageEdit)
               m_messageEdit->text += " Keep the animation smooth.";
+          }
+          if (view.starts_with("message-pin")) {
+            // Offline fixture image: its size and pixels are test data, not layout values.
+            constexpr int fixtureWidth = 480;
+            constexpr int fixtureHeight = 280;
+            const std::string url = "https://cdn.discordapp.com/attachments/100/9501/pinned.png";
+            if (!m_images[api::mediaUrl(url)].texture.valid()) {
+              std::vector<std::uint8_t> pixels(fixtureWidth * fixtureHeight * 4);
+              for (int y = 0; y < fixtureHeight; ++y)
+                for (int x = 0; x < fixtureWidth; ++x) {
+                  const auto at = (y * fixtureWidth + x) * 4;
+                  pixels[at] = 60 + x * 150 / fixtureWidth;
+                  pixels[at + 1] = 90 + y * 120 / fixtureHeight;
+                  pixels[at + 2] = (x / 32 + y / 32) % 2 ? 210 : 140;
+                  pixels[at + 3] = 255;
+                }
+              m_images[api::mediaUrl(url)].texture =
+                  m_window.context().textureManager().loadFromRgba(pixels.data(), fixtureWidth, fixtureHeight);
+            }
+            m_messages.front() = api::parseMessages(
+                                     nlohmann::json::array(
+                                         {{{"id", "9501"},
+                                           {"channel_id", m_channelId},
+                                           {"author", {{"id", "11"}, {"username", "Maya"}}},
+                                           {"timestamp", "2026-10-18T09:41:00Z"},
+                                           {"content", "Release checklist for **Friday**, see the board below."},
+                                           {"attachments",
+                                            {{{"id", "95011"},
+                                              {"filename", "pinned.png"},
+                                              {"url", url},
+                                              {"proxy_url", url},
+                                              {"content_type", "image/png"},
+                                              {"width", fixtureWidth},
+                                              {"height", fixtureHeight}}}}}}
+                                     )
+            ).front();
+            m_messages.front().channelId = m_channelId;
+            m_messageLayouts.erase("9501");
+            m_roleDirectory.apply({false, {{.guild = m_guildId, .owner = m_account.id}}});
+            m_contextMessage = "9501";
+            m_contextChannel = m_channelId;
+            m_contextUser = "11";
+            contextAction(Action::PinMessage);
+            if (m_dialogKind != "confirm" || !m_dialogAction)
+              throw std::runtime_error("Pin preview must open its confirmation");
           }
         }
         if (view.starts_with("chat-links")) {

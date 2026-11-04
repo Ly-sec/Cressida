@@ -217,11 +217,11 @@ namespace app {
         add(Action::EditMessage, "Edit Message");
       if (api::canRemoveMessageEmbeds(*message, m_account.id, channelPermissionsFor(m_contextChannel)))
         add(Action::RemoveEmbeds, "Remove Embeds");
-      if (!message->deleted && message->type != 7 && message->type != autoModerationActionType)
+      if (!message->deleted && !compactSystemNotice(message->type) && message->type != autoModerationActionType)
         add(Action::Reply, "Reply");
       const auto selected = std::ranges::find(m_channels, m_channelId, &api::Channel::id);
       if (!message->deleted
-          && message->type != 7
+          && !compactSystemNotice(message->type)
           && message->type != autoModerationActionType
           && !m_dmMode
           && selected != m_channels.end()
@@ -984,7 +984,8 @@ namespace app {
     case Action::CopyMessage:
       if (found != m_messages.end())
         m_window.copy(
-            found->type == 7 ? joinNoticeText(*found, userName(found->authorId, found->author)) : found->content
+            compactSystemNotice(found->type) ? systemNoticeText(*found, userName(found->authorId, found->author))
+                                             : found->content
         );
       break;
     case Action::CopyLink:

@@ -26,8 +26,8 @@ namespace app {
   // Notifications carry plain text. Resolve protocol tokens before the desktop
   // worker performs capability-aware escaping; inserted names are never reparsed.
   inline std::string desktopMessagePreview(const api::Message& message, const NotificationName& name) {
-    if (message.type == 7)
-      return joinNoticeText(message, name('@', message.authorId));
+    if (compactSystemNotice(message.type))
+      return systemNoticeText(message, name('@', message.authorId));
     if (message.type == 1 || message.type == 2) {
       std::string people;
       for (const auto& [id, fallback] : message.mentions) {

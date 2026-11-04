@@ -41,6 +41,15 @@ AM/PM times, enable **Use 12-hour clock** in
 Bot authors show an **APP** chip beside their name and role icon. The chip
 remains visible when role icons are turned off.
 
+### System notices
+
+Server joins and pinned messages appear as short one-line notices instead of
+ordinary messages. A pin notice reads "_name_ pinned **a message** to this
+channel. See all **pinned messages**." Click **a message** to jump to the pinned
+message, or **pinned messages** to open the channel's pins panel. Notices keep
+their reactions, and copying one copies its visible text. They have no Reply or
+Create Thread action.
+
 ### Read-only channels
 
 In a server channel where you cannot send messages, the composer shows a

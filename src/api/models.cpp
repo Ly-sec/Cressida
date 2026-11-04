@@ -866,7 +866,8 @@ namespace api {
         else if (nonce->is_number_integer() && nonce->get<std::int64_t>() >= 0)
           result.back().nonce = std::to_string(nonce->get<std::int64_t>());
       }
-      if (result.back().type != 7
+      if (result.back().type != 6
+          && result.back().type != 7
           && result.back().content.empty()
           && result.back().attachments.empty()
           && result.back().embeds.empty()

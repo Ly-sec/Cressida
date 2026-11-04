@@ -43,7 +43,6 @@
 namespace app {
   using namespace theme;
   namespace {
-    constexpr int memberJoinNoticeType = 7;
     constexpr std::string_view terminalSyntaxBody =
         "❯ sudo dnf in libdave-devel                                                     2.4s\n"
         "Updating and loading repositories:\n"
@@ -2529,6 +2528,18 @@ namespace app {
             );
             m_messages.push_back(std::move(messages.front()));
           }
+          auto pin = api::parseMessages(
+              nlohmann::json::array(
+                  {{{"id", "9410"},
+                    {"channel_id", m_channelId},
+                    {"type", 6},
+                    {"content", ""},
+                    {"timestamp", "2026-10-17T15:23:00.000Z"},
+                    {"author", {{"id", "11"}, {"username", people.front()}}},
+                    {"message_reference", {{"message_id", "9400"}, {"channel_id", m_channelId}}}}}
+              )
+          );
+          m_messages.push_back(std::move(pin.front()));
           api::GuildRoleUpdate roles{.guild = m_guildId};
           roles.roles = {{"50", 1, {0x5798D0}, "Nightling"}};
           for (const auto& message : m_messages)
@@ -4901,10 +4912,13 @@ namespace app {
               for (auto& [id, name] : displayed.forwarded->mentions)
                 name = userName(id, name);
             }
-            if (message.type == 7) {
-              const auto notice = joinNotice(message);
+            if (compactSystemNotice(message.type)) {
               const auto authorId = api::validSnowflake(message.authorId) ? message.authorId : "1";
-              const auto text = std::string(notice.before) + "<@" + authorId + ">" + std::string(notice.after);
+              const auto token = "<@" + authorId + ">";
+              const auto notice = message.type == pinNoticeType ? app::JoinNotice{} : joinNotice(message);
+              const auto text = message.type == pinNoticeType
+                  ? pinNoticeMarkdown(token)
+                  : std::string(notice.before) + token + std::string(notice.after);
               cached.layout = layoutMessage(
                   text, std::max(32.0F, textWidth - Style::spaceSection), measure, m_preferences.messageSize,
                   {{authorId, userName(message.authorId, message.author)}},
@@ -4971,15 +4985,18 @@ namespace app {
           const float bodyHeight = m_messageEdit && m_messageEdit->message == message.id
               ? messageEditHeight(textWidth)
               : std::max(22.0F, cached.layout.height);
-          const float height = blockedMessage(message)                        ? 36
-              : message.type == 7 || message.type == autoModerationActionType ? std::max(22.0F, cached.layout.height)
+          const float height = blockedMessage(message)                                        ? 36
+              : compactSystemNotice(message.type) || message.type == autoModerationActionType ? std::max(
+                                                                                                    22.0F,
+                                                                                                    cached.layout.height
+                                                                                                )
                   + (i + 1 == timeline.size()    ? 0
                          : m_preferences.compact ? std::min(8, m_preferences.messageGroupSpacing)
                                                  : m_preferences.messageGroupSpacing)
                   + (!m_preferences.showReactions || message.reactions.empty()
                          ? 0
                          : 6 + reactionStrip(nullptr, message, 0, 0, textWidth, true))
-                                                                              : bodyHeight
+                                                                                              : bodyHeight
                   + messageRowPadding(continuations[i], i + 1 < continuations.size() && continuations[i + 1],
                                       m_preferences.compact, m_preferences.messageGroupSpacing,
                                       i + 1 == timeline.size())
@@ -4989,7 +5006,7 @@ namespace app {
                                         threadStrip(nullptr, message, 0, 0, textWidth));
           if (!blockedMessage(message)) {
             auto selected = messageSelectionHeader(message, continuations[i]) + cached.layout.plainText;
-            if (message.type == memberJoinNoticeType || message.type == autoModerationActionType) {
+            if (compactSystemNotice(message.type) || message.type == autoModerationActionType) {
               const auto timestamp = formatMessageTimestamp(message.timestamp, m_preferences.twelveHourClock);
               const auto caption = timestamp + (message.deleted ? " · Deleted" : "");
               selected = cached.layout.plainText + (caption.empty() ? "" : " " + caption);
@@ -5199,12 +5216,13 @@ namespace app {
             );
             // Tags sit above the header baseline. The following group's margin
             // belongs to neither message's hover background or action target.
-            const float hoverTop = std::max(top, top + y - (continuations[i] || message.type == 7 ? 0 : 4));
+            const float hoverTop =
+                std::max(top, top + y - (continuations[i] || compactSystemNotice(message.type) ? 0 : 4));
             // Even zero group spacing must leave the next header's upper edge
             // to that message, so a pointer can never highlight both rows.
             const bool nextHeader = i + 1 < timeline.size()
                 && !continuations[i + 1]
-                && timeline[i + 1].type != 7
+                && !compactSystemNotice(timeline[i + 1].type)
                 && !blockedMessage(timeline[i + 1]);
             const bool nextContinuation = i + 1 < continuations.size() && continuations[i + 1];
             // Give the last line a little breathing room without covering a
@@ -5265,7 +5283,7 @@ namespace app {
                   std::max(0.0F, hoverBottom - hoverTop), color
               );
             };
-            if (message.type == 7 || message.type == autoModerationActionType) {
+            if (compactSystemNotice(message.type) || message.type == autoModerationActionType) {
               drawJumpHighlight();
               drawSystemNotice(*messageContent, message, *layouts[i], y, textWidth);
             } else {
@@ -5940,7 +5958,7 @@ namespace app {
               }
             }
             if (messageHovered) {
-              const float toolbarWidth = message.deleted ? 64 : message.type == 7 ? 94 : 124;
+              const float toolbarWidth = message.deleted ? 64 : compactSystemNotice(message.type) ? 94 : 124;
               rectangle(
                   *messageContent, bodyWidth - 66 - toolbarWidth, y - Style::spaceSm, toolbarWidth, 34, panel,
                   Style::hoverRadius
@@ -5950,7 +5968,7 @@ namespace app {
                   {bodyWidth - 62 - toolbarWidth, y - Style::spaceXs, 28, 26, Action::CopyMessage, message.id}, "copy",
                   "Copy text"
               );
-              if (!message.deleted && message.type != 7 && message.type != autoModerationActionType)
+              if (!message.deleted && !compactSystemNotice(message.type) && message.type != autoModerationActionType)
                 iconButton(
                     *messageContent, {bodyWidth - 156, y - Style::spaceXs, 28, 26, Action::Reply, message.id},
                     "corner-up-left", "Reply"

@@ -344,9 +344,16 @@ namespace app {
     const float absoluteX = conversationLeft() + 74, absoluteY = m_messageViewportTop + y;
     const bool over = hovered(conversationLeft() + Style::spaceXl, absoluteY, width + 50, layout.height);
     const auto& automod = layout.autoModeration;
+    const bool pin = message.type == pinNoticeType;
+    const auto pinLinkEnd = pin ? layout.plainText.find(" to this channel") : std::string::npos;
     glyph(
-        parent, Style::spaceSm, y + Style::spaceXxs, Style::glyphSizeLarge, automod ? "shield-check" : "arrow-right",
-        automod ? accent : success
+        parent, Style::spaceSm, y + Style::spaceXxs, Style::glyphSizeLarge,
+        automod   ? "shield-check"
+            : pin ? "pin"
+                  : "arrow-right",
+        automod   ? accent
+            : pin ? muted
+                  : success
     );
     if (automod) {
       avatar(
@@ -417,7 +424,32 @@ namespace app {
             "system:" + message.id, over,
             automod && run.style.userMention != message.authorId ? std::nullopt : message.memberRoles
         );
-      else
+      else if (pin && run.style.bold) {
+        const bool jump = run.offset < pinLinkEnd;
+        const auto target = jump && message.reply && api::validSnowflake(message.reply->message)
+            ? message.reply->message
+            : std::string{};
+        Hit hit{
+            absoluteX + run.x,
+            absoluteY + run.y,
+            run.width,
+            run.height,
+            jump ? (target.empty() ? Action::None : Action::JumpReply) : Action::ChannelPins,
+            jump ? target : "open"
+        };
+        const float bottom = std::min(m_messageViewportBottom, hit.y + hit.height);
+        hit.y = std::max(m_messageViewportTop, hit.y);
+        hit.height = std::max(0.0F, bottom - hit.y);
+        const bool active = hit.action != Action::None;
+        auto style = run.style;
+        style.underline = active && hit.contains(m_pointerX, m_pointerY);
+        label(
+            parent, x, top, run.width + Style::spaceXxs, messageMarkup(run.text, style, false), run.style.size,
+            active ? foreground : muted, FontWeight::Normal, 1, true
+        );
+        if (active)
+          m_hits.push_back(std::move(hit));
+      } else
         label(
             parent, x, top, run.width + Style::spaceXxs, messageMarkup(run.text, run.style, false), run.style.size,
             automod && !run.style.muted ? foreground : muted, FontWeight::Normal, 1, true
@@ -522,9 +554,12 @@ namespace app {
     };
     inspect(inspect, *m_scene);
     for (const auto& message : m_messages) {
-      require(message.type == 7 && message.content.empty(), "Join presentation must preserve empty protocol content");
       require(
-          m_messageText.at(message.id) == joinNoticeText(message, userName(message.authorId, message.author)),
+          compactSystemNotice(message.type) && message.content.empty(),
+          "System notices must preserve empty protocol content"
+      );
+      require(
+          m_messageText.at(message.id) == systemNoticeText(message, userName(message.authorId, message.author)),
           "Selection/copy text must contain the generated notice and current display name"
       );
       const auto text = m_messageLayouts.at(message.id).layout.plainText;
@@ -533,6 +568,27 @@ namespace app {
         ++joinArrows;
     }
     require(joinArrows > 0, "Join notices must be visible");
+    const auto pin = std::ranges::find(m_messages, std::string("9410"), &api::Message::id);
+    require(pin != m_messages.end() && pin->reply && pin->reply->message == "9400", "Pin notices keep their target");
+    require(
+        m_messageText.at(pin->id).find("pinned a message to this channel. See all pinned messages.")
+            != std::string::npos,
+        "Pin notices use readable copy text"
+    );
+    if (m_messageTops.at(pin->id) >= m_messageViewportTop) {
+      require(
+          std::ranges::any_of(
+              m_hits, [](const auto& hit) { return hit.action == Action::JumpReply && hit.id == "9400"; }
+          ),
+          "Pin notices link to the pinned message"
+      );
+      require(
+          std::ranges::any_of(
+              m_hits, [](const auto& hit) { return hit.action == Action::ChannelPins && hit.id == "open"; }
+          ),
+          "Pin notices open the pinned messages panel"
+      );
+    }
     const auto reaction =
         std::ranges::find_if(m_hits, [](const auto& hit) { return hit.action == Action::ToggleReaction; });
     require(step == 1 || reaction != m_hits.end(), "Join notices retain their normal reaction targets");

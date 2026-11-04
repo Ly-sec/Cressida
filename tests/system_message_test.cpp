@@ -54,6 +54,32 @@ int main() {
         message.type == 7 && message.content.empty() && message.reactions.empty(),
         "Partial join edits retain type/content and allow reaction clearing"
     );
+    const auto pins = api::parseMessages(
+        nlohmann::json::array(
+            {{{"id", "200"},
+              {"channel_id", "10"},
+              {"type", 6},
+              {"content", ""},
+              {"timestamp", "2026-10-17T15:23:00.000Z"},
+              {"author", {{"id", "11"}, {"username", "maya"}}},
+              {"message_reference", {{"message_id", "150"}, {"channel_id", "10"}}}}}
+        )
+    );
+    require(pins.size() == 1, "Pin notices parse");
+    const auto& pin = pins.front();
+    require(pin.content.empty(), "Pin notices keep empty protocol content instead of a placeholder");
+    require(pin.reply && pin.reply->message == "150", "Pin notices retain the pinned message reference");
+    require(app::compactSystemNotice(6) && app::compactSystemNotice(7), "Pins and joins are compact notices");
+    require(!app::compactSystemNotice(0) && !app::compactSystemNotice(19), "Ordinary messages are not notices");
+    require(
+        app::systemNoticeText(pin, "<b>Maya</b>")
+            == "<b>Maya</b> pinned a message to this channel. See all pinned messages.",
+        "Pin notice text keeps names literal and matches the readable notice"
+    );
+    require(
+        app::systemNoticeText(message, "Maya") == app::joinNoticeText(message, "Maya"),
+        "Join notices share the generic system notice text"
+    );
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;

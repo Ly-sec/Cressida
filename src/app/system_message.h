@@ -41,4 +41,18 @@ namespace app {
     const auto notice = joinNotice(message);
     return std::string(notice.before) + std::string(author) + std::string(notice.after);
   }
+  inline constexpr int pinNoticeType = 6, joinNoticeType = 7;
+  // Pins and joins render as compact inline notices instead of author rows.
+  inline bool compactSystemNotice(int type) { return type == pinNoticeType || type == joinNoticeType; }
+  inline constexpr std::string_view pinNoticeAction = " pinned a message to this channel.",
+                                    pinNoticeLink = " See all pinned messages.";
+  inline std::string pinNoticeText(std::string_view author) {
+    return std::string(author) + std::string(pinNoticeAction) + std::string(pinNoticeLink);
+  }
+  inline std::string pinNoticeMarkdown(std::string_view authorToken) {
+    return std::string(authorToken) + " pinned **a message** to this channel. See all **pinned messages**.";
+  }
+  inline std::string systemNoticeText(const api::Message& message, std::string_view author) {
+    return message.type == pinNoticeType ? pinNoticeText(author) : joinNoticeText(message, author);
+  }
 } // namespace app

@@ -2051,9 +2051,9 @@ namespace app {
         );
       break;
     case Action::ChannelPins:
-      if (m_channelPanel == "pins")
+      if (m_channelPanel == "pins" && hit.id.empty())
         closeChannelPanel();
-      else {
+      else if (m_channelPanel != "pins") {
         closeChannelPanel();
         m_channelPanel = "pins";
         requestChannelPage();

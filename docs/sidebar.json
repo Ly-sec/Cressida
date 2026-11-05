@@ -33,6 +33,9 @@
         "slug": "docs/inbox"
       },
       {
+        "slug": "docs/polls"
+      },
+      {
         "slug": "docs/slash-commands",
         "label": "Slash commands in the composer"
       },

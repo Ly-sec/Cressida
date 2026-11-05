@@ -42,16 +42,21 @@ namespace app {
 
   bool ClientApplication::queueOutgoing(
       std::string content, std::vector<api::Upload> uploads, std::vector<std::string> stickers,
-      std::vector<api::Sticker> previews, bool consumeDraft, std::optional<api::Gif> gif
+      std::vector<api::Sticker> previews, bool consumeDraft, std::optional<api::Gif> gif,
+      std::optional<api::PollDraft> poll
   ) {
     if (!canSendToThread())
       return false;
-    if ((!m_connected && !m_demo) || m_channelId.empty() || (m_demo && !m_demoOverlay.starts_with("outgoing-cycle")))
+    if ((!m_connected && !m_demo)
+        || m_channelId.empty()
+        || (m_demo && !m_demoOverlay.starts_with("outgoing-cycle") && !m_demoOverlay.starts_with("polls-cycle")))
       return false;
     if (!uploads.empty() && !messageActionAllowed(can::attachFiles)) {
       m_status = "You do not have permission to attach files in this channel.";
       return false;
     }
+    if (poll && (!canCreatePoll() || !api::pollDraftError(*poll).empty()))
+      return false;
     std::size_t retained = 0, retainedTextures = 0, submittedTextures = 0;
     for (const auto& [_, pending] : m_pendingSends)
       for (const auto& image : pending.images) {
@@ -70,15 +75,17 @@ namespace app {
       return false;
     }
     const auto nonce = outgoingNonce();
-    const auto reply = m_replies.contains(m_channelId) ? std::optional(m_replies.at(m_channelId)) : std::nullopt;
+    const auto reply =
+        !poll && m_replies.contains(m_channelId) ? std::optional(m_replies.at(m_channelId)) : std::nullopt;
     const auto revoked = std::make_shared<std::atomic_bool>(false);
-    if (!m_demo && !m_client.send(m_channelId, content, uploads, reply, stickers, nonce, revoked)) {
+    if (!m_demo && !m_client.send(m_channelId, content, uploads, reply, stickers, nonce, revoked, poll)) {
       m_status = "Could not queue this message. Check its length and attachments.";
       return false;
     }
     PendingSend pending;
     pending.guild = m_dmMode ? "" : m_guildId;
     pending.revoked = revoked;
+    pending.poll = poll;
     pending.composer = consumeDraft;
     pending.preview = {
         .id = "pending:" + nonce,
@@ -89,6 +96,12 @@ namespace app {
         .authorId = m_account.id,
         .avatar = m_account.avatar
     };
+    if (poll) {
+      api::Poll preview{.question = poll->question, .multiple = poll->multiple, .resultsKnown = true};
+      for (std::size_t i = 0; i < poll->answers.size(); ++i)
+        preview.answers.push_back({.id = static_cast<int>(i + 1), .text = poll->answers[i]});
+      pending.preview.poll = std::move(preview);
+    }
     pending.preview.nonce = nonce;
     pending.preview.authorTag = m_account.guildTag;
     pending.preview.reply = reply;
@@ -121,7 +134,8 @@ namespace app {
         input->second->setValue("");
       closeCompletion();
     }
-    m_replies.erase(m_channelId);
+    if (!poll)
+      m_replies.erase(m_channelId);
     m_pendingSends.emplace(nonce, std::move(pending));
     m_sending = true;
     m_status.clear();
@@ -169,7 +183,9 @@ namespace app {
       if (!channel)
         channel = m_threads.find(pending.guild, pending.preview.channelId);
       const auto permissions = serverChannelPermissions(pending.guild, pending.preview.channelId);
-      if (channel && api::messageWriteAccess(*channel, permissions) == api::MessageWriteAccess::Allowed)
+      if (channel
+          && api::messageWriteAccess(*channel, permissions) == api::MessageWriteAccess::Allowed
+          && (!pending.poll || (permissions && (*permissions & api::permission::sendPolls))))
         continue;
       pending.revoked->store(true);
       pending.completed = true;
@@ -189,6 +205,8 @@ namespace app {
         || !api::validSnowflake(message.id))
       return;
     auto& pending = found->second;
+    if (pending.poll && !message.poll)
+      return;
     if (message.reply
         && !message.reply->available
         && pending.preview.reply
@@ -230,6 +248,7 @@ namespace app {
       return message.channelId != event.resource
           || message.authorId != m_account.id
           || !api::validSnowflake(message.id)
+          || (pending.poll && !message.poll)
           || (!message.nonce.empty() && message.nonce != event.nonce);
     });
     pending.completed = true;
@@ -271,6 +290,20 @@ namespace app {
         || !found->second.confirmed.empty()
         || found->second.preview.channelId != m_channelId)
       return;
+    if (found->second.poll) {
+      if (m_pollEditor || !canCreatePoll()) {
+        m_status = "Close the current poll or restore channel access before restoring this poll.";
+        return;
+      }
+      auto draft = *found->second.poll;
+      openPoll();
+      if (m_pollEditor) {
+        m_pollEditor->draft = std::move(draft);
+        releaseOutgoing(found->second);
+        m_pendingSends.erase(found);
+      }
+      return;
+    }
     if (!m_drafts[m_channelId].empty()
         || !m_attachments[m_channelId].empty()
         || !m_draftStickers[m_channelId].empty()

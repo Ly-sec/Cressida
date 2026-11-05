@@ -25,6 +25,72 @@ namespace app::layout {
     static constexpr float glyph = Style::glyphSizeSmall;
     static constexpr float margin = Style::spaceSm;
   };
+  struct PollCard {
+    static constexpr float maximumWidth = Style::profileCardWidth + Style::spaceSection * 5;
+    static constexpr float padding = Style::spaceLg;
+    static constexpr float gap = Style::spaceSm;
+    static constexpr float resultWidth = Style::spaceGroup * 2;
+    static constexpr float emojiWidth = Style::glyphSizeMedium + Style::spaceSm;
+    static constexpr float rowMinimum = Style::controlHeightLg;
+    static constexpr float line = Style::fontSizeBody + Style::spaceSm;
+  };
+  struct PollCardFrames {
+    Frame card, question, subtitle, status, results, vote;
+    std::vector<Frame> answers;
+    void translate(float dy) {
+      for (auto* frame : {&card, &question, &subtitle, &status, &results, &vote})
+        frame->y += dy;
+      for (auto& answer : answers)
+        answer.y += dy;
+    }
+  };
+  inline PollCardFrames pollCardFrames(float available, float questionHeight, std::span<const float> answerHeights) {
+    using P = PollCard;
+    PollCardFrames f{};
+    const float width = std::min(available, P::maximumWidth);
+    const float content = std::max(0.0F, width - P::padding * 2);
+    f.question = {P::padding, P::padding, content, questionHeight};
+    f.subtitle = {P::padding, f.question.y + questionHeight + P::gap, content, P::line};
+    float y = f.subtitle.y + f.subtitle.height + P::gap;
+    for (const float height : answerHeights) {
+      const float h = std::max(P::rowMinimum, height + P::gap * 2);
+      f.answers.push_back({P::padding, y, content, h});
+      y += h + P::gap;
+    }
+    f.status = {P::padding, y, content, P::line * 2};
+    y += f.status.height + P::gap;
+    const float half = std::max(0.0F, (content - P::gap) / 2);
+    f.results = {P::padding, y, half, Style::controlHeightSm};
+    f.vote = {P::padding + half + P::gap, y, half, Style::controlHeightSm};
+    f.card = {0, 0, width, y + Style::controlHeightSm + P::padding};
+    return f;
+  }
+  struct PollDialog {
+    static constexpr float toggleWidth = Style::toggleThumbSizeSm + Style::toggleInsetSm * 2 + Style::toggleTravelSm;
+    static constexpr float toggleHeight = Style::toggleThumbSizeSm + Style::toggleInsetSm * 2;
+    static constexpr float maximumWidth = PollCard::maximumWidth + Style::spaceXl;
+    static constexpr float padding = Style::spaceXl;
+    static constexpr float heading = Style::fontSizeHeading + Style::spaceXl;
+    static constexpr float label = Style::fontSizeBody + Style::spaceSm;
+    static constexpr float answerStep = Style::controlHeightLg + Style::spaceXs;
+    static constexpr float footer = Style::controlHeight + Style::spaceLg * 2 + label * 2;
+    static constexpr float maximumHeight = Style::spaceGroup * 16;
+    static constexpr float questionHeight = Style::controlHeightLg + Style::spaceSm;
+    static float formHeight(std::size_t answers) {
+      return label
+          + questionHeight
+          + label
+          + Style::spaceLg
+          + label
+          + answers * answerStep
+          + Style::controlHeight
+          + Style::spaceLg
+          + label
+          + Style::controlHeightLg
+          + Style::spaceLg
+          + Style::controlHeight;
+    }
+  };
   inline Frame composerFormattingFrame(float width, float height, float anchorX, float fieldY, std::size_t count) {
     using F = ComposerFormatting;
     const float available = std::max(0.0F, width - F::margin * 2);

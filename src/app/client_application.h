@@ -196,6 +196,8 @@ namespace app {
       SendGif,
       FavoriteGif,
       Composer,
+      ComposerTools,
+      CreatePoll,
       ViewAttachment,
       RemoveAttachment,
       CopyMessage,
@@ -536,6 +538,38 @@ namespace app {
     void updateMessage(const std::string& channel, const std::string& id, const api::MessagePatch& patch);
     void logMessageEdit(const api::Message& before, const api::Message& after);
     void drawMessageDialog(Node& root, float width, float height);
+    bool canCreatePoll() const;
+    void openComposerTools();
+    void openPoll();
+    void drawPollDialog(Node& root, float width, float height);
+    void submitPoll();
+    void drawPollCard(Node& parent, const api::Message& message, const MessageLayout& body, float x, float y);
+    void
+    pollVote(const std::string& channel, const std::string& message, std::optional<int> answer, bool submit = false);
+    bool pollResult(const api::Event& event);
+    void demoPollStep();
+    static constexpr int pollReplayFrames = 17;
+    struct PollEditor {
+      api::PollDraft draft;
+      std::string channel;
+      float scroll = 0, maximumScroll = 0;
+      layout::Frame viewport{};
+    };
+    std::optional<PollEditor> m_pollEditor;
+    struct PollUi {
+      std::set<int> selected;
+      bool results = false;
+      std::optional<api::Interaction> pending;
+      std::string error;
+    };
+    std::map<std::pair<std::string, std::string>, PollUi> m_pollUi;
+    Timer m_pollTimer;
+    std::chrono::system_clock::time_point m_pollTickAt{};
+    void pollButton(
+        Node& parent, const std::string& id, layout::Frame frame, const std::string& caption,
+        std::function<void()> clicked, bool enabled = true, bool primary = false
+    );
+
     void drawVoiceJoinDialog(Node& root, float width, float height);
     void demoDeletedStep();
     void drawProfileCard(Node& root, float width, float height);
@@ -1793,12 +1827,14 @@ namespace app {
       std::string confirmed, error;
       std::string guild;
       std::shared_ptr<std::atomic_bool> revoked;
+      std::optional<api::PollDraft> poll;
       bool completed = false, composer = false, securityChallenge = false;
     };
     std::map<std::string, PendingSend> m_pendingSends;
     bool queueOutgoing(
         std::string content, std::vector<api::Upload> uploads = {}, std::vector<std::string> stickers = {},
-        std::vector<api::Sticker> previews = {}, bool consumeDraft = true, std::optional<api::Gif> gif = {}
+        std::vector<api::Sticker> previews = {}, bool consumeDraft = true, std::optional<api::Gif> gif = {},
+        std::optional<api::PollDraft> poll = {}
     );
     void confirmOutgoing(api::Message& message);
     void outgoingResult(api::Event& event);

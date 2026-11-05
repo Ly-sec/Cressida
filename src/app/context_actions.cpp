@@ -4,6 +4,7 @@
 #include "app/system_message.h"
 #include "app/theme.h"
 #include "core/files/resource_paths.h"
+#include "render/scene/input_area.h"
 #include "render/scene/rect_node.h"
 
 #include <algorithm>
@@ -215,6 +216,7 @@ namespace app {
           && message->authorId == m_account.id
           && message->webhookId.empty()
           && !message->forwarded
+          && !message->poll
           && (message->stickers.empty() || !message->content.empty())
           && (message->type == 0 || message->type == 19)
           && !(message->flags & 64))
@@ -786,7 +788,14 @@ namespace app {
         return false;
       if (key.control && key.symbol == XKB_KEY_comma)
         return true;
-      if (!m_focusedInput.starts_with("composer-link:")
+      if (m_dialogKind == "poll-create")
+        for (const auto& [id, widget] : m_widgets)
+          if (id.starts_with("poll-create:"))
+            for (const auto* node = static_cast<const Node*>(m_controlInput.focusedArea()); node; node = node->parent())
+              if (node == widget)
+                return false;
+      if (!m_focusedInput.starts_with("poll-create:")
+          && !m_focusedInput.starts_with("composer-link:")
           && !m_focusedInput.starts_with("channel-")
           && !m_focusedInput.starts_with("application-field:")
           && !m_focusedInput.starts_with("slash-field:")
@@ -942,6 +951,13 @@ namespace app {
     m_dialogAction = request;
   }
   void ClientApplication::contextAction(Action action) {
+    if (action == Action::CreatePoll || action == Action::PasteClipboard) {
+      const auto channel = m_contextChannel;
+      closeContext();
+      if (channel == m_channelId)
+        activate({0, 0, 0, 0, action, {}});
+      return;
+    }
     if (action == Action::CopyImage
         || action == Action::SaveImage
         || action == Action::CopyMediaLink
@@ -1238,6 +1254,7 @@ namespace app {
     m_archiveQuery.reset();
     m_scrolling.stop(m_threadScroll);
     m_threadScroll = 0;
+    m_pollEditor.reset();
     m_dialogKind.clear();
     m_dialogAction.reset();
     m_dialogPending = false;
@@ -1288,6 +1305,8 @@ namespace app {
     closeContext();
     closeDialog();
     m_pendingInteractions.clear();
+    m_pollUi.clear();
+    m_pollTimer.stop();
     m_reactorHoverTimer.stop();
     m_reactionTooltip.reset();
     m_reactionTooltipBounds = {};
@@ -1378,6 +1397,10 @@ namespace app {
     m_tooltip.clear();
   }
   void ClientApplication::drawDialog(Node& root, float w, float h) {
+    if (m_dialogKind == "poll-create") {
+      drawPollDialog(root, w, h);
+      return;
+    }
     if (m_dialogKind == "voice-join") {
       drawVoiceJoinDialog(root, w, h);
       return;
@@ -1650,6 +1673,8 @@ namespace app {
       return;
     }
     m_pendingInteractions.erase(key);
+    if (pollResult(event))
+      return;
     if (serverAccessResult(event))
       return;
     if (dmProfileResult(event))

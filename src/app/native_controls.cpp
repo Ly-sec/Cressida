@@ -147,6 +147,30 @@ namespace app {
               m_settingsField = id.substr(9);
             break;
           }
+        if (area && m_pollEditor && m_dialogKind == "poll-create") {
+          bool formControl = m_focusedInput.starts_with("poll-create:");
+          for (const auto& [id, widget] : m_widgets)
+            if (id == "poll-create:add"
+                || id == "poll-create:duration"
+                || id == "poll-create:multiple"
+                || id.starts_with("poll-create:remove:"))
+              for (const auto* node = static_cast<const Node*>(area); node; node = node->parent())
+                formControl |= node == widget;
+          if (formControl) {
+            float left, top, right, bottom;
+            Node::transformedBounds(area, left, top, right, bottom);
+            const auto viewport = m_pollEditor->viewport;
+            const float offset = layout::Window::titlebarHeight - m_window.titlebarHeight();
+            top += offset;
+            bottom += offset;
+            if (top < viewport.y)
+              m_pollEditor->scroll = std::max(0.0F, m_pollEditor->scroll + top - viewport.y);
+            else if (bottom > viewport.y + viewport.height)
+              m_pollEditor->scroll =
+                  std::min(m_pollEditor->maximumScroll, m_pollEditor->scroll + bottom - viewport.y - viewport.height);
+            m_window.invalidate();
+          }
+        }
       });
       Input::setValidateKeyMatcher([](std::uint32_t key, std::uint32_t) {
         return key == XKB_KEY_Return || key == XKB_KEY_KP_Enter;
@@ -628,6 +652,21 @@ namespace app {
             m_drafts[m_channelId] = text;
             m_edit.end(text);
           }
+        } else if (id.starts_with("poll-create:") && m_pollEditor && m_dialogKind == "poll-create") {
+          const auto limit = id == "poll-create:question" ? api::pollQuestionLimit : api::pollAnswerLimit;
+          if (text.size() > limit * 4 || api::utf8Length(text) > limit) {
+            m_dialogError = "This field has reached its character limit.";
+            m_window.invalidate();
+            return;
+          }
+          if (id == "poll-create:question")
+            m_pollEditor->draft.question = text;
+          else if (id.starts_with("poll-create:answer:")) {
+            const auto index = std::stoul(id.substr(std::string("poll-create:answer:").size()));
+            if (index < m_pollEditor->draft.answers.size())
+              m_pollEditor->draft.answers[index] = text;
+          }
+          m_dialogError.clear();
         } else if (id.starts_with("composer-link:") && m_composerLink) {
           (id == "composer-link:label" ? m_composerLink->label : m_composerLink->url) = text;
           m_dialogError.clear();
@@ -821,7 +860,8 @@ namespace app {
          || id.starts_with("server-menu:")
          || (m_dialogKind == "guild-access" && id.starts_with("server-access:"))
          || id == "dm-create-search"
-         || (m_dialogKind == "composer-link" && id.starts_with("composer-link:")))
+         || (m_dialogKind == "composer-link" && id.starts_with("composer-link:"))
+         || (m_dialogKind == "poll-create" && id.starts_with("poll-create:")))
         && (!m_serverSettings.open || id.starts_with("server-settings:"))
         && (id != "composer" || selectedChannelWriteAccess() == api::MessageWriteAccess::Allowed)
         && (id.starts_with("server-access:") ? !m_dialogPending

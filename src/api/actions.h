@@ -14,6 +14,8 @@ namespace api {
   enum class InteractionKind {
     AddReaction,
     RemoveReaction,
+    VotePoll,
+    RemovePollVote,
     EditMessage,
     RemoveEmbeds,
     DeleteMessage,
@@ -91,6 +93,7 @@ namespace api {
     int overwriteType = 0;
     std::optional<ApplicationModal> modal;
     std::vector<std::string> values;
+    std::vector<int> pollAnswers;
     std::optional<std::string> parentId;
     int channelType = 0, notificationLevel = 3, muteDuration = -1;
     bool privateChannel = false;

@@ -12,7 +12,7 @@ description:
 | Messaging      | Text chat, replies, DMs, threads and forum conversations.                  |
 | Inbox          | Unread conversations, mentions, synced bookmarks and reminders.            |
 | App commands   | Slash-command picker, app filtering, arguments and responses.              |
-| Rich content   | Markdown, embeds, custom emoji, GIFs and stickers.                         |
+| Rich content   | Markdown, embeds, custom emoji, GIFs, stickers and [polls](polls.md).      |
 | Uploads        | Pasted chat images and files requested by slash commands.                  |
 | Media viewing  | Image galleries and native received-video playback.                        |
 | Voice          | Server voice channels and joining existing direct or group calls.          |

@@ -507,6 +507,12 @@ namespace api {
   } // namespace
   MessagePatch parseMessagePatch(const nlohmann::json& value) {
     MessagePatch patch;
+    if (const auto poll = value.find("poll"); poll != value.end()) {
+      if (poll->is_null())
+        patch.poll.emplace(std::nullopt);
+      else if (auto parsed = parsePoll(*poll))
+        patch.poll = std::move(parsed);
+    }
     if (const auto author = value.find("author"); author != value.end() && author->is_object())
       if (const auto bot = author->find("bot"); bot != author->end() && bot->is_boolean())
         patch.authorBot = bot->get<bool>();
@@ -727,6 +733,11 @@ namespace api {
     return patch;
   }
   void MessagePatch::apply(Message& message) const {
+    if (poll)
+      mergePoll(message.poll, *poll);
+    if (message.poll)
+      for (const auto& vote : pollVotes)
+        applyPollVote(*message.poll, vote);
     if (authorBot)
       message.authorBot = *authorBot;
     if (editedTimestamp)
@@ -878,6 +889,7 @@ namespace api {
           && result.back().embeds.empty()
           && result.back().buttons.empty()
           && result.back().stickers.empty()
+          && !result.back().poll
           && !result.back().forwarded)
         result.back().content = "[System message]";
       if (const auto it = item.find("author"); it != item.end() && it->is_object()) {

@@ -846,6 +846,24 @@ namespace api {
       request.path = "/guilds/" + action.guild + (action.kind == Kind::GuildProfile ? "/profile" : "/members/@me");
       request.method = action.kind == Kind::GuildProfile ? "GET" : "PUT";
       break;
+    case Kind::VotePoll:
+    case Kind::RemovePollVote: {
+      if (!validSnowflake(action.channel) || !validSnowflake(action.message))
+        return {};
+      request.path = "/channels/" + action.channel + "/polls/" + action.message + "/answers/@me";
+      request.method = "PUT";
+      request.body = {{"answer_ids", nlohmann::json::array()}};
+      if (action.kind == Kind::VotePoll) {
+        if (action.pollAnswers.empty() || action.pollAnswers.size() > pollAnswerMaximum)
+          return {};
+        std::set<int> unique;
+        for (const int answer : action.pollAnswers)
+          if (answer <= 0 || !unique.insert(answer).second)
+            return {};
+        request.body = {{"answer_ids", action.pollAnswers}};
+      }
+      break;
+    }
     case Kind::AddReaction:
     case Kind::RemoveReaction:
     case Kind::ListReactions:

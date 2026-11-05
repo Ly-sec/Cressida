@@ -975,13 +975,15 @@ namespace api {
   }
   bool Client::send(
       const std::string& id, std::string content, std::vector<Upload> uploads, std::optional<MessageReference> reply,
-      std::vector<std::string> stickers, std::string nonce, std::shared_ptr<std::atomic_bool> revoked
+      std::vector<std::string> stickers, std::string nonce, std::shared_ptr<std::atomic_bool> revoked,
+      std::optional<PollDraft> poll
   ) {
     if ((revoked && revoked->load())
         || !validSnowflake(id)
         || (!nonce.empty() && !validSnowflake(nonce))
         || !validStickerIds(stickers)
-        || (content.empty() && uploads.empty() && stickers.empty())
+        || (content.empty() && uploads.empty() && stickers.empty() && !poll)
+        || (poll && (!pollDraftError(*poll).empty() || !uploads.empty() || !stickers.empty()))
         || content.size() > 8000
         || utf8Length(content) > 2000
         || !validUploads(uploads)
@@ -992,6 +994,7 @@ namespace api {
     command.stickers = std::move(stickers);
     command.nonce = std::move(nonce);
     command.messageRevoked = std::move(revoked);
+    command.poll = std::move(poll);
     return enqueue(std::move(command));
   }
   bool Client::resumeMessageChallenge(const std::string& channel) {
@@ -1760,6 +1763,26 @@ namespace api {
         Event event{.operation = Operation::PrivateChannelDelete, .session = session};
         event.resource = data.at("id");
         publish(std::move(event));
+      } else if (type == "MESSAGE_POLL_VOTE_ADD" || type == "MESSAGE_POLL_VOTE_REMOVE") {
+        const auto channel = data.value("channel_id", std::string{});
+        const auto message = data.value("message_id", std::string{});
+        const auto user = data.value("user_id", std::string{});
+        const auto answer = data.find("answer_id");
+        if (validSnowflake(channel)
+            && validSnowflake(message)
+            && validSnowflake(user)
+            && answer != data.end()
+            && answer->is_number_integer()
+            && *answer > 0
+            && *answer <= std::numeric_limits<int>::max()) {
+          const bool add = type == "MESSAGE_POLL_VOTE_ADD";
+          Event event{.operation = Operation::MessageUpdate, .session = session, .resource = channel};
+          event.messageId = message;
+          event.patch.pollVotes.push_back(
+              {answer->get<int>(), add, user == m_self ? std::optional(add) : std::nullopt}
+          );
+          publish(std::move(event));
+        }
       } else if (auto reaction = parseReactionUpdate(type, data)) {
         Event event{.operation = Operation::Reaction, .session = session, .resource = reaction->channel};
         event.reaction = std::move(reaction);
@@ -3064,6 +3087,8 @@ namespace api {
         case Operation::Send:
           path = "/channels/" + command.resource + "/messages";
           body = messageBody(command.content, command.reply, command.stickers, command.nonce);
+          if (command.poll)
+            body["poll"] = pollCreateBody(*command.poll);
           if (!command.uploads.empty()) {
             body["attachments"] = Json::array();
             for (std::size_t i = 0; i < command.uploads.size(); ++i)

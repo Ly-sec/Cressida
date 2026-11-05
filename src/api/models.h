@@ -1,5 +1,6 @@
 #pragma once
 #include "api/cosmetics.h"
+#include "api/polls.h"
 #include "api/stickers.h"
 
 #include <cstdint>
@@ -294,6 +295,7 @@ namespace api {
     std::vector<Sticker> stickers;
     std::string nonce;
     bool authorBot = false;
+    std::optional<Poll> poll;
   };
 
   struct MessagePatch {
@@ -319,6 +321,8 @@ namespace api {
     std::optional<std::optional<ForwardedMessage>> forwarded;
     std::optional<std::vector<Sticker>> stickers;
     std::optional<bool> authorBot;
+    std::optional<std::optional<Poll>> poll;
+    std::vector<PollVote> pollVotes;
     void apply(Message& message) const;
   };
   MessagePatch parseMessagePatch(const nlohmann::json& value);

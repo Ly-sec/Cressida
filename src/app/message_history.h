@@ -127,6 +127,19 @@ namespace app {
       merge(combined.reply, patch.reply);
       merge(combined.forwarded, patch.forwarded);
       merge(combined.reactions, patch.reactions);
+      if (patch.poll) {
+        if (combined.poll && *combined.poll && *patch.poll)
+          api::mergePoll(*combined.poll, *patch.poll);
+        else
+          combined.poll = patch.poll;
+        combined.pollVotes.clear();
+      }
+      constexpr std::size_t maximumPollChanges = 4096;
+      if (combined.pollVotes.size() + patch.pollVotes.size() > maximumPollChanges) {
+        fail(*m_pending, "Poll votes changed too much while loading. Try again.");
+        return;
+      }
+      combined.pollVotes.insert(combined.pollVotes.end(), patch.pollVotes.begin(), patch.pollVotes.end());
     }
     // Apply only contiguous pages. Existing live patches/tombstones win over
     // REST, including messages changed while the request was in flight.

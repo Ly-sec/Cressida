@@ -2035,6 +2035,61 @@ namespace app {
       y += part.height + 26;
       result.forwards.push_back({start, y - start, forward.guild, forward.channel, forward.message, forward.timestamp});
     }
+    if (message.poll) {
+      using P = layout::PollCard;
+      const auto literal = [](const std::string& text) {
+        std::string out;
+        for (const char c : text) {
+          if (std::string_view("\\`*_{}[]<>()#+-.!|~").contains(c))
+            out += '\\';
+          out += c;
+        }
+        return out;
+      };
+      const float cardWidth = std::min(width, P::maximumWidth);
+      const float contentWidth = std::max(Style::spaceSm, cardWidth - P::padding * 2);
+      auto question = layoutMessage(literal(message.poll->question), contentWidth, measure, fontSize);
+      std::vector<MessageLayout> answers;
+      std::vector<float> heights;
+      for (const auto& answer : message.poll->answers) {
+        const bool emoji = !answer.emojiName.empty() || !answer.emojiId.empty();
+        answers.push_back(layoutMessage(
+            literal(answer.text),
+            std::max(Style::spaceSm, contentWidth - P::gap * 2 - P::resultWidth - (emoji ? P::emojiWidth : 0)), measure,
+            fontSize
+        ));
+        heights.push_back(answers.back().height);
+      }
+      auto frames = layout::pollCardFrames(width, question.height, heights);
+      if (!result.runs.empty() || !result.pictures.empty() || !result.boxes.empty())
+        y += P::gap;
+      else
+        y = 0;
+      frames.translate(y);
+      const auto append = [&](MessageLayout part, float x, float top) {
+        if (!result.plainText.empty() && !result.plainText.ends_with('\n'))
+          result.plainText += '\n';
+        const auto offset = result.plainText.size();
+        for (auto& run : part.runs) {
+          run.x += x;
+          run.y += top;
+          run.offset += offset;
+          result.runs.push_back(std::move(run));
+        }
+        result.plainText += part.plainText;
+      };
+      append(std::move(question), frames.question.x, frames.question.y);
+      for (std::size_t i = 0; i < answers.size(); ++i) {
+        const auto& answer = message.poll->answers[i];
+        const bool emoji = !answer.emojiName.empty() || !answer.emojiId.empty();
+        append(
+            std::move(answers[i]), frames.answers[i].x + P::gap + (emoji ? P::emojiWidth : 0),
+            frames.answers[i].y + P::gap
+        );
+      }
+      y = frames.card.y + frames.card.height;
+      result.poll = std::move(frames);
+    }
     result.height = y;
     return result;
   }

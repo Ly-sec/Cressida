@@ -229,7 +229,7 @@ namespace api {
     bool send(
         const std::string& channelId, std::string content, std::vector<Upload> uploads = {},
         std::optional<MessageReference> reply = {}, std::vector<std::string> stickers = {}, std::string nonce = {},
-        std::shared_ptr<std::atomic_bool> revoked = {}
+        std::shared_ptr<std::atomic_bool> revoked = {}, std::optional<PollDraft> poll = {}
     );
     bool interact(api::Interaction action);
     bool resumeMessageChallenge(const std::string& channel);
@@ -298,6 +298,7 @@ namespace api {
       std::shared_ptr<std::atomic_bool> activityRevoked;
       std::uint64_t permissionRevision = 0;
       std::shared_ptr<std::atomic_bool> messageRevoked;
+      std::optional<PollDraft> poll;
     };
     struct PreloadRead {
       std::uint64_t session;

@@ -8,6 +8,11 @@
 namespace app {
   void
   ClientApplication::updateMessage(const std::string& channel, const std::string& id, const api::MessagePatch& patch) {
+    if (const auto state = m_pollUi.find({channel, id}); state != m_pollUi.end()
+        && state->second.pending
+        && ((patch.poll && *patch.poll && (*patch.poll)->resultsKnown)
+            || std::ranges::any_of(patch.pollVotes, [](const auto& vote) { return vote.me.has_value(); })))
+      state->second.pending->stateRevision = 1;
     if (m_dismissedEphemeral.contains(id) || m_messageLog.known(channel, id))
       return;
     const api::Message* prior = nullptr;
@@ -80,6 +85,8 @@ namespace app {
       m_messageLayouts.erase(before.id);
   }
   void ClientApplication::deleteMessages(const std::string& channel, const std::vector<std::string>& ids) {
+    for (const auto& id : ids)
+      m_pollUi.erase({channel, id});
     if (channel.empty() || ids.empty())
       return;
     const auto deleted = [&](const auto& message) { return std::ranges::find(ids, message.id) != ids.end(); };

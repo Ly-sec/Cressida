@@ -15,6 +15,10 @@ namespace app {
     const auto append = [&](MessageLayout part, bool historical) {
       const auto offset = result.plainText.size();
       const auto y = result.height;
+      if (part.poll) {
+        part.poll->translate(y);
+        result.poll = std::move(part.poll);
+      }
       for (auto run : part.runs) {
         run.offset += offset;
         run.y += y;

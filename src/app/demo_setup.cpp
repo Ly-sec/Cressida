@@ -193,6 +193,17 @@ namespace app {
               {"89001", m_channelId, "Maya", "This conversation remains selectable.", "2026-11-02T14:00:00Z", "11"}
           };
           m_history.restoreLatest(m_messages, true);
+        } else if (view.starts_with("polls-cycle")) {
+          m_demoOverlay = view;
+          if (view.ends_with("light"))
+            m_preferences.theme = "light";
+          if (view.ends_with("narrow"))
+            m_window.setUiScale(1.5F);
+          m_showMembers = false;
+          m_roleDirectory.apply({false, {{.guild = m_guildId, .owner = m_account.id}}});
+          m_messages.clear();
+          m_drafts[m_channelId] = "Keep this text draft";
+          m_history.restoreLatest(m_messages, true);
         } else if (view.starts_with("outgoing-cycle")) {
           m_demoOverlay = view;
           if (view.ends_with("light"))

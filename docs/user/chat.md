@@ -74,6 +74,9 @@ stale button working.
 
 ## Edit and format your draft
 
+The **+** message tools menu includes **Paste from Clipboard** and **Create
+Poll**. See [Polls](polls.md) for creating polls, voting and viewing results.
+
 Right-click the message input or inline message editor for **Undo**, **Redo**,
 **Cut**, **Copy**, **Paste**, **Paste as plain text**, **Delete** and **Select
 All**. Unavailable actions are dimmed. **Paste** can include an available

@@ -14,6 +14,7 @@ namespace app {
         || message->authorId != m_account.id
         || message->deleted
         || message->forwarded
+        || message->poll
         || (!message->stickers.empty() && message->content.empty())
         || !message->webhookId.empty()
         || (message->flags & 64)

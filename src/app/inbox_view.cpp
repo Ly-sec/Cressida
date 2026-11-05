@@ -830,8 +830,10 @@ namespace app {
         preview.forwarded.reset();
         for (auto& [id, name] : preview.mentions)
           name = userName(id, name, row.guild);
-        if (m_userDirectory.relationship(preview.authorId) == 2 || m_userDirectory.ignored(preview.authorId))
+        if (m_userDirectory.relationship(preview.authorId) == 2 || m_userDirectory.ignored(preview.authorId)) {
           preview.content = "Message from a blocked user.";
+          preview.poll.reset();
+        }
         body = layoutRichMessage(
             preview, std::max(Style::spaceSection, inner - layout::Inbox::bodyLeft - layout::Inbox::padding), measure,
             Style::fontSizeBody,

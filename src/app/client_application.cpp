@@ -491,6 +491,8 @@ namespace app {
              || id.starts_with("composer-link:"))
             && m_pasteDialogGeneration != m_dialogGeneration)
           return;
+        if (id.starts_with("poll-create:") && m_pasteDialogGeneration != m_dialogGeneration)
+          return;
         if (id.starts_with("server-access:") && m_pasteDialogGeneration != m_dialogGeneration)
           return;
         if ((id.starts_with("slash-field:") || id == "slash-options")
@@ -676,6 +678,12 @@ namespace app {
           m_window.invalidate();
         } else
           scrollContext(delta);
+        return;
+      }
+      if (m_dialogKind == "poll-create" && m_pollEditor) {
+        if (m_pollEditor->viewport.contains(m_pointerX, m_pointerY))
+          m_pollEditor->scroll = std::clamp(m_pollEditor->scroll + delta, 0.0F, m_pollEditor->maximumScroll);
+        m_window.invalidate();
         return;
       }
       if (m_dialogKind == "dm-create") {
@@ -2079,6 +2087,33 @@ namespace app {
                          })
                        : std::function<MessageOptions::Invite(const std::string&)>{}}
               );
+              if (cached.layout.poll) {
+                for (const auto& row : cached.layout.poll->answers) {
+                  bool hasInk = false;
+                  float first = 0, last = 0;
+                  for (const auto& run : cached.layout.runs) {
+                    if (run.y < row.y || run.y >= row.y + row.height)
+                      continue;
+                    const auto metrics = m_window.target().renderer().measureText(
+                        messageMarkup(run.text, run.style, false), run.style.size, FontWeight::Normal, 0, 1,
+                        TextAlign::Start, {}, TextEllipsize::End, true
+                    );
+                    if (metrics.inkBottom <= metrics.inkTop)
+                      continue;
+                    const float top = run.y + metrics.inkTop - metrics.top;
+                    const float bottom = run.y + metrics.inkBottom - metrics.top;
+                    first = hasInk ? std::min(first, top) : top;
+                    last = hasInk ? std::max(last, bottom) : bottom;
+                    hasInk = true;
+                  }
+                  if (hasInk) {
+                    const float offset = row.y + row.height / 2 - (first + last) / 2;
+                    for (auto& run : cached.layout.runs)
+                      if (run.y >= row.y && run.y < row.y + row.height)
+                        run.y += offset;
+                  }
+                }
+              }
               cached.layout = withEditHistory(
                   std::move(cached.layout), versions, textWidth, measure, m_preferences.messageSize,
                   {.compact = m_preferences.compact,
@@ -2743,6 +2778,7 @@ namespace app {
               if (editing)
                 drawMessageEdit(*messageContent, 50, bodyY, textWidth);
               else {
+                drawPollCard(*messageContent, message, layout, layout::Chat::authorGutter, bodyY);
                 m_messageText[message.id] = layout.plainText;
                 m_hits.push_back({left + 74, top + bodyY, textWidth, layout.height, Action::SelectMessage, message.id});
                 for (const auto& card : layout.forwards) {
@@ -3460,8 +3496,8 @@ namespace app {
             );
           if (writeRestriction.empty()) {
             iconButton(
-                root, {left + (Style::space2Xl - Style::spaceXxs), actionY, 32, 32, Action::PasteClipboard, {}},
-                "clipboard-plus", "Paste from clipboard"
+                root, {left + (Style::space2Xl - Style::spaceXxs), actionY, 32, 32, Action::ComposerTools, {}}, "plus",
+                "Message tools"
             );
             iconButton(
                 root, {left + bodyWidth - 62, actionY, 32, 32, Action::ToggleEmoji, {}}, "mood-smile", "Emoji",
@@ -6135,6 +6171,12 @@ namespace app {
       if (visible)
         refreshDmProfile();
     } break;
+    case Action::ComposerTools:
+      openComposerTools();
+      break;
+    case Action::CreatePoll:
+      openPoll();
+      break;
     case Action::PasteClipboard:
       if (!m_demo && !m_channelId.empty() && canSendToThread()) {
         focusControl("composer");

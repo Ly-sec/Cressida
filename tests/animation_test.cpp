@@ -21,6 +21,28 @@ namespace {
 int main(int argc, char** argv) {
   try {
     require(argc == 2, "Animation fixture directory required");
+    const auto budget = media::decodeAnimation(read(std::filesystem::path(argv[1]) / "budget.mp4"));
+    require(
+        budget
+            && budget->width == 498
+            && budget->height == 472
+            && budget->frames.size() == 170
+            && budget->byteSize() > 64 * 1024 * 1024
+            && budget->byteSize() <= media::animationStorageLimit,
+        "Loops above the previous 64 MiB limit retain all native-resolution frames within 128 MiB"
+    );
+    std::vector<std::uint8_t> firstCanvas, lastCanvas;
+    const auto firstPixels = budget->pixels(0, firstCanvas);
+    const auto lastPixels = budget->pixels(budget->frames.size() - 1, lastCanvas);
+    require(
+        !firstPixels.empty() && !lastPixels.empty() && !std::ranges::equal(firstPixels, lastPixels),
+        "The larger retained clip has changing decoded pixels, not a frozen first frame"
+    );
+    const auto overBudget = media::decodeAnimation(read(std::filesystem::path(argv[1]) / "over-budget.mp4"));
+    require(
+        overBudget && overBudget->frames.size() == 1 && overBudget->byteSize() <= media::animationStorageLimit,
+        "Clips exceeding 128 MiB still fall back to a bounded still, never an incomplete loop"
+    );
     const auto fullRange = media::decodeAnimation(read(std::filesystem::path(argv[1]) / "full-range.mp4"));
     require(fullRange && fullRange->frames.size() == 6, "Decode real full-range video frames");
     for (const auto& frame : fullRange->frames)
@@ -42,7 +64,10 @@ int main(int argc, char** argv) {
       );
       const bool longClip = std::string_view(name).starts_with("detail-long.");
       require(animation->frames.size() == (longClip ? 120 : 6), "Retain every frame, including under memory pressure");
-      require(animation->byteSize() <= 64 * 1024 * 1024, "Lossless frames stay inside the animation cache budget");
+      require(
+          animation->byteSize() <= media::animationStorageLimit,
+          "Lossless frames stay inside the animation storage limit"
+      );
       require(
           std::ranges::all_of(
               animation->frames, [](const auto& frame) { return frame.rgba.empty() && !frame.packed.empty(); }
@@ -170,7 +195,7 @@ int main(int argc, char** argv) {
             && retained->frames.size() == 300
             && retained->width == 256
             && retained->height == 256
-            && retained->byteSize() <= 64 * 1024 * 1024,
+            && retained->byteSize() <= media::animationStorageLimit,
         "Losslessly compress long GIFs to retain their complete native loop inside the memory budget"
     );
     require(

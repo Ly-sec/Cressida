@@ -16,7 +16,7 @@ namespace {
   constexpr auto timeout = std::chrono::seconds(5);
   constexpr auto unpublishedWindow = std::chrono::milliseconds(50);
   constexpr std::size_t mebibyte = 1024 * 1024;
-  constexpr std::size_t pendingByteLimit = 128 * mebibyte;
+  constexpr std::size_t pendingByteLimit = 168 * mebibyte;
   constexpr std::size_t pendingResultLimit = 128;
 
   void require(bool condition, const char* message) {
@@ -176,7 +176,7 @@ namespace {
   }
 
   void testBytePressurePreservesAnimation() {
-    LoaderFixture fixture(false, 2 * mebibyte, 63 * mebibyte);
+    LoaderFixture fixture(false, 2 * mebibyte, 83 * mebibyte);
     api::Assets assets([&](const auto& path, bool poster, auto stop) { return fixture.load(path, poster, stop); });
     ReleaseOnExit release{fixture};
     complete(assets, fixture, path(1));
@@ -205,7 +205,7 @@ namespace {
   }
 
   void testCancelWaitingResultAndReenable() {
-    LoaderFixture fixture(false, 2 * mebibyte, 63 * mebibyte);
+    LoaderFixture fixture(false, 2 * mebibyte, 83 * mebibyte);
     api::Assets assets([&](const auto& path, bool poster, auto stop) { return fixture.load(path, poster, stop); });
     ReleaseOnExit release{fixture};
     complete(assets, fixture, path(1));
@@ -237,7 +237,7 @@ namespace {
   }
 
   void testShutdownWhileWaitingForBytes() {
-    LoaderFixture fixture(false, 2 * mebibyte, 63 * mebibyte);
+    LoaderFixture fixture(false, 2 * mebibyte, 83 * mebibyte);
     std::shared_ptr<Call> first, waiting;
     {
       api::Assets assets([&](const auto& path, bool poster, auto stop) { return fixture.load(path, poster, stop); });
@@ -450,6 +450,20 @@ namespace {
         "Destruction stops both in-flight requests before joining their workers"
     );
   }
+  void testFullAnimationResult() {
+    LoaderFixture fixture(false, 40 * mebibyte, media::animationStorageLimit);
+    api::Assets assets([&](const auto& path, bool poster, auto stop) { return fixture.load(path, poster, stop); });
+    ReleaseOnExit release{fixture};
+    complete(assets, fixture, path(1));
+    const auto results = assets.drain();
+    require(
+        results.size() == 1
+            && results.front().animation
+            && results.front().animation->byteSize() == media::animationStorageLimit
+            && resultBytes(results) == pendingByteLimit,
+        "A full 128 MiB animation and encoded-buffer capacity fit the pending-result limit exactly"
+    );
+  }
 } // namespace
 
 int main() {
@@ -459,6 +473,7 @@ int main() {
     testInFlightGenerationRace();
     testQueueLimits();
     testShutdownCancellation();
+    testFullAnimationResult();
     testBytePressurePreservesAnimation();
     testCancelWaitingResultAndReenable();
     testShutdownWhileWaitingForBytes();

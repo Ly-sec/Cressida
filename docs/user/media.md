@@ -46,6 +46,11 @@ their resolution, colors and playback timing. Older media is released as the
 image caches fill. Revisiting it may download it again. Visible images and local
 upload previews stay available.
 
+GIF, animated WebP and GIF-video clips can retain up to 128 MiB of decoded
+animation data each. Clips that exceed the memory, frame or decoding-time limits
+show a still frame instead of a shortened loop. Several visible animations can
+use more memory than the background cache target.
+
 If many images load at once, some may appear a little later to keep memory use
 bounded. Their animation data stays intact while they wait.
 

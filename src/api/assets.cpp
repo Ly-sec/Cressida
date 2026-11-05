@@ -52,7 +52,7 @@ namespace api {
         state.suppressed = 0;
       }
     };
-    constexpr std::size_t maximumPendingBytes = 128 * 1024 * 1024;
+    constexpr std::size_t maximumPendingBytes = media::animationStorageLimit + maxUploadBytes * 2;
     constexpr std::size_t maximumPendingResults = 128;
     struct Download {
       std::vector<unsigned char> bytes;

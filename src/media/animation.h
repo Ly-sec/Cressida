@@ -10,6 +10,7 @@
 
 namespace media {
   inline constexpr std::size_t rawAnimationBudget = 4 * 1024 * 1024;
+  inline constexpr std::size_t animationStorageLimit = 128 * 1024 * 1024;
   struct Frame {
     std::vector<std::uint8_t> rgba;
     std::chrono::milliseconds duration{100};

@@ -18,7 +18,6 @@ extern "C" {
 
 namespace media {
   namespace {
-    constexpr std::size_t maxBytes = 64 * 1024 * 1024;
     constexpr int maxFrames = 1200;
     constexpr int posterEdge = 1920;
     constexpr int compressionLevel = 1;
@@ -81,7 +80,7 @@ namespace media {
       }
       if (packed)
         frame.pack();
-      if (frame.byteSize() > maxBytes - resident)
+      if (frame.byteSize() > animationStorageLimit - resident)
         return false;
       resident += frame.byteSize();
       animation.frames.push_back(std::move(frame));

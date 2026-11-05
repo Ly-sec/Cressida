@@ -73,4 +73,10 @@ with tempfile.TemporaryDirectory(prefix="cressida-animation-") as directory:
         "testsrc2=size=256x256:rate=30:duration=10", "-c:v", "gif", "-threads", "1",
         "-y", str(root / "large.gif"),
     ], check=True, timeout=15)
+    for name, duration in [("budget", "5.666667"), ("over-budget", "10")]:
+        subprocess.run([
+            sys.argv[1], "-v", "error", "-nostdin", "-f", "lavfi", "-i",
+            f"testsrc2=size=498x472:rate=30:duration={duration},noise=alls=30:allf=t+u:all_seed=42",
+            "-an", "-c:v", "libx264", "-threads", "1", "-y", str(root / f"{name}.mp4"),
+        ], check=True, timeout=15)
     subprocess.run([sys.argv[2], str(root)], check=True, timeout=30)

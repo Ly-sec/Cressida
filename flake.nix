@@ -10,7 +10,7 @@
         "x86_64-linux"
         "aarch64-linux"
       ];
-      rev = self.shortRev or self.dirtyShortRev;
+      rev = self.shortRev or self.dirtyShortRev or "unknown";
       forAllSystems = nixpkgs.lib.genAttrs systems;
       pkgsFor = system: nixpkgs.legacyPackages.${system};
     in

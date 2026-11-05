@@ -10,6 +10,7 @@
         "x86_64-linux"
         "aarch64-linux"
       ];
+      rev = self.shortRev or self.dirtyShortRev;
       forAllSystems = nixpkgs.lib.genAttrs systems;
       pkgsFor = system: nixpkgs.legacyPackages.${system};
     in
@@ -20,7 +21,7 @@
           pkgs = pkgsFor system;
         in
         {
-          default = pkgs.callPackage ./nix/package.nix { };
+          default = pkgs.callPackage ./nix/package.nix { inherit rev; };
         }
       );
 

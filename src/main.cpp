@@ -2,9 +2,9 @@
 #include "app/restart_process.h"
 #include "app/single_instance.h"
 #include "app/voice_command.h"
+#include "core/build_info.h"
 #include "core/environment.h"
 #include "core/log.h"
-#include "cressida_version.h"
 
 #include <cstdlib>
 #include <fstream>
@@ -54,7 +54,13 @@ int main(int argc, char** argv) {
       return 0;
     }
     if (arg == "--version") {
-      std::cout << "cressida " << CRESSIDA_VERSION << '\n';
+      constexpr std::string_view unknownRevision = "unknown";
+      const std::string_view revision = cressida::build_info::revision();
+      if (!revision.empty() && revision != unknownRevision) {
+        std::cout << "cressida " << cressida::build_info::version() << " (" << revision << ")\n";
+      } else {
+        std::cout << "cressida " << cressida::build_info::version() << '\n';
+      }
       return 0;
     }
     if (arg == "voice") {
@@ -121,8 +127,8 @@ int main(int argc, char** argv) {
       }
       logging = std::make_unique<LogLifetime>(consoleLevel);
       kLog.info(
-          "starting Cressida version={} demo={} smoke={} start_minimized={} separate_instance={}", CRESSIDA_VERSION,
-          demo, smoke, startMinimized, newInstance
+          "starting Cressida version={} demo={} smoke={} start_minimized={} separate_instance={}",
+          cressida::build_info::version(), demo, smoke, startMinimized, newInstance
       );
       stage = "credential-input";
       std::string token;

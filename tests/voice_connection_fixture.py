@@ -118,6 +118,8 @@ def scenario(binary, mode):
                     send(peer, {"op": 4, "d": {"mode": "aead_xchacha20_poly1305_rtpsize", "secret_key": list(range(32)),
                                                   "dave_protocol_version": 0 if mode == "downgrade" else 1}})
                     if mode != "downgrade":
+                        registered = expected(peer, 5)
+                        assert registered["d"] == {"speaking": 0, "delay": 0, "ssrc": 123}, "The SSRC is registered before anyone speaks"
                         package = expected(peer, 26)
                         assert len(package) > 16, "A real MLS key package is sent"
                         speaking = expected(peer, 5)

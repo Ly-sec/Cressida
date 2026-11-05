@@ -61,12 +61,13 @@ int main() {
           info
               && info->server == "400"
               && info->channel == "500"
+              && info->group == "399"
               && info->user == "300"
               && info->session == "synthetic-session"
               && info->generation == 1
               && info->revision == 2
               && info->participants.size() == 3,
-          "Media uses RTC identities and the stream's own roster"
+          "Media uses RTC identities, the media-session encryption group and the stream's own roster"
       );
       require(
           !session.take() && session.receive("STREAM_CREATE", created) == StreamSession::Update::None,
@@ -100,7 +101,7 @@ int main() {
       );
       const auto info = session.take();
       require(
-          info && info->server == "400" && info->channel == "399",
+          info && info->server == "400" && info->channel == "399" && info->group == "399",
           "The public stream RTC fallback uses the preceding server identity"
       );
     }

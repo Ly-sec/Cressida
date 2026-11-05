@@ -26,6 +26,7 @@ namespace api {
   };
   std::optional<StreamPreviewHttpRequest>
   streamPreviewHttpRequest(const StreamPreviewQuery& query, std::uint64_t version);
-  std::string parseStreamPreview(const nlohmann::json& response);
+  // Accepts only a CDN image stored under the requested stream key, or an explicit null.
+  std::string parseStreamPreview(const nlohmann::json& response, const StreamKey& key);
   bool streamPreviewRevoked(const StreamPreviewQuery& query);
 } // namespace api

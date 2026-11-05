@@ -127,7 +127,7 @@ def scenario(binary, direction, codec):
                 send(peer, {"op": 8, "d": {"heartbeat_interval": 200}})
                 identify = expected(peer, 0)["d"]
                 publishing = direction == "publish"
-                assert identify["channel_id"] == "3" and identify["video"]
+                assert identify["channel_id"] == "5" and identify["video"]
                 assert identify["streams"] == [{"type": "screen", "rid": "100", "quality": 100}]
                 relay = Relay(process, peer, udp)
                 external = relay.record()
@@ -142,6 +142,9 @@ def scenario(binary, direction, codec):
                 selected = expected(peer, 1)["d"]
                 assert selected["protocol"] == "udp" and selected["experiments"] == []
                 assert len(selected["rtc_connection_id"]) == 36
+                if not publishing:
+                    registration = expected(peer, 12)["d"]
+                    assert registration == {"audio_ssrc": 123, "video_ssrc": 0, "rtx_ssrc": 0, "streams": []}, "A viewer registers before receiving video"
                 negotiated = next(c for c in selected["codecs"] if c["name"] == codec)
                 assert negotiated["encode"] and negotiated["decode"]
                 pt, rtx = negotiated["payload_type"], negotiated["rtx_payload_type"]
@@ -196,7 +199,7 @@ def scenario(binary, direction, codec):
                         "streams": [{"type": "screen", "rid": "100", "ssrc": 124, "rtx_ssrc": 125, "active": True}]}})
                     media = relay.record()
                     subscription = relay.wait_signal(lambda s: isinstance(s, dict) and s["op"] == 15 and s["d"].get("124", 0) > 0)
-                    assert subscription["d"] == {"124": 100, "pixelCounts": {"124": 720 * 720 * 16 // 9}}, "Watching requests its own dimensions with the protocol pixel-count field"
+                    assert subscription["d"] == {"124": 100, "126": 100, "pixelCounts": {"124": 720 * 720 * 16 // 9}, "any": 0}, "Watching requests the stream's video and audio with the protocol pixel-count field"
                     send(peer, {"op": 15, "d": {"124": 0, "pixelCounts": {"124": 4}}})
                     for index, packet in enumerate(media["video"]):
                         if index != 1:

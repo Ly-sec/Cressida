@@ -2037,7 +2037,7 @@ namespace api {
             event.commands = parseCommandIndex(*response, *command.commandIndex);
             break;
           case Operation::StreamPreviewRead:
-            event.streamPreview->url = parseStreamPreview(*response);
+            event.streamPreview->url = parseStreamPreview(*response, command.streamPreview->key);
             break;
           case Operation::Messages:
             event.messages = parseMessages(*response);

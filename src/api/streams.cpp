@@ -222,18 +222,19 @@ namespace api {
         return Update::None;
       const auto server = text(data, "rtc_server_id", maximumStreamKeyBytes);
       auto channel = text(data, "rtc_channel_id", maximumStreamKeyBytes);
-      if (!data.contains("rtc_channel_id") || data["rtc_channel_id"].is_null()) {
-        std::uint64_t serverNumber = 0;
-        const auto parsed = std::from_chars(server.data(), server.data() + server.size(), serverNumber);
-        if (parsed.ec != std::errc{} || parsed.ptr != server.data() + server.size() || serverNumber <= 1)
-          return Update::None;
+      std::uint64_t serverNumber = 0;
+      const auto parsed = std::from_chars(server.data(), server.data() + server.size(), serverNumber);
+      if (parsed.ec != std::errc{} || parsed.ptr != server.data() + server.size() || serverNumber <= 1)
+        return Update::None;
+      if (!data.contains("rtc_channel_id") || data["rtc_channel_id"].is_null())
         channel = std::to_string(serverNumber - 1);
-      }
       const auto record = parseStreamUpdate(type, data);
       if (!voice::protocol::validId(server) || !voice::protocol::validId(channel) || !record)
         return Update::None;
       m_info.server = server;
       m_info.channel = channel;
+      // The stream's encrypted group is the media session, one below the RTC server, never the RTC channel.
+      m_info.group = std::to_string(serverNumber - 1);
       m_info.participants = record->stream.viewers;
       if (std::ranges::find(m_info.participants, m_key.owner) == m_info.participants.end())
         m_info.participants.push_back(m_key.owner);

@@ -1,3 +1,4 @@
+#include "api/models.h"
 #include "api/rest_schedule.h"
 #include "api/stream_previews.h"
 #include "voice/stream_preview.h"
@@ -101,16 +102,33 @@ int main() {
     require(!streamPreviewHttpRequest(query, 0), "Preview publication obeys its encoded image bound");
     query.jpeg = {0, 1, 2, 3};
     require(!streamPreviewHttpRequest(query, 0), "A non-JPEG payload cannot enter the preview mutation lane");
-    const auto url = "https://cdn.discordapp.com/previews/synthetic-thumbnail.jpg?width=512";
+    const auto key = parseStreamKey("guild:100:200:300");
+    require(key.has_value(), "The preview fixture uses a valid stream key");
+    const auto hash = std::string("0123456789abcdef0123456789abcdef");
+    const auto url = "https://cdn.discordapp.com/streams/guild:100:200:300/" + hash + ".png";
+    const auto signedUrl = url + "?ex=1&is=2&hm=3";
+    const auto encoded = "https://media.discordapp.net/streams/guild%3A100%3A200%3A300/" + hash;
     require(
-        parseStreamPreview({{"url", url}}) == url && parseStreamPreview({{"url", nullptr}}).empty(),
-        "Preview metadata preserves a validated public image or an explicit missing preview"
+        parseStreamPreview({{"url", url}}, *key) == url
+            && parseStreamPreview({{"url", signedUrl}}, *key) == signedUrl
+            && parseStreamPreview({{"url", encoded}}, *key) == encoded
+            && parseStreamPreview({{"url", nullptr}}, *key).empty(),
+        "Preview metadata preserves the stream's own CDN image or an explicit missing preview"
+    );
+    require(
+        !mediaUrl(url).empty() && !mediaUrl(encoded).empty(),
+        "The media allowlist accepts the stream preview CDN route used for display"
     );
     for (const auto& value :
          {Json::object(), Json::array(), Json{{"url", false}}, Json{{"url", "https://untrusted.example/image.jpg"}},
-          Json{{"url", "data:image/svg+xml,<svg/>"}}})
+          Json{{"url", "data:image/svg+xml,<svg/>"}},
+          Json{{"url", "https://cdn.discordapp.com/streams/guild:100:200:301/" + hash + ".png"}},
+          Json{{"url", "https://cdn.discordapp.com/streams/guild:100:200:300/../" + hash + ".png"}},
+          Json{{"url", "https://cdn.discordapp.com/streams/guild:100:200:300/short.png"}},
+          Json{{"url", "https://cdn.discordapp.com/avatars/100/" + hash + ".png"}}})
       rejected(
-          [&] { parseStreamPreview(value); }, "Malformed preview metadata never creates an arbitrary media request"
+          [&] { parseStreamPreview(value, *key); },
+          "Malformed preview metadata never creates an arbitrary media request"
       );
     std::cout << "Stream preview routes, JPEG bodies, bounds and revocation passed\n";
   } catch (const std::exception& error) {

@@ -25,6 +25,8 @@ namespace voice {
   };
   struct ConnectionInfo {
     std::string server, user, session, token, endpoint, channel;
+    // MLS group for end-to-end encryption. Empty means the channel, which is correct for calls and voice channels.
+    std::string group;
     std::uint64_t generation = 0, revision = 0;
     std::vector<std::string> participants;
     bool stream = false, publishing = false;

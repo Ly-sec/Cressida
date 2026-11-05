@@ -56,6 +56,12 @@ namespace voice {
     constexpr std::size_t maximumDiagnosticOpcodes = 32;
     constexpr std::size_t diagnosticHistory = 8;
     constexpr auto maximumMediaRoundTrip = 10s;
+    constexpr auto receiveSummaryInterval = 10s;
+    // Counters only: no identities, addresses or media ever enter diagnostics.
+    struct ReceiveSummary {
+      std::uint64_t datagrams = 0, transportRejected = 0, unmapped = 0, e2eeRejected = 0, delivered = 0;
+      bool operator==(const ReceiveSummary&) const = default;
+    };
     constexpr std::uint32_t rtcpClockRate = 65536;
     const Logger voiceLog("voice");
     const char* phaseName(Phase phase) {
@@ -235,6 +241,7 @@ namespace voice {
           || !protocol::validId(info.server)
           || !protocol::validId(info.user)
           || !protocol::validId(info.channel)
+          || (!info.group.empty() && !protocol::validId(info.group))
           || !secureText(info.session)
           || !secureText(info.token)
           || !protocol::endpoint(info.endpoint)
@@ -447,6 +454,9 @@ namespace voice {
         randombytes_buf(&videoSequence, sizeof(videoSequence));
         bool announced = false, wasPaused = false;
         int requestedHeight = -1, requestedRate = -1;
+        std::uint32_t requestedAudio = 0;
+        ReceiveSummary receiveSummary, loggedReceiveSummary;
+        auto receiveSummaryAt = Clock::now() + receiveSummaryInterval;
         auto nextKeyframeRequest = Clock::time_point{};
         auto nextVideoReport = Clock::time_point{};
         auto nextReceiverReport = Clock::time_point{};
@@ -475,7 +485,7 @@ namespace voice {
           assembler.route(incoming);
           video->codec(selected->second.codec);
         };
-        Encryption encryption(info.user, channelNumber(info.channel));
+        Encryption encryption(info.user, channelNumber(info.group.empty() ? info.channel : info.group));
         Socket udp;
         std::optional<protocol::Ready> remote;
         bool described = false, discovered = false, speaking = false, mediaReady = false;
@@ -620,6 +630,18 @@ namespace voice {
         while (!context.cancelled()) {
           const auto now = Clock::now();
           encryption.tick();
+          if (now >= receiveSummaryAt) {
+            receiveSummaryAt = now + receiveSummaryInterval;
+            if (receiveSummary != loggedReceiveSummary) {
+              voiceLog.debug(
+                  "Receive datagrams={} transport-rejected={} unmapped-ssrc={} e2ee-rejected={} delivered={} "
+                  "e2ee-ready={}",
+                  receiveSummary.datagrams, receiveSummary.transportRejected, receiveSummary.unmapped,
+                  receiveSummary.e2eeRejected, receiveSummary.delivered, encryption.ready()
+              );
+              loggedReceiveSummary = receiveSummary;
+            }
+          }
           if (activity.expire(now))
             updateParticipants();
           if (heartbeat.missed(now))
@@ -732,15 +754,26 @@ namespace voice {
               announcedQuality = quality;
             }
             const int height = subscriptionHeight.load(), rate = subscriptionRate.load();
+            std::uint32_t publisherAudio = 0;
+            if (described && !info.publishing)
+              for (const auto& [ssrc, user] : senders)
+                if (user == info.publisher) {
+                  publisherAudio = ssrc;
+                  break;
+                }
             if (described
                 && !info.publishing
                 && incoming.ssrc
-                && (height != requestedHeight || rate != requestedRate)) {
+                && (height != requestedHeight || rate != requestedRate || publisherAudio != requestedAudio)) {
               Json wants{
                   {std::to_string(incoming.ssrc), height && rate ? 100 : 0},
                   {"pixelCounts",
-                   {{std::to_string(incoming.ssrc), static_cast<std::uint64_t>(height) * height * 16 / 9}}}
+                   {{std::to_string(incoming.ssrc), static_cast<std::uint64_t>(height) * height * 16 / 9}}},
+                  {"any", 0}
               };
+              if (publisherAudio)
+                wants[std::to_string(publisherAudio)] = 100;
+              requestedAudio = publisherAudio;
               send(curl.get(), Json{{"op", 15}, {"d", wants}}, context);
               assembler.clear();
               if (!height || !rate)
@@ -962,6 +995,20 @@ namespace voice {
                   selection["d"]["experiments"] = Json::array();
                 }
                 send(curl.get(), selection, context);
+                // A receive-only stream connection must register its audio SSRC before video can arrive.
+                if (video && !info.publishing)
+                  send(
+                      curl.get(),
+                      Json{
+                          {"op", 12},
+                          {"d",
+                           {{"audio_ssrc", remote->ssrc},
+                            {"video_ssrc", 0},
+                            {"rtx_ssrc", 0},
+                            {"streams", Json::array()}}}
+                      },
+                      context
+                  );
                 discovered = true;
                 state.phase = Phase::Securing;
                 publish(state, activeSettings, context);
@@ -1013,8 +1060,13 @@ namespace voice {
               }
               continue;
             }
+            ++receiveSummary.datagrams;
             auto decrypted = cipher.open(packet);
-            if (!decrypted || decrypted->ssrc == remote->ssrc)
+            if (!decrypted) {
+              ++receiveSummary.transportRejected;
+              continue;
+            }
+            if (decrypted->ssrc == remote->ssrc)
               continue;
             if (video && decrypted->payloadType != 120) {
               if (!subscriptionHeight || !subscriptionRate)
@@ -1041,12 +1093,17 @@ namespace voice {
             if (activeSettings.deafened)
               continue;
             const auto sender = senders.find(decrypted->ssrc);
-            if (sender == senders.end())
+            if (sender == senders.end()) {
+              ++receiveSummary.unmapped;
               continue;
+            }
             const bool relaySilence = std::ranges::equal(decrypted->payload, protocol::silence);
             const auto opus =
                 relaySilence ? decrypted->payload : encryption.decrypt(sender->second, decrypted->payload);
-            if (!opus.empty()) {
+            if (opus.empty())
+              ++receiveSummary.e2eeRejected;
+            else {
+              ++receiveSummary.delivered;
               const bool silence = std::ranges::equal(opus, protocol::silence);
               if (activity.packet(sender->second, true, silence, now))
                 updateParticipants();
@@ -1158,6 +1215,12 @@ namespace voice {
                   throw Failure("Encrypted voice setup failed");
                 described = true;
                 voiceLog.info("Connection phase=transport-ready");
+                // Registers this SSRC with the media server even if nobody here speaks or listens first.
+                if (!info.stream)
+                  send(
+                      curl.get(), Json{{"op", 5}, {"d", {{"speaking", 0U}, {"delay", 0}, {"ssrc", remote->ssrc}}}},
+                      context
+                  );
                 flushEncryption();
                 while (!early.empty()) {
                   auto message = std::move(early.front());
@@ -1210,6 +1273,9 @@ namespace voice {
                       videoSsrc = uint32(data["video_ssrc"]);
                     if (!rtxSsrc && data.contains("rtx_ssrc"))
                       rtxSsrc = uint32(data["rtx_ssrc"]);
+                    // An omitted repair stream follows its primary stream.
+                    if ((!rtxSsrc || !*rtxSsrc) && videoSsrc && *videoSsrc < std::numeric_limits<std::uint32_t>::max())
+                      rtxSsrc = *videoSsrc + 1;
                     if (videoSsrc && *videoSsrc && rtxSsrc && *rtxSsrc && *videoSsrc != *rtxSsrc) {
                       incoming.ssrc = *videoSsrc;
                       incoming.rtxSsrc = *rtxSsrc;

@@ -459,6 +459,7 @@ namespace api {
             "soundboard-sounds/",
             "new-member-actions/",
             "resource-channels/",
+            "streams/",
             "previews/"})
         if (path.starts_with(prefix))
           return std::string(value);

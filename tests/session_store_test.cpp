@@ -41,6 +41,63 @@ int main() {
   };
   try {
     {
+      const auto panelsPath = std::filesystem::path(directory) / "panels.json";
+      app::SessionStore store(panelsPath);
+      require(
+          store.preferences("123").showMembers && store.preferences("123").showDmProfile,
+          "Member lists and DM profiles default to visible"
+      );
+      for (const bool members : {false, true}) {
+        for (const bool profile : {false, true}) {
+          app::Preferences preferences;
+          preferences.showMembers = members;
+          preferences.showDmProfile = profile;
+          preferences.theme = "light";
+          store.savePreferences("123", preferences);
+          store.save("123", {"1", "101", 1});
+          app::SessionStore restarted(panelsPath);
+          const auto restored = restarted.preferences("123");
+          require(
+              restored.showMembers == members
+                  && restored.showDmProfile == profile
+                  && restored.theme == "light"
+                  && restarted.load("123")->channel == "101",
+              "Every independent panel choice survives restart and navigation saves"
+          );
+          require(
+              restarted.preferences("456").showMembers
+                  && restarted.preferences("456").showDmProfile
+                  && restarted.startupPreferences().showMembers
+                  && restarted.startupPreferences().showDmProfile,
+              "Panel visibility stays private to the signed-in account"
+          );
+        }
+      }
+      for (const auto& malformed : {nlohmann::json(nullptr), nlohmann::json("hidden"), nlohmann::json(0)}) {
+        std::ofstream(panelsPath) << nlohmann::json{
+            {"123", {{"preferences", {{"show_members", malformed}, {"show_dm_profile", false}, {"theme", "light"}}}}}
+        };
+        const auto restored = store.preferences("123");
+        require(
+            restored.showMembers && !restored.showDmProfile && restored.theme == "light",
+            "An invalid member preference retains its default and the other preferences"
+        );
+        std::ofstream(panelsPath) << nlohmann::json{
+            {"123", {{"preferences", {{"show_members", false}, {"show_dm_profile", malformed}, {"theme", "light"}}}}}
+        };
+        const auto profileRestored = store.preferences("123");
+        require(
+            !profileRestored.showMembers && profileRestored.showDmProfile && profileRestored.theme == "light",
+            "An invalid profile preference retains its default and the other preferences"
+        );
+      }
+      std::ofstream(panelsPath) << R"({"123":{"preferences":{"theme":"light"}}})";
+      require(
+          store.preferences("123").showMembers && store.preferences("123").showDmProfile,
+          "Older state files keep both panels visible until explicitly changed"
+      );
+    }
+    {
       const auto replyPath = std::filesystem::path(directory) / "reply.json";
       app::SessionStore store(replyPath);
       require(!store.preferences("123").replyMention, "Reply mentions default off before an explicit choice");

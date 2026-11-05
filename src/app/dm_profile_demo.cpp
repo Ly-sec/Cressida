@@ -205,6 +205,10 @@ namespace app {
     } else if (step == 4) {
       require(memberPaneWidth() == 0 && !profileButton(), "The header toggle hides the profile surface and hits");
       require(m_showMembers && !m_showDmProfile, "Hiding the DM profile preserves member-list visibility");
+      require(
+          m_preferences.showMembers && !m_preferences.showDmProfile,
+          "The panel shortcut updates only the DM profile preference"
+      );
       click(Action::ToggleMembers);
     } else if (step == 5) {
       require(profileButton() && m_dmProfile.data && !m_dmProfile.request, "Reopening reuses the current profile");
@@ -249,11 +253,19 @@ namespace app {
       );
       click(Action::ToggleMembers);
       require(!m_showMembers && !m_showDmProfile, "Group members toggle independently of the hidden DM profile");
+      require(
+          !m_preferences.showMembers && !m_preferences.showDmProfile,
+          "The group header updates the member preference without changing the hidden profile preference"
+      );
       click(Action::Channel, "9001");
       require(memberPaneWidth() == 0, "Returning to a DM preserves its independently hidden profile");
       click(Action::ToggleMembers);
       require(
           memberPaneWidth() > 0 && !m_showMembers, "Showing a DM profile leaves group and server member lists hidden"
+      );
+      require(
+          !m_preferences.showMembers && m_preferences.showDmProfile,
+          "Reopening a DM profile preserves the hidden member preference"
       );
       response({}, false, true);
     } else if (step == 10) {

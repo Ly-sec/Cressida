@@ -17,6 +17,7 @@ namespace app {
     std::string theme = "dark";
     float messageSize = Style::fontSizeBody;
     bool compact = false, showEmbeds = true, showImages = true;
+    bool showMembers = true, showDmProfile = true;
     bool autoplayGifs = true;
     bool emojiImageLinks = false;
     bool replyMention = false;

@@ -27,9 +27,11 @@ include:
 
 The chat header also shows the recipient's avatar and custom status. Use the
 header's panel toggle to show or hide the side panel. Its visibility is separate
-from server and group member lists, so hiding either does not hide the other. At
-narrow window widths, Cressida hides the optional panel to keep room for the
-conversation.
+from server and group member lists, so hiding either does not hide the other.
+Cressida saves both choices separately for each account and restores them after
+restarting or signing in again. At narrow window widths, Cressida hides the
+optional panel to keep room for the conversation without changing your saved
+choice.
 
 Profile information depends on what is available to your account. Private or
 unavailable profiles keep a basic identity visible. If loading fails, use the

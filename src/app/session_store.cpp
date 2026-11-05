@@ -257,6 +257,10 @@ namespace app {
       result.compact = value.value("compact", false);
       result.showEmbeds = value.value("embeds", true);
       result.showImages = value.value("images", true);
+      if (const auto at = value.find("show_members"); at != value.end() && at->is_boolean())
+        result.showMembers = at->get<bool>();
+      if (const auto at = value.find("show_dm_profile"); at != value.end() && at->is_boolean())
+        result.showDmProfile = at->get<bool>();
       result.autoplayGifs = value.value("autoplay_gifs", true);
       result.emojiImageLinks = value.value("emoji_image_links", false);
       if (const auto at = value.find("reply_mention"); at != value.end() && at->is_boolean())
@@ -473,6 +477,8 @@ namespace app {
           {"compact", preferences.compact},
           {"embeds", preferences.showEmbeds},
           {"images", preferences.showImages},
+          {"show_members", preferences.showMembers},
+          {"show_dm_profile", preferences.showDmProfile},
           {"autoplay_gifs", preferences.autoplayGifs},
           {"emoji_image_links", preferences.emojiImageLinks},
           {"reply_mention", preferences.replyMention},

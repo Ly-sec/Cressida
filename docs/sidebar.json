@@ -40,7 +40,8 @@
         "label": "Slash commands in the composer"
       },
       {
-        "slug": "docs/direct-messages"
+        "slug": "docs/direct-messages",
+        "label": "Direct messages and profile panel"
       },
       {
         "slug": "docs/servers-and-threads",

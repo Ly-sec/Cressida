@@ -4892,6 +4892,8 @@ namespace app {
           m_savingProfile = m_loadingProfile = false;
           m_desiredPresence.clear();
           m_preferences = m_sessionStore.preferences(m_account.id);
+          m_showMembers = m_preferences.showMembers;
+          m_showDmProfile = m_preferences.showDmProfile;
           configureVoice();
           releaseDisabledCosmetics();
           m_sessionStore.saveAppearance(m_preferences);
@@ -6168,6 +6170,10 @@ namespace app {
         visible = true;
       } else
         visible = !visible;
+      auto& preference = dmRecipient() ? m_preferences.showDmProfile : m_preferences.showMembers;
+      preference = visible;
+      if (!m_demo)
+        m_sessionStore.savePreferences(m_account.id, m_preferences);
       if (visible)
         refreshDmProfile();
     } break;

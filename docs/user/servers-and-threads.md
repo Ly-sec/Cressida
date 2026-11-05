@@ -82,6 +82,10 @@ The member list shows names, avatars, activity summaries and presence
 indicators, with role or status group headings. These details update as changes
 arrive. Large lists load in sections as you scroll.
 
+Use the header's member-list toggle to show or hide the list. Cressida saves
+this choice per account across restarts, separately from the
+[DM profile panel](direct-messages.md#read-a-profile-beside-your-chat).
+
 ## Use folders
 
 Click a folder to expand or collapse it. An expanded folder keeps its servers

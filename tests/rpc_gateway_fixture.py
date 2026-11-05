@@ -41,10 +41,22 @@ def main():
                 assert all(isinstance(label, str) for label in activity["buttons"])
                 assert activity["metadata"] == {"button_urls": ["https://example.com/music", "https://example.com/source"]}
                 assert activity["assets"] == {"large_image": "123"}
-                send(peer, 0, {}, "RPC_CLEAR", 2)
+                stale = dict(activity)
+                stale["details"] = "An older track"
+                send(peer, 0, {"activities": [stale]}, "STALE_PRESENCE", 2)
+                corrected = presence(peer, lambda data: len(data["activities"]) == 2)
+                assert corrected["activities"][1]["details"] == "An offline track"
+                send(
+                    peer,
+                    0,
+                    {"activities": corrected["activities"]},
+                    "CURRENT_PRESENCE",
+                    3,
+                )
+                send(peer, 0, {}, "RPC_CLEAR", 4)
                 value = presence(peer, lambda data: len(data["activities"]) == 1)
                 assert value["activities"] == [custom] and value["status"] == "dnd"
-                send(peer, 0, {}, "RPC_RESET", 3)
+                send(peer, 0, {}, "RPC_RESET", 5)
             with upgrade(listener, "synthetic-rpc-next-token") as peer:
                 send(peer, 0, {"session_id": "private-rpc-next-session"}, "READY", 1)
                 value = presence(peer, lambda data: data["status"] == "idle")

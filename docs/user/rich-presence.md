@@ -32,6 +32,9 @@ public ID. HTTPS artwork is resolved before publication. A failed lookup has an
 explicit **Try again** action. A local preview shows the activity Cressida has
 prepared; it does not confirm what another client has received.
 
+If a delayed presence update reports an older title, Cressida re-sends the
+current local activity and keeps its own activity display in sync.
+
 ## Activity displays
 
 Activities appear beneath names in direct-message and member lists, and in the

@@ -778,6 +778,7 @@ namespace app {
     bool extendedPreference(const std::string& action);
     void rpcTick();
     void rpcClear();
+    void rpcProtectPublishedActivity(api::UserUpdates& updates) const;
     bool rpcAction(const std::string& action);
     bool rpcResult(const api::Event& event);
     void activityButton(const std::string& user, const rpc::Activity& activity, std::size_t index);

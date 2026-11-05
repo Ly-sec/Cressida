@@ -5013,7 +5013,9 @@ namespace app {
           m_roleMotion.clear();
         refreshMemberSubscription();
       } else if (event.operation == api::Operation::UserState) {
-        m_userDirectory.apply(event.users);
+        auto users = event.users;
+        rpcProtectPublishedActivity(users);
+        m_userDirectory.apply(users);
         if (!m_dmMode)
           if (const auto hidden = m_userDirectory.guildPreferences(m_guildId).hideMutedChannels)
             m_channelListPreferences.hideMuted = *hidden;

@@ -69,6 +69,12 @@ namespace app {
     m_rpc.configure({});
     m_rpcStatus.clear();
   }
+  void ClientApplication::rpcProtectPublishedActivity(api::UserUpdates& updates) const {
+    if (!m_preferences.rpcEnabled || m_rpcPublished.empty())
+      return;
+    if (auto self = updates.users.find(m_account.id); self != updates.users.end() && self->second.activities)
+      self->second.activities = m_rpcPublished;
+  }
   void ClientApplication::rpcTick() {
     if (m_demo)
       return;
@@ -966,10 +972,20 @@ namespace app {
       );
       break;
     case 2: {
+      auto stale = rpc::parseActivity("44", {{"type", 2}, {"name", "Synthetic music"}, {"details", "Older track"}});
+      require(stale.has_value(), "An older activity title is valid synthetic input");
+      api::UserUpdates stalePresence;
+      stalePresence.users[m_account.id].activities = {*stale};
+      rpcProtectPublishedActivity(stalePresence);
+      m_userDirectory.apply(stalePresence);
       require(
           !m_preferences.customActivity->fields.contains("secrets")
               && m_rpcPublished.front().fields["buttons"].size() == rpc::maximumButtons,
           "The custom editor keeps two buttons and never saves session secrets"
+      );
+      require(
+          m_userDirectory.activities(m_account.id) == m_rpcPublished,
+          "A delayed self-presence update cannot replace the locally published activity title"
       );
       require(
           m_presence.status == "dnd" && m_presence.text == "Keep this status",

@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
     {
       api::Gateway gateway(
           generation,
-          [&](std::uint64_t session, const std::string& type, const nlohmann::json&) {
+          [&](std::uint64_t session, const std::string& type, const nlohmann::json& data) {
             try {
               if (type == "READY" && session == 1) {
                 require(
@@ -54,6 +54,16 @@ int main(int argc, char** argv) {
                     "Other account generations cannot publish activities"
                 );
                 require(active->setActivities(1, {*activity}), "The active generation publishes activity");
+              } else if (type == "STALE_PRESENCE") {
+                require(
+                    active->reassertActivities(session, data["activities"]),
+                    "A stale self-presence title requests one correction"
+                );
+              } else if (type == "CURRENT_PRESENCE") {
+                require(
+                    !active->reassertActivities(session, data["activities"]),
+                    "A current self-presence title does not trigger a correction"
+                );
               } else if (type == "RPC_CLEAR") {
                 require(active->setActivities(1, {}), "Clearing activity retains ordinary presence");
               } else if (type == "RPC_RESET") {

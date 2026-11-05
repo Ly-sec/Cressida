@@ -67,6 +67,15 @@ namespace api {
         return {};
       return std::string(address) + std::string(gatewayQuery);
     }
+    bool sameActivityTitle(const rpc::Activity& expected, const rpc::Activity& observed) {
+      if (expected.application != observed.application
+          || expected.fields.value("type", 0) != observed.fields.value("type", 0))
+        return false;
+      for (const auto key : {"name", "details", "state"})
+        if (expected.fields.value(key, std::string{}) != observed.fields.value(key, std::string{}))
+          return false;
+      return true;
+    }
     struct GatewayFailure : std::runtime_error {
       using std::runtime_error::runtime_error;
     };
@@ -165,6 +174,7 @@ namespace api {
       m_presenceChosen = false;
       m_presenceRestored = false;
       m_activities.clear();
+      m_activityCorrectionVersion = 0;
       m_voiceChosen = false;
       m_streamCommands.clear();
       m_voiceGuild.clear();
@@ -191,6 +201,7 @@ namespace api {
     m_memberSearch.reset();
     m_presence = {};
     m_activities.clear();
+    m_activityCorrectionVersion = 0;
     m_presenceVersion = 0;
     m_presenceChosen = false;
     m_presenceRestored = false;
@@ -316,8 +327,27 @@ namespace api {
     if (m_activities != activities) {
       m_activities = std::move(activities);
       ++m_presenceVersion;
+      m_activityCorrectionVersion = 0;
       (void)m_wake.signal();
     }
+    return true;
+  }
+
+  bool Gateway::reassertActivities(std::uint64_t session, const nlohmann::json& observed) {
+    if (!observed.is_array() || observed.size() > rpc::maximumActivities)
+      return false;
+    const auto current = rpc::receivedActivities(observed);
+    std::lock_guard lock(m_mutex);
+    if (session != m_generation || session != m_session || m_token.empty() || m_activities.empty())
+      return false;
+    const bool currentActivitiesMatch = std::ranges::all_of(m_activities, [&](const auto& expected) {
+      return std::ranges::any_of(current, [&](const auto& actual) { return sameActivityTitle(expected, actual); });
+    });
+    if (currentActivitiesMatch || m_activityCorrectionVersion == m_presenceVersion)
+      return false;
+    ++m_presenceVersion;
+    m_activityCorrectionVersion = m_presenceVersion;
+    (void)m_wake.signal();
     return true;
   }
 

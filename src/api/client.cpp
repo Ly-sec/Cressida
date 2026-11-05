@@ -1166,6 +1166,17 @@ namespace api {
   void Client::gatewayEvent(std::uint64_t session, const std::string& type, const Json& data) {
     if (session != m_session)
       return;
+    if (type == "PRESENCE_UPDATE" && data.is_object()) {
+      std::string user;
+      if (const auto at = data.find("user_id"); at != data.end() && at->is_string())
+        user = at->get<std::string>();
+      if (const auto at = data.find("user"); at != data.end() && at->is_object())
+        if (const auto id = at->find("id"); id != at->end() && id->is_string())
+          user = id->get<std::string>();
+      const auto activities = data.find("activities");
+      if (user == m_self && activities != data.end() && activities->is_array())
+        (void)m_gateway->reassertActivities(session, *activities);
+    }
     if (type.starts_with("STREAM_")) {
       m_streams->event(session, type, data);
       return;

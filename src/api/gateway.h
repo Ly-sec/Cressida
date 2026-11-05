@@ -42,6 +42,7 @@ namespace api {
     bool setPresence(std::uint64_t session, std::string status, std::optional<std::string> customText = {});
     bool restorePresence(std::uint64_t session, Presence presence);
     bool setActivities(std::uint64_t session, std::vector<rpc::Activity> activities);
+    bool reassertActivities(std::uint64_t session, const nlohmann::json& observed);
     bool setVoice(std::uint64_t session, std::string guild, std::string channel, bool muted, bool deafened);
     bool stream(std::uint64_t session, StreamCommand command);
     void subscribe(std::string guild, std::string channel, int first, bool force = false, bool thread = false);
@@ -60,6 +61,7 @@ namespace api {
     bool m_presenceChosen = false, m_presenceRestored = false;
     std::uint64_t m_presenceVersion = 0;
     std::vector<rpc::Activity> m_activities;
+    std::uint64_t m_activityCorrectionVersion = 0;
     std::string m_voiceGuild, m_voiceChannel;
     bool m_voiceMuted = false, m_voiceDeafened = false, m_voiceChosen = false;
     std::uint64_t m_voiceVersion = 0;

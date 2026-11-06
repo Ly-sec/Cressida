@@ -61,9 +61,10 @@ play, pause, seek, adjust volume, mute or enter its expanded view. Ordinary
 videos do not start automatically.
 
 While the player is active, **Space** toggles playback, **M** toggles mute,
-**F** toggles its expanded view and **Left / Right** seeks. **Escape** exits the
-expanded view or closes the player. Background chat controls stay covered while
-a media viewer is open.
+**F** toggles its expanded view or, from the expanded view, its fullscreen
+presentation and **Left / Right** seeks. **Escape** steps back out of the
+fullscreen presentation, exits the expanded view or closes the player.
+Background chat controls stay covered while a media viewer is open.
 
 Video attachment playback is separate from calls. [Voice chat](voice.md) and
 experimental [screen sharing](screen-sharing.md) are available. Camera calls are

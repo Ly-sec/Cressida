@@ -187,8 +187,37 @@ int main() {
         "Bounded UDP reordering is accepted even across RTP sequence wrap"
     );
     for (unsigned i = 0; i < 65; ++i)
-      require(receiver.open(sender.seal(original)).has_value(), "Fresh encrypted packets advance the replay window");
-    require(!receiver.open(reordered[0]), "Old packets outside the replay window remain rejected");
+      require(receiver.open(sender.seal(original)).has_value(), "Fresh encrypted packets are accepted");
+    require(
+        receiver.open(reordered[0]).has_value(),
+        "A late packet beyond the remembered nonces is not mistaken for a replay"
+    );
+    // The server's nonce byte order is undocumented. A little-endian counter read as big-endian
+    // falls after every 256 packets, which previously rejected all audio after about five seconds.
+    RtpCipher opaque;
+    require(opaque.setKey(key), "Initialize the opaque-nonce receiver");
+    std::vector<std::uint8_t> serverHeader(rtpHeaderBytes);
+    serverHeader[0] = 0x80;
+    serverHeader[1] = 120;
+    write32(serverHeader, 8, 321);
+    const std::array<std::uint8_t, 3> serverAudio{0x44, 0x55, 0x66};
+    const auto littleEndian = [](std::uint32_t value) {
+      return (value & 0xff) << 24 | ((value >> 8) & 0xff) << 16 | ((value >> 16) & 0xff) << 8 | value >> 24;
+    };
+    for (std::uint32_t i = 0; i < 600; ++i) {
+      write16(serverHeader, 2, static_cast<std::uint16_t>(i));
+      require(
+          opaque.open(protectedPacket(serverHeader, serverAudio, littleEndian(i))).has_value(),
+          "Little-endian server counters remain accepted beyond 256 packets"
+      );
+    }
+    const auto first = protectedPacket(serverHeader, serverAudio, 7000);
+    require(opaque.open(first).has_value(), "Accept a fresh nonce after a counter reset");
+    require(!opaque.open(first), "An exact repeated server nonce is still rejected");
+    require(
+        opaque.open(protectedPacket(serverHeader, serverAudio, 6999)).has_value(),
+        "Lower unseen nonces are accepted regardless of counter direction"
+    );
     std::vector<std::uint8_t> header(20);
     header[0] = 0x91;
     header[1] = 120;

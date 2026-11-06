@@ -209,29 +209,23 @@ namespace voice::protocol {
     m_replayBits =
         std::ranges::any_of(types, [](auto type) { return type != 120; }) ? maximumMediaReplayPackets : replayBits;
   }
-  bool RtpCipher::replayAllowed(std::uint32_t ssrc, std::uint32_t counter) const {
+  bool RtpCipher::replayAllowed(std::uint32_t ssrc, std::uint32_t nonce) const {
     if (!ssrc)
       return false;
     const auto prior = m_replay.find(ssrc);
     if (prior == m_replay.end())
       return m_replay.size() < maximumParticipants;
-    if (counter > prior->second.latest)
-      return true;
-    const auto age = prior->second.latest - counter;
-    return age < m_replayBits && !prior->second.seen.test(age);
+    return !prior->second.recent.contains(nonce);
   }
-  void RtpCipher::accepted(std::uint32_t ssrc, std::uint32_t counter) {
+  void RtpCipher::accepted(std::uint32_t ssrc, std::uint32_t nonce) {
     auto& replay = m_replay[ssrc];
-    if (counter > replay.latest) {
-      const auto gap = counter - replay.latest;
-      if (gap >= m_replayBits)
-        replay.seen.reset();
-      else
-        replay.seen <<= gap;
-      replay.seen.set(0);
-      replay.latest = counter;
-    } else
-      replay.seen.set(replay.latest - counter);
+    if (!replay.recent.insert(nonce).second)
+      return;
+    replay.order.push_back(nonce);
+    if (replay.order.size() > m_replayBits) {
+      replay.recent.erase(replay.order.front());
+      replay.order.pop_front();
+    }
   }
   std::vector<std::uint8_t> RtpCipher::seal(const Packet& packet) {
     if (!m_initialized

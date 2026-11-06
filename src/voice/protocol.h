@@ -1,15 +1,16 @@
 #pragma once
 
 #include <array>
-#include <bitset>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 namespace voice::protocol {
@@ -86,15 +87,16 @@ namespace voice::protocol {
     std::vector<std::uint8_t> openControl(std::span<const std::uint8_t> packet);
 
   private:
+    // The server's nonce is opaque: its byte order and per-SSRC ordering are undocumented.
     struct Replay {
-      std::uint32_t latest = 0;
-      std::bitset<maximumMediaReplayPackets> seen;
+      std::deque<std::uint32_t> order;
+      std::unordered_set<std::uint32_t> recent;
     };
     std::array<std::uint8_t, keyBytes> m_key{};
     std::map<std::uint32_t, Replay> m_replay;
     std::array<bool, 128> m_payloadTypes{};
-    bool replayAllowed(std::uint32_t ssrc, std::uint32_t counter) const;
-    void accepted(std::uint32_t ssrc, std::uint32_t counter);
+    bool replayAllowed(std::uint32_t ssrc, std::uint32_t nonce) const;
+    void accepted(std::uint32_t ssrc, std::uint32_t nonce);
     std::uint64_t m_counter = 0;
     bool m_initialized = false;
     std::size_t m_replayBits = 64;

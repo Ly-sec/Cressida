@@ -3,6 +3,7 @@
 #include "voice/media.h"
 #include "voice/protocol.h"
 
+#include <bitset>
 #include <deque>
 #include <map>
 

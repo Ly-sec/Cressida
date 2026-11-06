@@ -346,7 +346,10 @@ int main() {
             && !edit->body.contains("attachments"),
         "Text edits preserve attachments and multiline content"
     );
-    require(edit->body["allowed_mentions"]["parse"].empty(), "Editing must not unexpectedly ping users or roles");
+    require(
+        edit->body["allowed_mentions"]["parse"] == json::array({"users", "roles", "everyone"}),
+        "Edits parse mentions normally so the service rebuilds mention data, unchanged mentions are not re-pinged"
+    );
     require(
         interactionRequest({.kind = Kind::EditMessage, .channel = "10", .message = "20", .text = ""}).has_value(),
         "Allow clearing the caption of an attached image"

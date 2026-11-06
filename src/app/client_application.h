@@ -398,6 +398,7 @@ namespace app {
     void videoRelease();
     void toggleVideo();
     void setVideoExpanded(bool enabled);
+    void setVideoFullscreen(bool enabled);
     void demoVideoStep();
     void tick();
     void closeToTray();
@@ -1279,7 +1280,7 @@ namespace app {
     GlesFramebuffer m_videoTarget;
     std::string m_videoSource;
     bool m_videoExpanded = false, m_videoVisible = false, m_videoWasPlaying = false, m_videoPlayRequested = false;
-    bool m_videoPreviousFullscreen = false;
+    bool m_videoPreviousFullscreen = false, m_videoFullscreen = false;
     int m_videoDrag = 0;
     float m_videoScrub = 0;
     Hit m_videoSeek{}, m_videoVolume{}, m_videoBounds{};

@@ -2105,6 +2105,7 @@ namespace app {
                    .roleMention = [this](
                                       auto role
                                   ) { return m_roleDirectory.roleName(m_dmMode ? "" : m_guildId, std::string(role)); },
+                   .userMention = [this](auto id, auto name) { return userName(std::string(id), std::string(name)); },
                    .twelveHourClock = m_preferences.twelveHourClock,
                    .showEmbedIcons = m_preferences.showImages,
                    .serverInvite = m_preferences.showEmbeds && !blockedMessage(message) && !message.deleted
@@ -2147,7 +2148,8 @@ namespace app {
                    .channelMention = [this](auto guild, auto channel) { return channelMention(guild, channel); },
                    .roleMention = [this](
                                       auto role
-                                  ) { return m_roleDirectory.roleName(m_dmMode ? "" : m_guildId, std::string(role)); }}
+                                  ) { return m_roleDirectory.roleName(m_dmMode ? "" : m_guildId, std::string(role)); },
+                   .userMention = [this](auto id, auto name) { return userName(std::string(id), std::string(name)); }}
               );
             }
             cached.reply = displayedReply

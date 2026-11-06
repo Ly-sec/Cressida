@@ -898,8 +898,8 @@ namespace api {
           return {};
         request.method = "PATCH";
         request.body = messageBody(action.text);
-        // Editing existing content must not send fresh mention notifications.
-        request.body["allowed_mentions"]["parse"] = nlohmann::json::array();
+        // Edits keep default mention parsing: the service rebuilds mention data
+        // from the content, and suppressing it would leave mentions unresolved.
       } else
         request.method = "DELETE";
       break;

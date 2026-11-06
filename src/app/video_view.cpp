@@ -190,7 +190,8 @@ namespace app {
       }
       iconButton(
           parent, {x + width - 38, controlsY + Style::spaceXs, 34, 34, Action::ExpandVideo, source},
-          expanded ? "arrows-minimize" : "arrows-maximize", expanded ? "Exit expanded player" : "Expand video"
+          expanded ? "arrows-minimize" : "arrows-maximize",
+          m_videoFullscreen ? "Exit fullscreen" : expanded ? "Exit expanded player" : "Expand video"
       );
       if (state.loading || state.buffering)
         label(
@@ -205,6 +206,10 @@ namespace app {
     std::erase_if(m_hits, [](const auto& hit) {
       return hit.action != Action::Close && hit.action != Action::Minimize && hit.action != Action::Maximize;
     });
+    if (m_videoFullscreen) {
+      drawVideo(root, 0, 36, width, height - 36, m_videoSource, m_videoPosters[m_videoSource], true);
+      return;
+    }
     Color backdrop = rgbHex(0x08090D);
     backdrop.a = .97F;
     rectangle(root, 0, 36, width, height - 36, backdrop);
@@ -236,7 +241,7 @@ namespace app {
       m_controlInput.setFocus(nullptr);
       m_focusedInput.clear();
       m_fieldFocused = false;
-      setVideoExpanded(!m_videoExpanded);
+      m_videoFullscreen ? setVideoFullscreen(false) : setVideoExpanded(!m_videoExpanded);
       break;
     case Action::CloseVideo:
       closeVideo();
@@ -281,9 +286,9 @@ namespace app {
         || (!m_videoExpanded && (!m_focusedInput.empty() || !m_videoBounds.contains(m_pointerX, m_pointerY))))
       return false;
     if (key.symbol == XKB_KEY_Escape)
-      setVideoExpanded(false);
+      m_videoFullscreen ? setVideoFullscreen(false) : setVideoExpanded(false);
     else if (key.symbol == XKB_KEY_f || key.symbol == XKB_KEY_F)
-      setVideoExpanded(!m_videoExpanded);
+      m_videoExpanded ? setVideoFullscreen(!m_videoFullscreen) : setVideoExpanded(true);
     else if (key.symbol == XKB_KEY_space)
       toggleVideo();
     else if (key.symbol == XKB_KEY_Left)
@@ -314,8 +319,16 @@ namespace app {
       m_videoPreviousFullscreen = m_window.fullscreen();
       enterMediaViewer();
     }
+    m_videoFullscreen = false;
     m_videoExpanded = enabled;
     m_window.setFullscreen(enabled || m_videoPreviousFullscreen);
+    m_videoDrag = 0;
+    m_window.invalidate();
+  }
+  void ClientApplication::setVideoFullscreen(bool enabled) {
+    if (enabled == m_videoFullscreen || !m_videoExpanded)
+      return;
+    m_videoFullscreen = enabled;
     m_videoDrag = 0;
     m_window.invalidate();
   }

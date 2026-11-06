@@ -191,7 +191,9 @@ namespace app {
       iconButton(
           parent, {x + width - 38, controlsY + Style::spaceXs, 34, 34, Action::ExpandVideo, source},
           expanded ? "arrows-minimize" : "arrows-maximize",
-          m_videoFullscreen ? "Exit fullscreen" : expanded ? "Exit expanded player" : "Expand video"
+          m_videoFullscreen ? "Exit fullscreen"
+              : expanded    ? "Exit expanded player"
+                            : "Expand video"
       );
       if (state.loading || state.buffering)
         label(

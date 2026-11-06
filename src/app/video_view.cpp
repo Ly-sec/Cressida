@@ -151,9 +151,9 @@ namespace app {
       const float progress = state.duration > 0 ? std::clamp(float(state.position / state.duration), 0.0F, 1.0F) : 0;
       const auto shown = m_videoDrag == 1 ? m_videoScrub : progress;
       const float trackWidth = width - 24;
-      rectangle(parent, x + Style::spaceMd, controlsY - Style::spaceXs, trackWidth, 4, raised, Style::radiusXs);
-      rectangle(parent, x + Style::spaceMd, controlsY - Style::spaceXs, trackWidth * shown, 4, accent, Style::radiusXs);
-      rectangle(parent, x + Style::spaceSm + trackWidth * shown, controlsY - Style::spaceCompact, 8, 8, accent, 4);
+      rectangle(parent, x + Style::spaceMd, controlsY - Style::spaceXs, trackWidth, 8, raised, Style::radiusXs);
+      rectangle(parent, x + Style::spaceMd, controlsY - Style::spaceXs, trackWidth * shown, 8, accent, Style::radiusXs);
+      rectangle(parent, x + Style::spaceSm + trackWidth * shown, controlsY - Style::spaceCompact, 14, 14, accent, 4);
       m_videoSeek = {
           gx + Style::spaceDense,
           oy + controlsY - (Style::spaceDense + Style::borderWidth),
@@ -164,7 +164,7 @@ namespace app {
       };
       m_hits.push_back(m_videoSeek);
       iconButton(
-          parent, {x + Style::spaceCompact, controlsY + Style::spaceXs, 28, 28, Action::PauseVideo, source},
+          parent, {x + Style::spaceCompact, controlsY + Style::spaceXs, 34, 34, Action::PauseVideo, source},
           state.playing ? "player-pause-filled" : "player-play-filled", state.playing ? "Pause" : "Play"
       );
       label(
@@ -173,23 +173,23 @@ namespace app {
           videoTime((m_videoDrag == 1 ? m_videoScrub * state.duration : state.position))
               + " / "
               + videoTime(state.duration),
-          Style::fontSizeMini, foreground
+          Style::fontSizeDescription, foreground
       );
       if (width >= 310) {
         iconButton(
-            parent, {x + width - 140, controlsY + Style::spaceXs, 28, 28, Action::MuteVideo, source},
+            parent, {x + width - 140, controlsY + Style::spaceXs, 34, 34, Action::MuteVideo, source},
             state.muted || state.volume == 0 ? "volume-off" : "volume", state.muted ? "Unmute" : "Mute"
         );
-        rectangle(parent, x + width - 104, controlsY + Style::spaceLg, 54, 3, raised, 1.5);
+        rectangle(parent, x + width - 104, controlsY + Style::spaceLg, 54, 6, raised, 1.5);
         rectangle(
-            parent, x + width - 104, controlsY + Style::spaceLg, 54 * (state.muted ? 0 : state.volume / 100), 3, accent,
+            parent, x + width - 104, controlsY + Style::spaceLg, 54 * (state.muted ? 0 : state.volume / 100), 8, accent,
             1.5
         );
         m_videoVolume = {gx + width - 107, oy + controlsY + Style::spaceCompact, 60, 24, Action::VolumeVideo, source};
         m_hits.push_back(m_videoVolume);
       }
       iconButton(
-          parent, {x + width - 38, controlsY + Style::spaceXs, 28, 28, Action::ExpandVideo, source},
+          parent, {x + width - 38, controlsY + Style::spaceXs, 34, 34, Action::ExpandVideo, source},
           expanded ? "arrows-minimize" : "arrows-maximize", expanded ? "Exit expanded player" : "Expand video"
       );
       if (state.loading || state.buffering)
@@ -326,7 +326,7 @@ namespace app {
     };
     auto click = [&](Action action) {
       const auto at = std::ranges::find_if(m_hits, [&](const Hit& hit) {
-        return hit.action == action && (action != Action::PauseVideo || hit.width <= 28);
+        return hit.action == action && (action != Action::PauseVideo || hit.width <= 34);
       });
       require(at != m_hits.end(), "Video control must have a hit region");
       const auto hit = *at;

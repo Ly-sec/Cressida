@@ -478,7 +478,12 @@ namespace api {
           || upload.filename.size() > 255
           || (upload.filename.find_first_of("/\\\r\n") != std::string::npos
               || std::ranges::any_of(upload.filename, [](unsigned char c) { return c < 32 || c == 127; }))
-          || (upload.mime != "image/png" && upload.mime != "image/jpeg" && upload.mime != "image/webp"))
+          || (upload.voice ? uploads.size() != 1
+                      || upload.mime != "audio/ogg"
+                      || !validVoiceMessageMetadata(*upload.voice)
+                      || upload.bytes.size() < 4
+                      || std::string_view(reinterpret_cast<const char*>(upload.bytes.data()), 4) != "OggS"
+                           : upload.mime != "image/png" && upload.mime != "image/jpeg" && upload.mime != "image/webp"))
         return false;
       total += upload.bytes.size();
     }
@@ -625,6 +630,11 @@ namespace api {
             reply.available = original->is_object() || reply.deleted;
             if (original->is_object()) {
               reply.content = text(*original, "content");
+              if (reply.content.empty()
+                  && original->contains("flags")
+                  && (*original)["flags"].is_number_unsigned()
+                  && ((*original)["flags"].get<std::uint64_t>() & messageVoice))
+                reply.content = "Voice message";
               if (const auto mentions = original->find("mentions"); mentions != original->end())
                 reply.mentions = messageMentions(*mentions);
               if (reply.content.empty() && original->contains("sticker_items")) {
@@ -682,6 +692,8 @@ namespace api {
             text(item, "id"), text(item, "filename", "Attachment"), text(item, "url"), text(item, "content_type")
         };
         attachment.image = parseMedia(item);
+        if (attachment.contentType.starts_with("audio/"))
+          attachment.voice = parseVoiceMessageMetadata(item);
         if (!attachment.contentType.starts_with("image/") && attachment.image.width == 0)
           attachment.image.url.clear();
         patch.attachments->push_back(std::move(attachment));
@@ -890,6 +902,7 @@ namespace api {
           && result.back().buttons.empty()
           && result.back().stickers.empty()
           && !result.back().poll
+          && !(result.back().flags & messageVoice)
           && !result.back().forwarded)
         result.back().content = "[System message]";
       if (const auto it = item.find("author"); it != item.end() && it->is_object()) {

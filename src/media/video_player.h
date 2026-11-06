@@ -20,7 +20,7 @@ namespace media {
   std::shared_ptr<VideoInput> memoryVideoInput(std::span<const std::uint8_t> bytes);
   struct VideoState {
     bool loading = false, playing = false, buffering = false, ended = false, muted = false, hasAudio = false;
-    double position = 0, duration = 0, volume = 25;
+    double position = 0, duration = 0, volume = 25, speed = 1;
     int width = 0, height = 0;
     std::string error;
   };
@@ -41,6 +41,7 @@ namespace media {
     void pause(bool paused);
     void seek(double seconds);
     void volume(double percent);
+    void speed(double rate);
     void mute(bool muted);
     bool render(unsigned framebuffer, int width, int height, bool force = false);
     void presented();

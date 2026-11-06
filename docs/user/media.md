@@ -16,6 +16,9 @@ Apps can request a local file through an attachment argument in a
 [slash command](slash-commands.md). These files use the inline command arguments
 and desktop file chooser.
 
+To record microphone audio, use [Voice messages](voice-messages.md). This
+separate recorder does not enable arbitrary audio-file uploads.
+
 ## Randomize outgoing filenames
 
 Open settings, then **Cressida > General > Uploads** and enable **Randomize

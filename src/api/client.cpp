@@ -978,6 +978,7 @@ namespace api {
       std::vector<std::string> stickers, std::string nonce, std::shared_ptr<std::atomic_bool> revoked,
       std::optional<PollDraft> poll
   ) {
+    const bool voice = uploads.size() == 1 && uploads.front().voice.has_value();
     if ((revoked && revoked->load())
         || !validSnowflake(id)
         || (!nonce.empty() && !validSnowflake(nonce))
@@ -987,6 +988,7 @@ namespace api {
         || content.size() > 8000
         || utf8Length(content) > 2000
         || !validUploads(uploads)
+        || (voice && (!content.empty() || reply || !stickers.empty() || poll))
         || (reply && (!validSnowflake(reply->message) || reply->channel != id)))
       return false;
     Command command{Operation::Send, m_session, id, std::move(content), {}, std::move(uploads)};
@@ -3089,10 +3091,14 @@ namespace api {
           body = messageBody(command.content, command.reply, command.stickers, command.nonce);
           if (command.poll)
             body["poll"] = pollCreateBody(*command.poll);
-          if (!command.uploads.empty()) {
+          if (command.uploads.size() == 1 && command.uploads.front().voice) {
+            body = voiceMessageBody(command.uploads.front(), command.nonce);
+          } else if (!command.uploads.empty()) {
             body["attachments"] = Json::array();
-            for (std::size_t i = 0; i < command.uploads.size(); ++i)
-              body["attachments"].push_back({{"id", i}, {"filename", command.uploads[i].filename}});
+            for (std::size_t i = 0; i < command.uploads.size(); ++i) {
+              Json attachment{{"id", i}, {"filename", command.uploads[i].filename}};
+              body["attachments"].push_back(std::move(attachment));
+            }
           }
           break;
         default:

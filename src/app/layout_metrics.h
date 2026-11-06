@@ -25,6 +25,40 @@ namespace app::layout {
     static constexpr float glyph = Style::glyphSizeSmall;
     static constexpr float margin = Style::spaceSm;
   };
+  struct VoiceMessage {
+    static constexpr float padding = Style::spaceSm;
+    static constexpr float height = Style::controlHeight + padding * 2;
+    static constexpr float rowGap = Style::spaceSm;
+    static constexpr float gap = Style::spaceSm;
+    static constexpr float button = Style::controlHeight;
+    static constexpr float timeWidth = Style::spaceGroup;
+    static constexpr float waveformWidth = Style::spaceGroup + Style::spaceLg;
+    static constexpr float width = padding * 2 + button * 3 + timeWidth + waveformWidth + gap * 4;
+    static constexpr float waveformHeight = Style::glyphSizeLarge;
+    static constexpr float barWidth = Style::spaceXxs;
+    static constexpr float minimumBarHeight = Style::spaceXs;
+    static constexpr float volumeHeight = Style::spaceGroup * 3;
+  };
+  struct VoiceMessageFrames {
+    Frame card, play, waveform, time, speed, volume;
+  };
+  inline VoiceMessageFrames voiceMessageFrames(float available) {
+    using V = VoiceMessage;
+    const float width = std::min(available, V::width);
+    const float waveX = V::padding + V::button + V::gap;
+    const bool controls = width >= V::padding * 2 + V::button * 3 + V::timeWidth + V::gap * 4;
+    const float volumeX = width - V::padding - (controls ? V::button : 0);
+    const float speedX = controls ? volumeX - V::gap - V::button : volumeX;
+    const float timeX = std::max(waveX, speedX - V::gap - V::timeWidth);
+    return {
+        {0, 0, width, V::height},
+        {V::padding, V::padding, V::button, V::button},
+        {waveX, (V::height - V::waveformHeight) / 2, std::max(0.0F, timeX - waveX - V::gap), V::waveformHeight},
+        {timeX, V::padding, std::max(0.0F, speedX - V::gap - timeX), V::button},
+        {speedX, V::padding, controls ? V::button : 0, V::button},
+        {volumeX, V::padding, controls ? V::button : 0, V::button}
+    };
+  }
   struct PollCard {
     static constexpr float maximumWidth = Style::profileCardWidth + Style::spaceSection * 5;
     static constexpr float padding = Style::spaceLg;
@@ -253,6 +287,12 @@ namespace app::layout {
     };
   }
   struct Composer {
+    static constexpr float actionSize = Style::controlHeightSm;
+    static constexpr float actionStep = actionSize + Style::spaceXs;
+    static constexpr float actionRightInset = Style::spaceXl + Style::spaceCompact;
+    static Frame actionFrame(float right, float top, int index) {
+      return {right - actionRightInset - actionSize - actionStep * index, top, actionSize, actionSize};
+    }
     static constexpr float bottomInset = Floating::inset;
     static constexpr float minimumTextHeight = Style::fontSizeBody + Style::spaceSm;
     static constexpr float verticalPadding = Style::spaceXl;
@@ -265,6 +305,28 @@ namespace app::layout {
     }
     static float reasonReserve(float height) { return height > 0 ? height + Style::spaceSm : 0; }
   };
+  struct VoiceRecorder {
+    static constexpr float padding = Style::spaceSm;
+    static constexpr float gap = Style::spaceSm;
+    static constexpr float button = Composer::actionSize;
+    static constexpr float height = Composer::minimumHeight;
+  };
+  struct VoiceRecorderFrames {
+    Frame discard, status, record, send;
+  };
+  inline VoiceRecorderFrames voiceRecorderFrames(Frame frame) {
+    using R = VoiceRecorder;
+    const float y = frame.y + (R::height - R::button) / 2;
+    const float send = frame.x + frame.width - R::padding - R::button;
+    const float record = send - R::gap - R::button;
+    const float status = frame.x + R::padding + R::button + R::gap;
+    return {
+        {frame.x + R::padding, y, R::button, R::button},
+        {status, y, std::max(0.0F, record - R::gap - status), R::button},
+        {record, y, R::button, R::button},
+        {send, y, R::button, R::button}
+    };
+  }
   struct ReadOnlyComposerFrames {
     Frame input, reason;
   };

@@ -2,6 +2,7 @@
 #include "api/cosmetics.h"
 #include "api/polls.h"
 #include "api/stickers.h"
+#include "api/voice_messages.h"
 
 #include <cstdint>
 #include <map>
@@ -15,6 +16,7 @@ namespace api {
 
   inline constexpr std::uint64_t messageSuppressEmbeds = 1ULL << 2;
   inline constexpr std::uint64_t messageEphemeral = 1ULL << 6;
+  inline constexpr std::uint64_t messageVoice = 1ULL << 13;
 
   struct GuildTag {
     std::string guild, tag, badge;
@@ -175,6 +177,7 @@ namespace api {
   struct Attachment {
     std::string id, filename, url, contentType;
     Media image;
+    std::optional<VoiceMessageMetadata> voice;
     bool operator==(const Attachment&) const = default;
   };
   struct EmbedField {
@@ -216,6 +219,7 @@ namespace api {
   struct Upload {
     std::string filename, mime;
     std::vector<unsigned char> bytes;
+    std::optional<VoiceMessageMetadata> voice;
   };
   constexpr std::size_t maxUploadBytes = 20 * 1024 * 1024;
   bool validUploads(const std::vector<Upload>& uploads);

@@ -1618,7 +1618,16 @@ namespace app {
         return AttachmentVisual{attachment.image, {}};
       return {};
     };
-    for (std::size_t attachmentIndex = 0; attachmentIndex < message.attachments.size();) {
+    if (message.flags & api::messageVoice) {
+      result.voice = layout::voiceMessageFrames(width);
+      for (auto* frame :
+           {&result.voice->card, &result.voice->play, &result.voice->waveform, &result.voice->time,
+            &result.voice->speed, &result.voice->volume})
+        frame->y += y + layout::VoiceMessage::rowGap / 2;
+      y += layout::VoiceMessage::height + layout::VoiceMessage::rowGap;
+    }
+    for (std::size_t attachmentIndex = (message.flags & api::messageVoice) ? message.attachments.size() : 0;
+         attachmentIndex < message.attachments.size();) {
       const auto& attachment = message.attachments[attachmentIndex];
       std::vector<AttachmentVisual> media;
       std::vector<float> aspects;

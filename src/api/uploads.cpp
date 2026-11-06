@@ -1,8 +1,11 @@
 #include "api/uploads.h"
 
+#include "api/actions.h"
+
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <sys/random.h>
 
@@ -62,9 +65,21 @@ namespace api {
       uploads[i].filename = std::move(names[i]);
     return true;
   }
+  nlohmann::json voiceMessageBody(const Upload& upload, const std::string& nonce) {
+    if (!upload.voice || !validUploads({upload}) || !validSnowflake(nonce))
+      throw std::runtime_error("Invalid voice message upload");
+    auto body = messageBody("", {}, {}, nonce);
+    body.erase("content");
+    body["flags"] = messageVoice;
+    auto attachment = voiceMessageMetadataBody(*upload.voice);
+    attachment["id"] = 0;
+    attachment["filename"] = upload.filename;
+    body["attachments"] = nlohmann::json::array({std::move(attachment)});
+    return body;
+  }
   MessageMime makeMessageMime(CURL* curl, std::string_view payload, const std::vector<Upload>& uploads) {
     if (!validUploads(uploads) || uploads.empty())
-      throw std::runtime_error("Invalid image attachments");
+      throw std::runtime_error("Invalid message attachments");
     MessageMime mime(curl_mime_init(curl), curl_mime_free);
     if (!mime)
       throw std::runtime_error("Could not allocate image upload");

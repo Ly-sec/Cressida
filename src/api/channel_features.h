@@ -26,6 +26,7 @@ namespace api {
     inline constexpr std::uint64_t createPrivateThreads = 1ULL << 36, useExternalStickers = 1ULL << 37;
     inline constexpr std::uint64_t sendMessagesInThreads = 1ULL << 38, moderateMembers = 1ULL << 40;
     inline constexpr std::uint64_t createGuildExpressions = 1ULL << 43, createEvents = 1ULL << 44;
+    inline constexpr std::uint64_t sendVoiceMessages = 1ULL << 46;
     inline constexpr std::uint64_t sendPolls = 1ULL << 49, pinMessages = 1ULL << 51;
 
     // Server-scope check: every requested bit, with Administrator granting all.

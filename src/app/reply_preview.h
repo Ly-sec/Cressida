@@ -27,7 +27,9 @@ namespace app {
     reply.mentions = original->mentions;
     reply.available = true;
     if (reply.content.empty()) {
-      if (!original->stickers.empty())
+      if (original->flags & api::messageVoice)
+        reply.content = "Voice message";
+      else if (!original->stickers.empty())
         reply.content = "Sticker: " + original->stickers.front().name;
       else if (!original->attachments.empty())
         reply.content = "Attachment: " + original->attachments.front().filename;

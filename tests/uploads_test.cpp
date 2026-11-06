@@ -80,6 +80,20 @@ int main(int argc, char** argv) {
     curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &code);
     if (status != CURLE_OK || code != 200 || response != "ok")
       throw std::runtime_error("Multipart message upload was not accepted by the fixture");
+    const api::Upload recording{
+        "voice-message.ogg",
+        "audio/ogg",
+        {'O', 'g', 'g', 'S', 0, 10, 255},
+        api::VoiceMessageMetadata{1.25, {0, 128, 255}}
+    };
+    auto voiceMime =
+        api::makeMessageMime(curl.get(), api::voiceMessageBody(recording, "123456790").dump(), {recording});
+    response.clear();
+    curl_easy_setopt(curl.get(), CURLOPT_MIMEPOST, voiceMime.get());
+    const auto voiceStatus = curl_easy_perform(curl.get());
+    curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &code);
+    if (voiceStatus != CURLE_OK || code != 200 || response != "ok")
+      throw std::runtime_error("Multipart voice upload was not accepted by the fixture");
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;

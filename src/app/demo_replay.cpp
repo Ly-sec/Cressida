@@ -512,6 +512,8 @@ namespace app {
       demoPermissionsStep();
     if (m_demo && m_demoOverlay.starts_with("polls-cycle") && m_demoInteractionStep < pollReplayFrames)
       demoPollStep();
+    if (m_demo && m_demoOverlay.starts_with("voice-messages-cycle") && m_demoInteractionStep < voiceMessageReplaySteps)
+      demoVoiceMessageStep();
     if (m_demo && m_demoOverlay.starts_with("outgoing-cycle") && m_demoInteractionStep < outgoingReplayFrames)
       demoOutgoingStep();
     if (m_demo && m_demoOverlay.starts_with("server-access-cycle") && m_demoInteractionStep < serverAccessReplayFrames)
@@ -918,7 +920,8 @@ namespace app {
             || std::string_view(view) == "history-cycle"
             || std::string_view(view) == "video-cycle");
     return (
-        m_demo && view && std::string_view(view).starts_with("polls-cycle")                 ? pollReplayFrames
+        m_demo && view && std::string_view(view).starts_with("voice-messages-cycle")        ? 512
+            : m_demo && view && std::string_view(view).starts_with("polls-cycle")           ? pollReplayFrames
             : m_demo && view && std::string_view(view).starts_with("inbox-cycle")           ? inboxReplayFrames
             : m_demo && view && std::string_view(view).starts_with("search-cycle")          ? searchReplayFrames
             : m_demo && view && std::string_view(view).starts_with("server-access-cycle")   ? serverAccessReplayFrames
@@ -1003,6 +1006,8 @@ namespace app {
   }
 
   void ClientApplication::demoVerifyCompletion() const {
+    if (m_demoOverlay.starts_with("voice-messages-cycle") && m_demoInteractionStep != voiceMessageReplaySteps)
+      throw std::runtime_error("Voice message replay did not finish");
     if (m_demoOverlay.starts_with("polls-cycle") && m_demoInteractionStep != pollReplayFrames)
       throw std::runtime_error("Poll replay did not finish");
     if (m_demoOverlay.starts_with("login-cycle") && m_demoInteractionStep != loginReplayFrames)

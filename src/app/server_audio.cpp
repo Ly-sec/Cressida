@@ -31,7 +31,7 @@ namespace app {
         return;
       input = media::memoryVideoInput(bytes);
     } else
-      input = api::videoSource("https://cdn.discordapp.com/soundboard-sounds/" + sound);
+      input = api::videoSource("https://cdn.discordapp.com/soundboard-sounds/" + sound, api::MediaSourceKind::OggAudio);
     if (!input)
       return;
     m_soundPreviewSource = sound;

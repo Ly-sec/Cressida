@@ -45,24 +45,35 @@ namespace app {
       std::vector<api::Sticker> previews, bool consumeDraft, std::optional<api::Gif> gif,
       std::optional<api::PollDraft> poll
   ) {
+    const bool voice = uploads.size() == 1 && uploads.front().voice.has_value();
     if (!canSendToThread())
       return false;
     if ((!m_connected && !m_demo)
         || m_channelId.empty()
-        || (m_demo && !m_demoOverlay.starts_with("outgoing-cycle") && !m_demoOverlay.starts_with("polls-cycle")))
+        || (m_demo
+            && !m_demoOverlay.starts_with("outgoing-cycle")
+            && !m_demoOverlay.starts_with("polls-cycle")
+            && !m_demoOverlay.starts_with("voice-messages-cycle")))
       return false;
-    if (!uploads.empty() && !messageActionAllowed(can::attachFiles)) {
+    if (voice && !canRecordVoiceMessage()) {
+      m_status = "You can no longer send voice messages in this channel.";
+      return false;
+    }
+    if (!voice && !uploads.empty() && !messageActionAllowed(can::attachFiles)) {
       m_status = "You do not have permission to attach files in this channel.";
       return false;
     }
     if (poll && (!canCreatePoll() || !api::pollDraftError(*poll).empty()))
       return false;
     std::size_t retained = 0, retainedTextures = 0, submittedTextures = 0;
-    for (const auto& [_, pending] : m_pendingSends)
+    for (const auto& [_, pending] : m_pendingSends) {
+      if (pending.voice)
+        retained += pending.voice->bytes.size();
       for (const auto& image : pending.images) {
         retained += image.upload.bytes.size();
         retainedTextures += image.texture.allocationBytes;
       }
+    }
     if (consumeDraft)
       for (const auto& image : m_attachments[m_channelId])
         submittedTextures += image.texture.allocationBytes;
@@ -76,7 +87,7 @@ namespace app {
     }
     const auto nonce = outgoingNonce();
     const auto reply =
-        !poll && m_replies.contains(m_channelId) ? std::optional(m_replies.at(m_channelId)) : std::nullopt;
+        !poll && !voice && m_replies.contains(m_channelId) ? std::optional(m_replies.at(m_channelId)) : std::nullopt;
     const auto revoked = std::make_shared<std::atomic_bool>(false);
     if (!m_demo && !m_client.send(m_channelId, content, uploads, reply, stickers, nonce, revoked, poll)) {
       m_status = "Could not queue this message. Check its length and attachments.";
@@ -86,6 +97,8 @@ namespace app {
     pending.guild = m_dmMode ? "" : m_guildId;
     pending.revoked = revoked;
     pending.poll = poll;
+    if (voice)
+      pending.voice = uploads.front();
     pending.composer = consumeDraft;
     pending.preview = {
         .id = "pending:" + nonce,
@@ -101,6 +114,12 @@ namespace app {
       for (std::size_t i = 0; i < poll->answers.size(); ++i)
         preview.answers.push_back({.id = static_cast<int>(i + 1), .text = poll->answers[i]});
       pending.preview.poll = std::move(preview);
+    }
+    if (voice) {
+      pending.preview.flags |= api::messageVoice;
+      pending.preview.attachments.push_back(
+          {.filename = uploads.front().filename, .contentType = uploads.front().mime, .voice = uploads.front().voice}
+      );
     }
     pending.preview.nonce = nonce;
     pending.preview.authorTag = m_account.guildTag;
@@ -134,7 +153,7 @@ namespace app {
         input->second->setValue("");
       closeCompletion();
     }
-    if (!poll)
+    if (!poll && !voice)
       m_replies.erase(m_channelId);
     m_pendingSends.emplace(nonce, std::move(pending));
     m_sending = true;
@@ -166,6 +185,7 @@ namespace app {
         m_retiredImages.push_back(image.texture);
     }
     pending.images.clear();
+    pending.voice.reset();
     m_messageLayouts.erase(pending.preview.id);
   }
 
@@ -185,7 +205,8 @@ namespace app {
       const auto permissions = serverChannelPermissions(pending.guild, pending.preview.channelId);
       if (channel
           && api::messageWriteAccess(*channel, permissions) == api::MessageWriteAccess::Allowed
-          && (!pending.poll || (permissions && (*permissions & api::permission::sendPolls))))
+          && (!pending.poll || (permissions && (*permissions & api::permission::sendPolls)))
+          && (!pending.voice || channelCan(pending.guild, pending.preview.channelId, can::sendVoiceMessage)))
         continue;
       pending.revoked->store(true);
       pending.completed = true;
@@ -206,6 +227,8 @@ namespace app {
       return;
     auto& pending = found->second;
     if (pending.poll && !message.poll)
+      return;
+    if (pending.voice && !(message.flags & api::messageVoice))
       return;
     if (message.reply
         && !message.reply->available
@@ -249,6 +272,7 @@ namespace app {
           || message.authorId != m_account.id
           || !api::validSnowflake(message.id)
           || (pending.poll && !message.poll)
+          || (pending.voice && !(message.flags & api::messageVoice))
           || (!message.nonce.empty() && message.nonce != event.nonce);
     });
     pending.completed = true;
@@ -290,6 +314,17 @@ namespace app {
         || !found->second.confirmed.empty()
         || found->second.preview.channelId != m_channelId)
       return;
+    if (found->second.voice) {
+      if (!m_voiceMessageChannel.empty() || !m_dialogKind.empty() || !canRecordVoiceMessage()) {
+        m_status = "Discard the current recording or restore channel access before restoring this recording.";
+        return;
+      }
+      openVoiceMessage(false);
+      m_voiceMessageDraft = std::move(found->second.voice);
+      releaseOutgoing(found->second);
+      m_pendingSends.erase(found);
+      return;
+    }
     if (found->second.poll) {
       if (m_pollEditor || !canCreatePoll()) {
         m_status = "Close the current poll or restore channel access before restoring this poll.";

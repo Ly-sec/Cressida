@@ -217,6 +217,7 @@ namespace app {
           && message->webhookId.empty()
           && !message->forwarded
           && !message->poll
+          && !(message->flags & api::messageVoice)
           && (message->stickers.empty() || !message->content.empty())
           && (message->type == 0 || message->type == 19)
           && !(message->flags & 64))
@@ -951,7 +952,7 @@ namespace app {
     m_dialogAction = request;
   }
   void ClientApplication::contextAction(Action action) {
-    if (action == Action::CreatePoll || action == Action::PasteClipboard) {
+    if (action == Action::CreatePoll || action == Action::RecordVoiceMessage || action == Action::PasteClipboard) {
       const auto channel = m_contextChannel;
       closeContext();
       if (channel == m_channelId)
@@ -1280,6 +1281,7 @@ namespace app {
     m_window.invalidate();
   }
   void ClientApplication::clearInteractions() {
+    clearVoiceMessage();
     m_scrolling.stop(m_dmProfile.scroll);
     m_dmProfile = {};
     m_dmDemoAction.reset();

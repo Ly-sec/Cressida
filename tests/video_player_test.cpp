@@ -121,8 +121,13 @@ int main(int argc, char** argv) {
     player.seek(1.8);
     require(pump([&] { return std::abs(player.state().position - 1.8) < .15; }), "Seek while paused");
     player.volume(35);
+    player.speed(1.5);
     player.mute(true);
-    require(pump([&] { return player.state().muted && player.state().volume == 35; }), "Volume and mute controls");
+    require(
+        pump([&] { return player.state().muted && player.state().volume == 35 && player.state().speed == 1.5; }),
+        "Volume, mute and playback speed controls"
+    );
+    player.speed(1);
     player.pause(false);
     require(pump([&] { return player.state().position > 2; }), "Resume at the seek position");
     require(pump([&] { return player.state().ended; }), "Videos end without looping as GIFs");

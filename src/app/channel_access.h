@@ -37,6 +37,7 @@ namespace app {
     inline bool addReaction(const ChannelGrant& g) { return g.allows(p::addReactions | p::readMessageHistory); }
     inline bool joinReaction(const ChannelGrant& g) { return g.allows(p::readMessageHistory); }
     inline bool attachFiles(const ChannelGrant& g) { return g.allows(p::attachFiles); }
+    inline bool sendVoiceMessage(const ChannelGrant& g) { return g.allows(p::sendVoiceMessages); }
     inline bool useExternalStickers(const ChannelGrant& g) { return g.allows(p::useExternalStickers); }
     inline bool createPublicThread(const ChannelGrant& g) { return g.allows(p::createPublicThreads); }
     inline bool manageMessages(const ChannelGrant& g) { return g.allows(p::manageMessages); }

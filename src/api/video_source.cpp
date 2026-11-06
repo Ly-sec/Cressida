@@ -11,8 +11,19 @@
 #include <optional>
 
 namespace api {
+  bool mediaSourceHeader(std::span<const char> bytes, MediaSourceKind kind) {
+    if (kind == MediaSourceKind::OggAudio)
+      return bytes.size() >= 27 && std::memcmp(bytes.data(), "OggS", 4) == 0 && bytes[4] == 0;
+    return bytes.size() >= 12
+        && (std::memcmp(bytes.data() + 4, "ftyp", 4) == 0
+            || (std::uint8_t(bytes[0]) == 0x1a
+                && std::uint8_t(bytes[1]) == 0x45
+                && std::uint8_t(bytes[2]) == 0xdf
+                && std::uint8_t(bytes[3]) == 0xa3));
+  }
   namespace {
     constexpr std::uint64_t chunkSize = 1024 * 1024, maxVideoBytes = 512ULL * 1024 * 1024;
+    constexpr std::uint64_t maxAudioBytes = 20ULL * 1024 * 1024;
     struct Range {
       std::uint64_t first, last, total;
     };
@@ -44,6 +55,7 @@ namespace api {
     }
     class HttpVideoInput final : public media::VideoInput {
       std::string m_url;
+      MediaSourceKind m_kind;
       std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> m_curl{curl_easy_init(), curl_easy_cleanup};
       std::atomic_bool m_cancelled = false;
       std::int64_t m_size = -1;
@@ -128,20 +140,11 @@ namespace api {
           total = download.bytes.size();
         else
           return false;
-        if (m_size >= 0 && std::uint64_t(m_size) != total)
+        if (total > (m_kind == MediaSourceKind::OggAudio ? maxAudioBytes : maxVideoBytes)
+            || (m_size >= 0 && std::uint64_t(m_size) != total))
           return false;
-        if (offset == 0) {
-          const auto& data = download.bytes;
-          if (data.size() < 12
-              || !(
-                  std::memcmp(data.data() + 4, "ftyp", 4) == 0
-                  || (std::uint8_t(data[0]) == 0x1a
-                      && std::uint8_t(data[1]) == 0x45
-                      && std::uint8_t(data[2]) == 0xdf
-                      && std::uint8_t(data[3]) == 0xa3)
-              ))
-            return false;
-        }
+        if (offset == 0 && !mediaSourceHeader(download.bytes, m_kind))
+          return false;
         m_size = total;
         m_chunks.push_front({offset, std::move(download.bytes)});
         if (m_chunks.size() > 4)
@@ -150,7 +153,7 @@ namespace api {
       }
 
     public:
-      explicit HttpVideoInput(std::string url) : m_url(std::move(url)) {}
+      explicit HttpVideoInput(std::string url, MediaSourceKind kind) : m_url(std::move(url)), m_kind(kind) {}
       std::int64_t size() override {
         if (m_cancelled)
           return -1;
@@ -180,8 +183,8 @@ namespace api {
       void cancel() noexcept override { m_cancelled = true; }
     };
   } // namespace
-  std::shared_ptr<media::VideoInput> videoSource(std::string_view url) {
+  std::shared_ptr<media::VideoInput> videoSource(std::string_view url, MediaSourceKind kind) {
     auto validated = mediaUrl(url);
-    return validated.empty() ? nullptr : std::make_shared<HttpVideoInput>(std::move(validated));
+    return validated.empty() ? nullptr : std::make_shared<HttpVideoInput>(std::move(validated), kind);
   }
 } // namespace api

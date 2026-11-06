@@ -15,6 +15,7 @@ namespace app {
         || message->deleted
         || message->forwarded
         || message->poll
+        || (message->flags & api::messageVoice)
         || (!message->stickers.empty() && message->content.empty())
         || !message->webhookId.empty()
         || (message->flags & 64)

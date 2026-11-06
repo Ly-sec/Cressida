@@ -58,6 +58,7 @@
 #include "ui/controls/context_menu.h"
 #include "ui/controls/input.h"
 #include "ui/controls/select_popup_context.h"
+#include "voice/message_recorder.h"
 
 #include <EGL/egl.h>
 #include <chrono>
@@ -198,6 +199,9 @@ namespace app {
       Composer,
       ComposerTools,
       CreatePoll,
+      RecordVoiceMessage,
+      VoiceMessagePlayback,
+      VoiceMessageSeek,
       ViewAttachment,
       RemoveAttachment,
       CopyMessage,
@@ -539,6 +543,28 @@ namespace app {
     void logMessageEdit(const api::Message& before, const api::Message& after);
     void drawMessageDialog(Node& root, float width, float height);
     bool canCreatePoll() const;
+    bool canRecordVoiceMessage() const;
+    void openVoiceMessage(bool record = true);
+    void drawVoiceMessageRecorder(Node& root, layout::Frame frame);
+    float voiceMessageRecorderHeight(float width);
+    void drawVoiceMessageVolume(Node& root, float width, float height);
+    void drawVoiceMessage(Node& parent, const api::Message& message, const MessageLayout& body, float x, float y);
+    void voiceMessageAction(const Hit& hit);
+    void voiceMessageTick();
+    void demoVoiceMessageStep();
+    static voice::MessageRecorder::CaptureFactory demoVoiceMessageCapture();
+    static constexpr int voiceMessageReplaySteps = 19;
+    void clearVoiceMessage();
+    void stopVoiceMessagePlayback();
+    std::string m_voiceMessageChannel, m_voiceMessagePlaying, m_voiceMessageError;
+    std::optional<api::Upload> m_voiceMessageDraft;
+    media::VideoPlayer m_voiceMessagePlayer;
+    voice::MessageRecorder m_voiceMessageRecorder;
+    std::uint64_t m_voiceMessageRecorderRevision = 0;
+    bool m_voiceMessagePlayRequested = false;
+    bool m_voiceMessageVolumeOpen = false;
+    layout::Frame m_voiceMessageVolumeAnchor, m_voiceMessageVolumeBounds;
+    std::uint64_t m_voiceMessageGeneration = 0;
     void openComposerTools();
     void openPoll();
     void drawPollDialog(Node& root, float width, float height);
@@ -1828,6 +1854,7 @@ namespace app {
       std::string guild;
       std::shared_ptr<std::atomic_bool> revoked;
       std::optional<api::PollDraft> poll;
+      std::optional<api::Upload> voice;
       bool completed = false, composer = false, securityChallenge = false;
     };
     std::map<std::string, PendingSend> m_pendingSends;

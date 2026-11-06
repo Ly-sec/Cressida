@@ -91,7 +91,9 @@ leave it disabled. These options do not change ordinary voice behavior.
 | libcurl | `libcurl >= 8.16`, with HTTPS, `ws` and `wss` enabled | REST and Gateway connections |
 | libsecret | `libsecret-1` | Secret Service credentials |
 | MD4C | `md4c` | Markdown parsing |
-| FFmpeg libraries | `libavformat`, `libavcodec`, `libavutil`, `libswscale` | Media decoding and stream encoding |
+| FFmpeg libraries | `libavformat`, `libavcodec`, `libavutil`, `libswscale` | Media decoding, stream encoding and voice-message Ogg muxing |
+| Opus | `opus` | Voice audio and direct voice-message encoding |
+| PulseAudio client | `libpulse` | Voice devices, microphone recordings and application audio capture |
 | PipeWire client | `libpipewire-0.3` | Consented screen and window capture |
 | libmpv | `mpv >= 2.3` pkg-config API version | Embedded native video and audio playback |
 | rlottie | `rlottie` | Animated stickers |
@@ -261,6 +263,14 @@ existing uninstall manifest.
 Voice needs a running PulseAudio service or PipeWire's PulseAudio-compatible
 service, plus the voice libraries listed above. Cressida does not install or
 start an audio daemon.
+
+Voice-message recording reuses these existing dependencies, with no additional
+library or recording executable. Keep FFmpeg's Ogg muxer enabled. Cressida
+encodes directly with libopus, so FFmpeg's optional libopus encoder wrapper is
+not required. Received recordings use libmpv's audio-only playback; its media
+backend must support Ogg demuxing and Opus decoding. Recording starts only after
+the user selects the microphone control. See [voice messages](docs/user/voice-messages.md)
+for controls and limits.
 
 Screen sharing also needs a running PipeWire service and a compositor-compatible
 ScreenCast portal backend. Keep FFmpeg's supported H.264, VP8 or VP9 encoders

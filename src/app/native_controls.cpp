@@ -94,6 +94,7 @@ namespace app {
     );
   }
   ClientApplication::~ClientApplication() {
+    clearVoiceMessage();
     rpcClear();
     clearSharing();
     m_window.setTextInputDispatcher(nullptr);
@@ -207,6 +208,10 @@ namespace app {
     if (!focused && (m_inspectedEmoji || m_stickerInfo))
       closeEmojiPicker();
     if (!focused) {
+      stopVoiceMessagePlayback();
+      if (m_voiceMessageRecorder.state().phase == voice::MessageRecorderPhase::Recording
+          || m_voiceMessageRecorder.state().phase == voice::MessageRecorderPhase::Loading)
+        m_voiceMessageRecorder.stop();
       m_reactorHoverTimer.stop();
       m_hoverReactionKey.clear();
       m_reactionTooltip.reset();
@@ -224,7 +229,8 @@ namespace app {
       focusChatComposer();
   }
   void ClientApplication::focusChatComposer() {
-    if (m_railDrag
+    if (!m_voiceMessageChannel.empty()
+        || m_railDrag
         || !m_connected
         || startupCovered()
         || m_channelId.empty()

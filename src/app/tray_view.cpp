@@ -19,6 +19,10 @@ namespace app {
     });
   }
   void ClientApplication::closeToTray() {
+    stopVoiceMessagePlayback();
+    if (m_voiceMessageRecorder.state().phase == voice::MessageRecorderPhase::Recording
+        || m_voiceMessageRecorder.state().phase == voice::MessageRecorderPhase::Loading)
+      m_voiceMessageRecorder.stop();
     sharingRelease();
     releasePushToTalk();
     m_client.voiceAudio()->stopTest();

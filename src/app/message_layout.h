@@ -101,6 +101,7 @@ namespace app {
     std::vector<EmbedIcon> embedIcons;
     std::vector<layout::Frame> embeds;
     std::optional<layout::PollCardFrames> poll;
+    std::optional<layout::VoiceMessageFrames> voice;
     std::string plainText;
     float height = 0, historyHeight = 0;
     std::optional<EditedMarker> edited;

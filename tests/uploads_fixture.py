@@ -24,8 +24,24 @@ class Handler(BaseHTTPRequestHandler):
                 ("Content-Type: " + self.headers["Content-Type"] + "\r\n\r\n").encode() + body
             )
             parts = {part.get_param("name", header="content-disposition"): part for part in message.iter_parts()}
-            assert set(parts) == {"payload_json", "files[0]", "files[1]"}
             payload = json.loads(parts["payload_json"].get_payload(decode=True))
+            if payload.get("flags") == 8192:
+                assert set(parts) == {"payload_json", "files[0]"}
+                assert "content" not in payload and "message_reference" not in payload
+                assert "sticker_ids" not in payload and "poll" not in payload
+                assert payload["nonce"] == "123456790" and payload["enforce_nonce"] is True
+                assert payload["attachments"] == [{
+                    "id": 0, "filename": "voice-message.ogg",
+                    "duration_secs": 1.25, "waveform": "AID/",
+                }]
+                assert parts["files[0]"].get_content_type() == "audio/ogg"
+                assert parts["files[0]"].get_filename() == "voice-message.ogg"
+                assert parts["files[0]"].get_payload(decode=True) == b"OggS\x00\x0a\xff"
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+            assert set(parts) == {"payload_json", "files[0]", "files[1]"}
             assert payload["content"] == "first\nsecond 🌿 <@7> <@&8> @everyone @here"
             assert payload["message_reference"] == {"message_id": "20", "channel_id": "10", "fail_if_not_exists": True}
             assert payload["allowed_mentions"]["replied_user"] is False

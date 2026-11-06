@@ -99,11 +99,14 @@ namespace app {
   } // namespace
 
   ClientApplication::ClientApplication(bool demoMode, std::string token, SingleInstance* instance)
-      : m_instance(instance), m_screen([this](auto frame) { m_client.streams().preview()->source(std::move(frame)); }),
+      : m_voiceMessageRecorder(demoMode ? demoVoiceMessageCapture() : voice::MessageRecorder::CaptureFactory{}),
+        m_instance(instance), m_screen([this](auto frame) { m_client.streams().preview()->source(std::move(frame)); }),
         m_token(std::move(token)) {
     m_window.setTextInputDispatcher(&m_controlInput);
     m_window.auxiliaryFds = [this] {
       std::vector<int> descriptors{m_rpc.eventFd()};
+      descriptors.push_back(m_voiceMessagePlayer.eventFd());
+      descriptors.push_back(m_voiceMessageRecorder.eventFd());
       if (m_streamPopout)
         descriptors.push_back(m_streamPopout->eventFd());
       return descriptors;
@@ -229,6 +232,13 @@ namespace app {
       m_pointerY = y;
       if (startupCovered() && y >= layout::Window::titlebarHeight)
         return;
+      if (m_voiceMessageVolumeOpen) {
+        m_controlInput.pointerButton(
+            x, y + m_window.titlebarHeight() - layout::Window::titlebarHeight, 272, true, 0, 0, false
+        );
+        m_window.invalidate();
+        return;
+      }
       if (m_shareOpen && sharingClick(x, y))
         return;
       if (!(m_inboxOpen && m_inboxBounds.contains(x, y)) && sidebarResizeAt(x, y)) {
@@ -561,6 +571,14 @@ namespace app {
       m_window.invalidate();
     };
     m_window.scroll = [this](float delta) {
+      if (m_voiceMessageVolumeOpen) {
+        constexpr double volumeStepPercent = 5;
+        m_voiceMessagePlayer.volume(
+            m_voiceMessagePlayer.state().volume + (delta > 0 ? volumeStepPercent : -volumeStepPercent)
+        );
+        m_window.invalidate();
+        return;
+      }
       if (startupCovered())
         return;
       if (m_videoExpanded)
@@ -1320,7 +1338,13 @@ namespace app {
     const bool sharingCovered =
         m_shareOpen || m_sharingPreviewDragging || (preview && preview->card.contains(m_pointerX, m_pointerY));
     const bool formattingCovered = m_composerFormatBounds.contains(m_pointerX, m_pointerY);
-    if (mediaViewer || sharingCovered || voiceMenuCovered || reactionCovered || formattingCovered) {
+    const bool voiceVolumeCovered = m_voiceMessageVolumeOpen;
+    if (mediaViewer
+        || sharingCovered
+        || voiceMenuCovered
+        || reactionCovered
+        || formattingCovered
+        || voiceVolumeCovered) {
       if (sharingCovered)
         m_controlInput.pointerLeave();
       // Covered surfaces still paint; the visible overlay owns the pointer.
@@ -1864,7 +1888,7 @@ namespace app {
         const auto& draft = m_drafts[m_channelId];
         m_edit.clamp(draft);
         m_draftWidth = writeRestriction.empty()
-            ? std::max(32.0F, bodyWidth - 222)
+            ? std::max(32.0F, bodyWidth - 222 - (canRecordVoiceMessage() ? layout::Composer::actionStep : 0))
             : layout::Composer::readOnlyReasonWidth(bodyWidth - layout::Floating::gap);
         m_draftOffsets = TextEdit::stops(draft);
         const TextPresentation draftPresentation(draft, composerReplacements(draft));
@@ -1917,7 +1941,9 @@ namespace app {
                       - reasonReserve
               )
           );
-        const float composerHeight = slashComposerActive()
+        const float composerHeight = !m_voiceMessageChannel.empty()
+            ? voiceMessageRecorderHeight(bodyWidth - layout::Floating::gap)
+            : slashComposerActive()
             ? measureSlashComposer(bodyWidth - layout::Floating::gap, h)
             : m_draftHeight + layout::Composer::verticalPadding + attachmentHeight + replyHeight + reasonReserve;
         if (voiceStage) {
@@ -2350,7 +2376,6 @@ namespace app {
           if (y + heights[i] >= 0 && y <= bottom - top) {
             auto rowNode = std::make_unique<Node>();
             auto* messageContent = rowNode.get();
-            rowNode->setSize(content->width(), content->height());
             if (local)
               rowNode->setOpacity(Style::mutedChannelOpacity);
             content->addChild(std::move(rowNode));
@@ -2779,6 +2804,7 @@ namespace app {
                 drawMessageEdit(*messageContent, 50, bodyY, textWidth);
               else {
                 drawPollCard(*messageContent, message, layout, layout::Chat::authorGutter, bodyY);
+                drawVoiceMessage(*messageContent, message, layout, layout::Chat::authorGutter, bodyY);
                 m_messageText[message.id] = layout.plainText;
                 m_hits.push_back({left + 74, top + bodyY, textWidth, layout.height, Action::SelectMessage, message.id});
                 for (const auto& card : layout.forwards) {
@@ -3367,7 +3393,12 @@ namespace app {
         );
         if (!typing.empty())
           drawTyping(root, left + layout::Chat::inset, composer.typingTop, bodyWidth - layout::Chat::inset * 2, typing);
-        if (slashComposerActive())
+        if (!m_voiceMessageChannel.empty()) {
+          m_composerTop = composerY;
+          drawVoiceMessageRecorder(
+              root, {left + layout::Floating::inset, composerY, bodyWidth - layout::Floating::gap, composerHeight}
+          );
+        } else if (slashComposerActive())
           drawSlashComposer(
               root, {left + layout::Floating::inset, composerY, bodyWidth - layout::Floating::gap, composerHeight}
           );
@@ -3499,15 +3530,17 @@ namespace app {
                 root, {left + (Style::space2Xl - Style::spaceXxs), actionY, 32, 32, Action::ComposerTools, {}}, "plus",
                 "Message tools"
             );
-            iconButton(
-                root, {left + bodyWidth - 62, actionY, 32, 32, Action::ToggleEmoji, {}}, "mood-smile", "Emoji",
-                m_emojiMenu && !m_stickerTab
-            );
-            iconButton(root, {left + bodyWidth - 98, actionY, 32, 32, Action::ToggleGif, {}}, "gif", "GIFs", m_gifMenu);
-            iconButton(
-                root, {left + bodyWidth - 134, actionY, 32, 32, Action::ToggleStickers, {}}, "sticker", "Stickers",
-                m_emojiMenu && m_stickerTab
-            );
+            int actionIndex = 0;
+            const auto composerAction = [&](Action action, const char* icon, const char* caption,
+                                            bool selected = false) {
+              const auto frame = layout::Composer::actionFrame(left + bodyWidth, actionY, actionIndex++);
+              iconButton(root, {frame.x, frame.y, frame.width, frame.height, action, {}}, icon, caption, selected);
+            };
+            composerAction(Action::ToggleEmoji, "mood-smile", "Emoji", m_emojiMenu && !m_stickerTab);
+            composerAction(Action::ToggleGif, "gif", "GIFs", m_gifMenu);
+            composerAction(Action::ToggleStickers, "sticker", "Stickers", m_emojiMenu && m_stickerTab);
+            if (canRecordVoiceMessage())
+              composerAction(Action::RecordVoiceMessage, "microphone", "Record voice message");
           }
         }
         if (!m_status.empty())
@@ -3680,6 +3713,11 @@ namespace app {
     }
     updateReactionHover();
     if (!startupCovered()) {
+      if (voiceVolumeCovered) {
+        m_pointerX = pointer.first;
+        m_pointerY = pointer.second;
+      }
+      drawVoiceMessageVolume(root, w, h);
       drawCompletion(root, w, h);
       drawSearchMenu(root, w, h);
       drawInboxButton(root, w);
@@ -3708,7 +3746,7 @@ namespace app {
       drawStreamPreviewTooltip(root, w, h);
       drawTooltip(root, w, h);
     }
-    if (sharingCovered || voiceMenuCovered || formattingCovered) {
+    if (sharingCovered || voiceMenuCovered || formattingCovered || voiceVolumeCovered) {
       m_pointerX = pointer.first;
       m_pointerY = pointer.second;
     }
@@ -4287,6 +4325,8 @@ namespace app {
   }
 
   void ClientApplication::selectChannel(std::string id) {
+    if (id != m_channelId)
+      clearVoiceMessage();
     m_forumPreviewReads.clear();
     closeSearchMenu();
     if (id != m_channelId)
@@ -4540,6 +4580,8 @@ namespace app {
   }
 
   void ClientApplication::send() {
+    if (!m_voiceMessageChannel.empty())
+      return;
     if (slashComposerActive()) {
       submitSlashCommand();
       return;
@@ -4599,6 +4641,7 @@ namespace app {
   }
 
   void ClientApplication::tick() {
+    voiceMessageTick();
     rpcTick();
     voiceTick();
     sharingTick();
@@ -5510,6 +5553,19 @@ namespace app {
   }
 
   void ClientApplication::onKey(const Key& key) {
+    if (m_voiceMessageVolumeOpen) {
+      constexpr double volumeStepPercent = 5;
+      if (key.symbol == XKB_KEY_Escape)
+        m_voiceMessageVolumeOpen = false;
+      else if (key.symbol == XKB_KEY_Up || key.symbol == XKB_KEY_Down)
+        m_voiceMessagePlayer.volume(
+            m_voiceMessagePlayer.state().volume + (key.symbol == XKB_KEY_Up ? volumeStepPercent : -volumeStepPercent)
+        );
+      else if (KeySymbol::isTab(key.symbol))
+        (void)m_controlInput.cycleTabFocus(key.shift);
+      m_window.invalidate();
+      return;
+    }
     if (sharingKey(key))
       return;
     if (auto* area = m_controlInput.focusedArea())
@@ -5639,6 +5695,17 @@ namespace app {
     }
     if (messageEditKey(key))
       return;
+    if (!m_voiceMessageChannel.empty()
+        && key.symbol == XKB_KEY_Escape
+        && m_dialogKind.empty()
+        && !m_contextOpen
+        && !m_emojiMenu
+        && !m_gifMenu) {
+      clearVoiceMessage();
+      focusChatComposer();
+      m_window.invalidate();
+      return;
+    }
     if (!m_controlInput.focusedArea()
         && !key.control
         && !key.alt
@@ -6182,6 +6249,13 @@ namespace app {
       break;
     case Action::CreatePoll:
       openPoll();
+      break;
+    case Action::RecordVoiceMessage:
+      openVoiceMessage();
+      break;
+    case Action::VoiceMessagePlayback:
+    case Action::VoiceMessageSeek:
+      voiceMessageAction(hit);
       break;
     case Action::PasteClipboard:
       if (!m_demo && !m_channelId.empty() && canSendToThread()) {

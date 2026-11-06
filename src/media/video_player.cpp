@@ -14,6 +14,8 @@
 namespace media {
   namespace {
     constexpr Logger logger{"playback"};
+    constexpr std::int64_t maximumAudioInputBytes = 20LL * 1024 * 1024;
+    constexpr std::int64_t maximumVideoInputBytes = 512LL * 1024 * 1024;
     class MemoryInput final : public VideoInput {
       std::vector<std::uint8_t> m_bytes;
       std::atomic_bool m_cancelled = false;
@@ -139,7 +141,8 @@ namespace media {
                 auto input = static_cast<Impl*>(context)->input;
                 if (!input
                     || input->size() <= 0
-                    || input->size() > (static_cast<Impl*>(context)->audioOnly ? 8LL : 512LL) * 1024 * 1024)
+                    || input->size()
+                        > (static_cast<Impl*>(context)->audioOnly ? maximumAudioInputBytes : maximumVideoInputBytes))
                   return MPV_ERROR_LOADING_FAILED;
                 auto stream = std::make_unique<Stream>();
                 stream->input = std::move(input);
@@ -201,7 +204,7 @@ namespace media {
           m.get()
       );
     }
-    for (const char* name : {"time-pos", "duration", "volume"})
+    for (const char* name : {"time-pos", "duration", "volume", "speed"})
       mpv_observe_property(m->player, 0, name, MPV_FORMAT_DOUBLE);
     for (const char* name : {"pause", "paused-for-cache", "eof-reached", "mute"})
       mpv_observe_property(m->player, 0, name, MPV_FORMAT_FLAG);
@@ -271,6 +274,8 @@ namespace media {
           m->state.duration = std::max(0.0, value);
         if (name == "volume")
           m->state.volume = std::clamp(value, 0.0, 100.0);
+        if (name == "speed")
+          m->state.speed = value;
       } else if (property.format == MPV_FORMAT_FLAG) {
         const bool value = *static_cast<int*>(property.data);
         if (name == "pause")
@@ -332,6 +337,14 @@ namespace media {
       return;
     m->flag("mute", muted);
     m->state.muted = muted;
+  }
+  void VideoPlayer::speed(double rate) {
+    constexpr double minimumPlaybackSpeed = .5, maximumPlaybackSpeed = 2;
+    if (!m->player || !std::isfinite(rate))
+      return;
+    rate = std::clamp(rate, minimumPlaybackSpeed, maximumPlaybackSpeed);
+    mpv_set_property_async(m->player, 0, "speed", MPV_FORMAT_DOUBLE, &rate);
+    m->state.speed = rate;
   }
   bool VideoPlayer::render(unsigned framebuffer, int width, int height, bool force) {
     if (!m->renderer || width <= 0 || height <= 0)

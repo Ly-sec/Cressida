@@ -4805,6 +4805,10 @@ namespace app {
         continue;
       if (rpcResult(event))
         continue;
+      if (!event.unauthorized && streamPreviewResult(event)) {
+        m_window.invalidate();
+        continue;
+      }
       if (event.operation == api::Operation::VoiceRoster && event.voiceRoster) {
         m_voiceRoster.apply(*event.voiceRoster);
         for (const auto& member : m_voiceRoster.members(m_voiceGuild, m_voiceState.channel))
@@ -5167,10 +5171,6 @@ namespace app {
           } else if (!event.error.empty())
             m_settingsStatus = event.error;
         }
-      } else if (
-          event.operation == api::Operation::StreamPreviewRead || event.operation == api::Operation::StreamPreviewWrite
-      ) {
-        streamPreviewResult(event);
       } else if (event.operation == api::Operation::UserSettings) {
         if (event.userSettingsSessionEnded && event.error.empty()) {
           activate({0, 0, 0, 0, Action::SignOut, {}});

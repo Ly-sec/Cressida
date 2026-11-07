@@ -1053,7 +1053,7 @@ namespace app {
     void drawVoiceStage(Node& root, const layout::Frame& frame);
     void hoverStreamPreview(const std::string& key, const layout::Frame& anchor);
     void drawStreamPreviewTooltip(Node& root, float width, float height);
-    void streamPreviewResult(const api::Event& event);
+    bool streamPreviewResult(const api::Event& event);
     void drawStreamFrame(
         Node& root, layout::Frame frame, const std::string& key, std::shared_ptr<voice::VideoPipeline> video
     );
@@ -1236,6 +1236,7 @@ namespace app {
       std::uint64_t request = 0;
       std::string url, error;
       std::chrono::steady_clock::time_point checked{};
+      unsigned failures = 0;
       bool pending = false;
       std::shared_ptr<std::atomic_bool> revoked;
     };

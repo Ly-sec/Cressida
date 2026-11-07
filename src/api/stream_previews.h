@@ -3,6 +3,7 @@
 #include "api/streams.h"
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 
 namespace api {
@@ -29,4 +30,8 @@ namespace api {
   // Accepts only a CDN image stored under the requested stream key, or an explicit null.
   std::string parseStreamPreview(const nlohmann::json& response, const StreamKey& key);
   bool streamPreviewRevoked(const StreamPreviewQuery& query);
+  inline constexpr auto streamPreviewFailureStep = std::chrono::seconds{10};
+  inline constexpr auto streamPreviewFreshness = std::chrono::minutes{5};
+  // Consecutive failed metadata reads wait progressively longer before another hover may retry.
+  std::chrono::seconds streamPreviewRetryDelay(unsigned failures);
 } // namespace api

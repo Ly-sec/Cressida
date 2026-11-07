@@ -370,13 +370,53 @@ namespace app {
       );
       require(!m_voiceMuted && !m_voiceDeafened && !m_voicePtt, "Microphone state stays independent");
       break;
-    case 30:
+    case 30: {
       require(
           m_client.streams().sharedAudio()->state().inputs.empty()
               && m_screen.state().phase == capture::ScreenPhase::Idle,
           "The replay never accesses real capture or audio services"
       );
+      const auto parsed = *api::parseStreamKey(key);
+      auto& cached = m_streamPreviewCache[key];
+      cached.pending = true;
+      cached.request = ++m_streamPreviewRequest;
+      cached.revoked = std::make_shared<std::atomic_bool>(false);
+      const auto status = m_status;
+      const auto draft = m_drafts[m_channelId];
+      const api::Event failure{
+          .operation = api::Operation::StreamPreviewRead,
+          .session = m_session,
+          .resource = key,
+          .error = "The service returned an error (HTTP 404, code 10049).",
+          .streamPreview = api::StreamPreviewResult{parsed, cached.request, {}, false}
+      };
+      require(
+          streamPreviewResult(failure) && !cached.pending && cached.error == failure.error,
+          "Preview metadata failures are consumed by the scoped preview cache"
+      );
+      require(
+          m_status == status && m_drafts[m_channelId] == draft,
+          "A failed thumbnail read leaves chat status and the composer unchanged"
+      );
+      auto stale = failure;
+      stale.streamPreview->request = ++m_streamPreviewRequest;
+      require(streamPreviewResult(stale) && cached.error == failure.error, "Stale preview failures stay scoped");
+      require(
+          streamPreviewResult(
+              {.operation = api::Operation::StreamPreviewWrite, .session = m_session, .error = failure.error}
+          ) && m_status == status,
+          "Thumbnail upload failures do not become chat errors"
+      );
+      require(
+          !streamPreviewResult({.operation = api::Operation::Messages, .session = m_session, .error = failure.error}),
+          "Ordinary chat failures remain on their existing error path"
+      );
+      m_streamPreviewHovered = key;
+      m_streamPreviewAnchor = {m_pointerX, m_pointerY, Style::controlHeightSm, Style::controlHeightSm};
+      drawStreamPreviewTooltip(*m_scene, m_window.width(), m_window.height());
+      require(text("Preview unavailable"), "A failed thumbnail still shows an explicit unavailable card");
       break;
+    }
     case 31:
       sharingAction("open");
       require(m_shareAwaitingSource && !m_shareOpen, "A new share starts with consent again");

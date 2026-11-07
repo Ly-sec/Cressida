@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <glib.h>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 namespace {
@@ -130,6 +131,14 @@ int main() {
           [&] { parseStreamPreview(value, *key); },
           "Malformed preview metadata never creates an arbitrary media request"
       );
+    require(
+        streamPreviewRetryDelay(0) == std::chrono::seconds{10}
+            && streamPreviewRetryDelay(1) == std::chrono::seconds{10}
+            && streamPreviewRetryDelay(3) == std::chrono::seconds{30}
+            && streamPreviewRetryDelay(1000) == std::chrono::minutes{5}
+            && streamPreviewRetryDelay(std::numeric_limits<unsigned>::max()) == std::chrono::minutes{5},
+        "Repeated failed preview reads back off linearly and never exceed the success freshness window"
+    );
     std::cout << "Stream preview routes, JPEG bodies, bounds and revocation passed\n";
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

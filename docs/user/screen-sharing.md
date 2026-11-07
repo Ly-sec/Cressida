@@ -127,6 +127,11 @@ unavailable feedback when needed. It follows your image display preference and
 does not show previews for blocked or ignored participants. It never starts
 video playback automatically.
 
+Thumbnail failures stay in that card and do not interrupt chat or stream
+playback. A working stream can still have an unavailable thumbnail, for example
+when the person sharing has not published one. After repeated failures for the
+same stream, Cressida waits longer before asking again, up to five minutes.
+
 You can watch more than one stream, adjust each stream's volume, or choose **Pop
 out** for a separate native window. **Stop watching** closes that stream without
 leaving the voice conversation.

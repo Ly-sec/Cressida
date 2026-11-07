@@ -6,8 +6,6 @@
 
 namespace app {
   namespace {
-    constexpr auto previewFreshness = std::chrono::minutes{5};
-    constexpr auto failedPreviewFreshness = std::chrono::seconds{10};
     constexpr int blockedRelationship = 2;
   } // namespace
 
@@ -81,10 +79,13 @@ namespace app {
         cached.pending = false;
         cached.error = "Preview unavailable";
         cached.checked = now;
+        ++cached.failures;
       }
       return;
     }
-    const auto freshness = cached.error.empty() && !cached.url.empty() ? previewFreshness : failedPreviewFreshness;
+    const std::chrono::seconds freshness = cached.error.empty() && !cached.url.empty()
+        ? std::chrono::duration_cast<std::chrono::seconds>(api::streamPreviewFreshness)
+        : api::streamPreviewRetryDelay(cached.failures);
     if (cached.checked != std::chrono::steady_clock::time_point{} && now - cached.checked < freshness)
       return;
     if (cached.revoked)
@@ -105,9 +106,11 @@ namespace app {
     }
   }
 
-  void ClientApplication::streamPreviewResult(const api::Event& event) {
+  bool ClientApplication::streamPreviewResult(const api::Event& event) {
+    if (event.operation != api::Operation::StreamPreviewRead && event.operation != api::Operation::StreamPreviewWrite)
+      return false;
     if (!event.streamPreview || event.streamPreview->uploaded || event.session != m_session)
-      return;
+      return true;
     const auto key = event.streamPreview->key.value();
     const auto entry = m_streamPreviewCache.find(key);
     if (key.empty()
@@ -117,7 +120,7 @@ namespace app {
         || entry->second.request != event.streamPreview->request
         || !entry->second.revoked
         || entry->second.revoked->load())
-      return;
+      return true;
     const auto& owner = event.streamPreview->key.owner;
     if (owner == m_account.id
         || m_userDirectory.relationship(owner) == blockedRelationship
@@ -127,7 +130,7 @@ namespace app {
            })) {
       entry->second.revoked->store(true);
       m_streamPreviewCache.erase(entry);
-      return;
+      return true;
     }
     auto& cached = entry->second;
     cached.pending = false;
@@ -137,7 +140,9 @@ namespace app {
       cached.url = event.streamPreview->url;
     if (cached.url.empty() && cached.error.empty())
       cached.error = "Preview unavailable";
+    cached.failures = cached.error.empty() ? 0 : cached.failures + 1;
     m_window.invalidate();
+    return true;
   }
 
   void ClientApplication::drawStreamPreviewTooltip(Node& root, float width, float height) {

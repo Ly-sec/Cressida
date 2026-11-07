@@ -13,6 +13,10 @@ namespace api {
   bool streamPreviewRevoked(const StreamPreviewQuery& query) {
     return query.revoked ? query.revoked->load() : query.kind == StreamPreviewKind::Upload;
   }
+  std::chrono::seconds streamPreviewRetryDelay(unsigned failures) {
+    const auto delay = streamPreviewFailureStep * std::max(failures, 1U);
+    return std::min<std::chrono::seconds>(delay, streamPreviewFreshness);
+  }
   std::optional<StreamPreviewHttpRequest>
   streamPreviewHttpRequest(const StreamPreviewQuery& query, std::uint64_t version) {
     const auto key = query.key.value();

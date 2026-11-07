@@ -878,7 +878,7 @@ namespace app {
                 : id == "composer"           ? !m_demo
                     || m_demoOverlay.starts_with("slash-commands")
                     || m_demoOverlay == "sidebar-cycle"
-                    || m_demoOverlay == "inline-edit-cycle"
+                    || m_demoOverlay.starts_with("inline-edit-cycle")
                     || m_demoOverlay.starts_with("outgoing-cycle")
                     || m_demoOverlay.starts_with("startup-cycle")
                     || m_demoOverlay.starts_with("startup-transition")

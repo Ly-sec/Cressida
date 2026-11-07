@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <linux/input-event-codes.h>
 #include <stdexcept>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
@@ -233,6 +234,52 @@ namespace app {
           "Context Edit opens the same inline editor for older messages"
       );
     } else if (step == 3) {
+      auto* input = m_inputs.at("message-edit");
+      require(
+          m_messages.front().attachments.size() == 1 && m_messages.size() > 1,
+          "The older edited message retains an image attachment with later messages"
+      );
+      float left = 0, top = 0, right = 0, bottom = 0;
+      Node::transformedBounds(input, left, top, right, bottom);
+      const float x = left + Style::spaceMd, y = (top + bottom) / 2;
+      auto* rows = input->parent()->parent();
+      auto* laterRow = rows->children().back().get();
+      require(
+          laterRow != input->parent() && laterRow->width() == 0 && laterRow->height() == 0,
+          "Later message opacity containers do not claim the conversation viewport"
+      );
+      laterRow->setSize(rows->width(), rows->height());
+      const bool oldBoundsBlockEditor = m_controlInput.inputAreaAt(x, y) != input->inputArea();
+      laterRow->setSize(0, 0);
+      require(oldBoundsBlockEditor, "The former viewport-sized row bounds reproduce the reported blocked editor");
+      require(
+          m_controlInput.inputAreaAt(x, y) == input->inputArea(),
+          "Later message surfaces never cover the attached message's native editor"
+      );
+      m_controlInput.setFocus(nullptr);
+      m_window.motion(x, y);
+      m_window.click(x, y, BTN_LEFT);
+      m_window.motion(right - Style::spaceMd, y);
+      require(
+          m_controlInput.focusedArea() == input->inputArea()
+              && m_controlInput.pointerCaptured()
+              && input->canEdit(Input::EditCommand::Copy),
+          "A real pointer drag focuses and selects text in the older attached message"
+      );
+    } else if (step == 4) {
+      auto* input = m_inputs.at("message-edit");
+      require(
+          m_controlInput.pointerCaptured() && m_controlInput.focusedArea() == input->inputArea(),
+          "The attached message editor retains native pointer capture across a redraw"
+      );
+      float left = 0, top = 0, right = 0, bottom = 0;
+      Node::transformedBounds(input, left, top, right, bottom);
+      m_window.motion(right - Style::spaceMd, (top + bottom) / 2);
+      m_window.released();
+      require(
+          input->canEdit(Input::EditCommand::Copy) && !m_controlInput.pointerCaptured(),
+          "Releasing the pointer keeps the native text selection"
+      );
       m_inputs.at("message-edit")->selectAll();
       pasteControl("message-edit", "Changed inline\nwith a second line.");
       onKey({XKB_KEY_Return});
@@ -259,7 +306,7 @@ namespace app {
               && m_messageEdit->text == "Changed inline\nwith a second line.",
           "Failed acknowledgement preserves the editor draft and error for explicit retry"
       );
-    } else if (step == 4) {
+    } else if (step == 5) {
       updateMessage(
           m_channelId, "9801",
           {.content = "A live edit from another device.", .editedTimestamp = "2026-10-18T12:03:00Z"}
@@ -285,10 +332,11 @@ namespace app {
       require(
           !m_messageEdit
               && m_messages.front().content == message.content
+              && m_messages.front().attachments == message.attachments
               && !m_messageLog.edits(m_channelId, "9801").empty(),
           "Successful acknowledgement closes the editor and merges through edit history"
       );
-    } else if (step == 5) {
+    } else if (step == 6) {
       beginMessageEdit("9803");
       deleteMessages(m_channelId, {"9803"});
       require(
@@ -307,7 +355,7 @@ namespace app {
       m_pasteChannel = m_channelId;
       m_window.pasted("Stale clipboard", "text/plain");
       require(m_messageEdit->text == draft, "Clipboard replies cannot enter a reopened edit generation");
-    } else if (step == 6) {
+    } else if (step == 7) {
       const auto originalChannel = m_channelId;
       auto original = m_messages.front();
       api::Interaction late{

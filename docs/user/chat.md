@@ -144,6 +144,22 @@ Use **Tab** and **Shift+Tab** to move through visible controls, **Page Up** and
 **Page Down** to scroll the people list, and **Escape** to close the window.
 Clicking a reaction badge still adds or removes your own reaction.
 
+## Edit a sent message
+
+Right-click one of your messages and choose **Edit Message**. Edit its text
+directly in the conversation, then click **Save** or press **Enter**. Use
+**Shift+Enter** for a new line, or **Escape** or **Cancel** to discard the edit.
+The input supports pointer selection, clipboard shortcuts and undo.
+
+Messages with image attachments can be edited even when newer messages follow
+them. Saving changes the text without removing existing attachments. Your unsent
+composer draft stays separate. Failed saves keep the editor and its text for
+another explicit attempt; they never retry automatically.
+
+With an empty, focused composer at the latest messages, **Up** opens the most
+recent editable message you sent. Voice messages, polls, forwarded snapshots and
+retained deleted messages cannot be edited.
+
 ## Delete a message
 
 Right-click a message and choose **Delete Message**, then confirm **Delete**.

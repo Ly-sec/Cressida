@@ -55,6 +55,7 @@ for view in polls-cycle polls-cycle-light polls-cycle-narrow startup-transition 
     sharing-cycle sharing-cycle-light sharing-cycle-narrow rpc-cycle rpc-cycle-light rpc-cycle-narrow unread-badge-cycle unread-badge-cycle-light server-hover-cycle sidebar-activity-cycle sidebar-activity-cycle-light sidebar-activity-cycle-narrow \
     timestamps-cycle timestamps-cycle-light timestamps-cycle-narrow reaction-browser-cycle reaction-browser-cycle-light reaction-browser-cycle-narrow composer-edit-cycle composer-edit-cycle-light composer-edit-cycle-narrow \
     voice-messages-cycle voice-messages-cycle-light voice-messages-cycle-narrow \
+    inline-edit-cycle inline-edit-cycle-light inline-edit-cycle-narrow \
     media-gallery-cycle media-gallery-cycle-light image-menu-cycle image-menu-cycle-light tray-cycle \
     tray-startup-host tray-startup-missing tray-startup-open tray-startup-notification tray-startup-host-loss \
     window-controls-cycle window-controls-cycle-light server-settings-cycle server-settings-narrow server-settings-role-light; do

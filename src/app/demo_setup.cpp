@@ -431,26 +431,30 @@ namespace app {
             || view == "inline-edit-light"
             || view == "inline-edit-compact"
             || view == "inline-edit-short"
-            || view == "inline-edit-cycle") {
+            || view.starts_with("inline-edit-cycle")) {
           m_demoOverlay = view;
           m_showMembers = false;
           m_preferences.compact = view == "inline-edit-compact";
           m_preferences.logEditHistory = true;
-          if (view == "inline-edit-light")
+          if (view == "inline-edit-light" || view == "inline-edit-cycle-light")
             m_preferences.theme = "light";
+          if (view == "inline-edit-cycle-narrow")
+            m_window.setUiScale(1.5F);
           m_messages = api::parseMessages(nlohmann::json::parse(R"JSON([
-            {"id":"9801","author":{"id":"1","username":"Alex"},"timestamp":"2026-10-18T12:00:00Z","content":"An earlier message from me."},
+            {"id":"9801","author":{"id":"1","username":"Alex"},"timestamp":"2026-10-18T12:00:00Z","content":"An earlier message from me.","attachments":[{"id":"98011","filename":"edit-image.png","url":"https://cdn.discordapp.com/attachments/100/9801/edit-image.png","proxy_url":"https://cdn.discordapp.com/attachments/100/9801/edit-image.png","content_type":"image/png","width":480,"height":280}]},
             {"id":"9802","author":{"id":"12","username":"Maya"},"timestamp":"2026-10-18T12:01:00Z","content":"You can edit that message in the conversation."},
             {"id":"9803","author":{"id":"1","username":"Alex"},"timestamp":"2026-10-18T12:02:00Z","content":"The latest message from me.\nThis second line remains editable."}
           ])JSON"));
           for (auto& message : m_messages)
             message.channelId = m_channelId;
+          const auto imageUrl = api::mediaUrl(m_messages.front().attachments.front().url);
+          m_images[imageUrl].texture = m_window.context().textureManager().loadFromRgba(pixels.data(), 640, 360);
           if (view == "inline-edit-short")
             m_messages.back().content = "Two";
           m_messageLayouts.clear();
           m_unreadTimeline.snapshot({});
           m_unreadTimeline.positioned();
-          if (view == "inline-edit-cycle") {
+          if (view.starts_with("inline-edit-cycle")) {
             auto system = m_messages.back();
             system.id = "9804";
             system.type = 7;

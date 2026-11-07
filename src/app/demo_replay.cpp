@@ -329,7 +329,7 @@ namespace app {
       demoDmComposeStep();
     if (m_demo && m_demoOverlay.starts_with("dm-home-cycle") && m_demoInteractionStep < dmHomeReplayFrames)
       demoDmHomeStep();
-    if (m_demo && m_demoOverlay == "inline-edit-cycle" && m_demoInteractionStep < 8)
+    if (m_demo && m_demoOverlay.starts_with("inline-edit-cycle") && m_demoInteractionStep < 9)
       demoMessageEditStep();
     if (m_demo && m_demoOverlay == "autocomplete-cycle" && m_demoInteractionStep < 9)
       demoCompletionStep();
@@ -952,7 +952,7 @@ namespace app {
             : m_demo && view && std::string_view(view) == "chat-preload-cycle"             ? 10
             : m_demo && view && std::string_view(view) == "join-cycle"                     ? 4
             : m_demo && view && std::string_view(view) == "deleted-cycle"                  ? 3
-            : m_demo && view && std::string_view(view) == "inline-edit-cycle"              ? 8
+            : m_demo && view && std::string_view(view).starts_with("inline-edit-cycle")    ? 9
             : m_demo && view && std::string_view(view) == "autocomplete-cycle"             ? 9
             : m_demo && view && std::string_view(view).starts_with("slash-commands-cycle") ? slashCommandReplayFrames
             : m_demo && view && std::string_view(view).starts_with("decorations-cycle")    ? 4
@@ -1026,7 +1026,7 @@ namespace app {
       throw std::runtime_error("Server settings replay did not finish");
     if (m_demoOverlay == "deleted-cycle" && m_demoInteractionStep != 3)
       throw std::runtime_error("Deleted-message replay did not finish");
-    if (m_demoOverlay == "inline-edit-cycle" && m_demoInteractionStep != 8)
+    if (m_demoOverlay.starts_with("inline-edit-cycle") && m_demoInteractionStep != 9)
       throw std::runtime_error("Inline message editing replay did not finish");
     if (m_demoOverlay == "autocomplete-cycle" && m_demoInteractionStep != 9)
       throw std::runtime_error("Autocomplete replay did not finish");

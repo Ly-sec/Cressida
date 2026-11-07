@@ -2376,6 +2376,7 @@ namespace app {
           const float originalY = y;
           m_messageTops[message.id] = top + y;
           if (y + heights[i] >= 0 && y <= bottom - top) {
+            // Viewport-sized row bounds would block native editors in earlier rows.
             auto rowNode = std::make_unique<Node>();
             auto* messageContent = rowNode.get();
             if (local)

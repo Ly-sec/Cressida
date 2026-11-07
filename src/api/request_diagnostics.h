@@ -333,4 +333,16 @@ namespace api::request_diagnostics {
         record.transportCode >= 0 && record.transportCode <= maximumTransportCode ? record.transportCode : 0
     );
   }
+  struct StreamPreviewContext {
+    std::uint64_t id;
+    bool guild = false, currentSession = false, discovered = false, watching = false, mediaConnected = false;
+  };
+  inline std::string format(const StreamPreviewContext& context) {
+    return std::format(
+        "id=req-{:x} action=stream-preview stage=metadata-failure stream_kind={} session_current={} discovered={} "
+        "watching={} media_connected={}",
+        context.id, context.guild ? "guild" : "call", context.currentSession, context.discovered, context.watching,
+        context.mediaConnected
+    );
+  }
 } // namespace api::request_diagnostics

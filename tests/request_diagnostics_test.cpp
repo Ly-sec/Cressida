@@ -86,6 +86,44 @@ int main() {
       hidden.contains("status=0 service_code=0") && hidden.contains("duration_ms=0 attempt=3/3"),
       "Numeric diagnostic fields have bounded representations"
   );
+  const auto preview = format(
+      Record{
+          .id = 7,
+          .action = "stream-preview",
+          .method = "GET",
+          .path = "/streams/guild:123456789012345678:234567890123456789:345678901234567890/preview?version=private",
+          .status = 404,
+          .serviceCode = 10049,
+          .outcome = Outcome::Http
+      }
+  );
+  require(
+      preview.contains("route=/streams/:key/preview status=404 service_code=10049 category=http"),
+      "Unknown-stream metadata failures remain errors with a redacted route"
+  );
+  for (const auto value : {"123456789012345678", "234567890123456789", "345678901234567890", "private"})
+    require(!preview.contains(value), "Preview diagnostics cannot expose stream keys or query values");
+  require(
+      format(StreamPreviewContext{.id = 7})
+          == "id=req-7 action=stream-preview stage=metadata-failure stream_kind=call session_current=false "
+             "discovered=false watching=false media_connected=false",
+      "Retired preview requests report only fixed state flags"
+  );
+  require(
+      format(
+          StreamPreviewContext{
+              .id = 7,
+              .guild = true,
+              .currentSession = true,
+              .discovered = true,
+              .watching = true,
+              .mediaConnected = true
+          }
+      )
+          == "id=req-7 action=stream-preview stage=metadata-failure stream_kind=guild session_current=true "
+             "discovered=true watching=true media_connected=true",
+      "An active matching watch can be distinguished without logging any remote identity"
+  );
   const auto initialBookmarks = std::format("/users/@me/saved-messages/bookmarks?limit={}", api::inboxPageSize);
   constexpr auto initialReminders = "/users/@me/saved-messages?bookmark_ids=true";
   for (const auto& path : {initialBookmarks, std::string(initialReminders)}) {

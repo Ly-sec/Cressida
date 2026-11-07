@@ -2000,6 +2000,34 @@ namespace api {
             command.operation == Operation::GifSearch ? std::string{} : token, path, nullptr, transfer, m_rateLimits
         );
         if (!response) {
+          if (command.operation == Operation::StreamPreviewRead) {
+            const auto snapshot = m_streams->snapshot();
+            const auto& key = command.streamPreview->key;
+            const bool current = snapshot.generation == command.session
+                && command.session == m_session
+                && command.session == m_authenticatedSession;
+            const auto watch = std::ranges::find_if(snapshot.active, [&](const auto& stream) {
+              return !stream.publishing && stream.stream.key == key;
+            });
+            restLog.debug(
+                "{}",
+                request_diagnostics::format(
+                    request_diagnostics::StreamPreviewContext{
+                        .id = transfer.diagnosticId,
+                        .guild = !key.guild.empty(),
+                        .currentSession = current,
+                        .discovered = current
+                            && std::ranges::any_of(
+                                          snapshot.available, [&](const auto& stream) { return stream.key == key; }
+                            ),
+                        .watching = current && watch != snapshot.active.end(),
+                        .mediaConnected = current
+                            && watch != snapshot.active.end()
+                            && watch->connection.phase == voice::Phase::Connected
+                    }
+                )
+            );
+          }
           if (command.inboxQuery
               && inboxMissingCollection(*command.inboxQuery, response.error().httpStatus, response.error().serviceCode))
             event.inboxPage = InboxPage{};

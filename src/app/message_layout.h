@@ -6,6 +6,8 @@
 #include "app/syntax_highlight.h"
 #include "ui/style.h"
 
+#include <algorithm>
+#include <cmath>
 #include <functional>
 #include <optional>
 #include <string>
@@ -123,6 +125,29 @@ namespace app {
     using Invite = MessageLayout::InviteValue;
     std::function<Invite(const std::string&)> serverInvite;
   };
+  // Width budget for a message header row, shared by chat and search cards.
+  struct MessageHeaderFit {
+    float appSpace, nameMax, nameWidth, tagMax;
+    bool tagFits;
+  };
+  inline MessageHeaderFit fitMessageHeader(
+      float headerWidth, float appBadgeWidth, bool bot, bool roleIcon, bool guildTag, float tagTextWidth,
+      float nameTextWidth, float nameInset
+  ) {
+    const float appSpace = bot ? appBadgeWidth + layout::MessageAppBadge::gap : 0;
+    const float roleSpace = roleIcon ? 22 : 0;
+    const float tagSpace = guildTag ? std::min(104.0F, std::ceil(tagTextWidth) + 32) + 6 : 0;
+    const bool tagFits = headerWidth >= tagSpace + roleSpace + appSpace + 38;
+    const float nameMax = std::max(24.0F, headerWidth - (tagFits ? tagSpace : 0) - roleSpace - appSpace - 6);
+    const float nameWidth = std::min(nameMax, nameTextWidth + 4 + nameInset);
+    return {
+        .appSpace = appSpace,
+        .nameMax = nameMax,
+        .nameWidth = nameWidth,
+        .tagMax = headerWidth - nameWidth - roleSpace - appSpace - 4,
+        .tagFits = tagFits
+    };
+  }
   MessageLayout layoutRichMessage(
       const api::Message& message, float width,
       const std::function<float(std::string_view, const MessageStyle&)>& measure, float fontSize = Style::fontSizeBody,

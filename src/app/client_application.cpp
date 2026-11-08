@@ -1653,7 +1653,7 @@ namespace app {
             );
             drawGuildTag(
                 root, layout::DmIdentity::textX + actualName + Style::spaceCompact,
-                identityY + (identityHeight - Style::spaceRelaxed) / 2, tagWidth, tag
+                identityY + (identityHeight - Style::spaceRelaxed) / 2, tagWidth, tag, true, panel
             );
           }
           if (showPin)
@@ -2633,37 +2633,25 @@ namespace app {
                 const float headerWidth =
                     std::max(24.0F, textWidth - (timestamp.empty() ? 0 : timestampWidth + Style::spaceDense));
                 using AppBadge = layout::MessageAppBadge;
-                const auto appText =
-                    m_window.target().renderer().measureText("APP", AppBadge::fontSize, FontWeight::SemiBold);
+                auto& renderer = m_window.target().renderer();
+                const auto appText = renderer.measureText("APP", AppBadge::fontSize, FontWeight::SemiBold);
                 const float appWidth = AppBadge::width(std::ceil(appText.width));
-                const float appSpace = message.authorBot ? appWidth + AppBadge::gap : 0;
-                const float roleSpace = m_preferences.showRoleIcons
+                const float nameInset = m_preferences.roleColors
+                        && m_preferences.roleColorMode == 1
                         && !m_dmMode
-                        && m_roleDirectory.icon(m_guildId, message.authorId, message.memberRoles)
-                    ? 22
+                        && m_roleDirectory.colors(m_guildId, message.authorId, message.memberRoles)
+                    ? Style::spaceMd
                     : 0;
-                const float tagSpace = m_preferences.showGuildTags && authorTag
-                    ? std::min(
-                          104.0F,
-                          std::ceil(m_window.target()
-                                        .renderer()
-                                        .measureText(authorTag->tag, Style::fontSizeMini, FontWeight::Medium)
-                                        .width)
-                              + 32
-                      ) + 6
-                    : 0;
-                const bool tagFits = headerWidth >= tagSpace + roleSpace + appSpace + 38;
-                const float nameMax =
-                    std::max(24.0F, headerWidth - (tagFits ? tagSpace : 0) - roleSpace - appSpace - 6);
-                const float authorWidth = std::min(
-                    nameMax,
-                    m_window.target().renderer().measureText(author, Style::fontSizeBody, FontWeight::SemiBold).width
-                        + 4
-                        + (m_preferences.roleColorMode == 1
-                                   && !m_dmMode
-                                   && m_roleDirectory.colors(m_guildId, message.authorId, message.memberRoles)
-                               ? 12
-                               : 0)
+                const auto fit = fitMessageHeader(
+                    headerWidth, appWidth, message.authorBot,
+                    m_preferences.showRoleIcons
+                        && !m_dmMode
+                        && m_roleDirectory.icon(m_guildId, message.authorId, message.memberRoles),
+                    m_preferences.showGuildTags && authorTag,
+                    m_preferences.showGuildTags && authorTag
+                        ? renderer.measureText(authorTag->tag, Style::fontSizeMini, FontWeight::Medium).width
+                        : 0,
+                    renderer.measureText(author, Style::fontSizeBody, FontWeight::SemiBold).width, nameInset
                 );
                 float groupBottom = originalY + heights[i];
                 for (std::size_t next = i + 1; next < timeline.size() && continuations[next]; ++next)
@@ -2673,19 +2661,12 @@ namespace app {
                     message.authorId, "",
                     layout::Frame{0, y, bodyWidth - Style::spaceGroup, std::max(0.0F, groupBottom - y)}
                 );
-                const float nameInset = m_preferences.roleColors
-                        && m_preferences.roleColorMode == 1
-                        && !m_dmMode
-                        && m_roleDirectory.colors(m_guildId, message.authorId, message.memberRoles)
-                    ? Style::spaceMd
-                    : 0;
                 selectHeader(
-                    author, layout::Chat::authorGutter + nameInset, y,
-                    std::max(0.0F, std::min(authorWidth, nameMax) - nameInset), Style::fontSizeBody, 0,
-                    FontWeight::SemiBold
+                    author, layout::Chat::authorGutter + nameInset, y, std::max(0.0F, fit.nameWidth - nameInset),
+                    Style::fontSizeBody, 0, FontWeight::SemiBold
                 );
                 roleLabel(
-                    *messageContent, 50, y, nameMax, author, Style::fontSizeBody, foreground, FontWeight::SemiBold,
+                    *messageContent, 50, y, fit.nameMax, author, Style::fontSizeBody, foreground, FontWeight::SemiBold,
                     message.authorId, "message:" + message.id,
                     y + (Style::spaceLg + Style::spaceXxs) >= 0
                         && y < bottom - top
@@ -2695,16 +2676,17 @@ namespace app {
                         ),
                     message.memberRoles
                 );
-                const float tagUsed = m_preferences.showGuildTags && tagFits
+                const float tagUsed = m_preferences.showGuildTags && fit.tagFits
                     ? drawGuildTag(
-                          *messageContent, 50 + authorWidth + Style::spaceXs, y - Style::spaceXxs,
-                          headerWidth - authorWidth - roleSpace - appSpace - 4, authorTag
+                          *messageContent, 50 + fit.nameWidth + Style::spaceXs, y - Style::spaceXxs, fit.tagMax,
+                          authorTag, true, panel
                       )
                     : 0;
-                const float roleUsed =
-                    m_preferences.showRoleIcons && !m_dmMode && headerWidth - authorWidth - tagUsed - appSpace >= 22
+                const float roleUsed = m_preferences.showRoleIcons
+                        && !m_dmMode
+                        && headerWidth - fit.nameWidth - tagUsed - fit.appSpace >= 22
                     ? drawRoleIcon(
-                          *messageContent, 50 + authorWidth + tagUsed + 4, y, m_guildId, message.authorId,
+                          *messageContent, 50 + fit.nameWidth + tagUsed + 4, y, m_guildId, message.authorId,
                           message.memberRoles
                       )
                     : 0;
@@ -2712,7 +2694,7 @@ namespace app {
                   const auto avatarY = std::max(top, top + y);
                   const auto avatarH =
                       std::max(0.0F, std::min(bottom, top + y + (Style::spaceSection + Style::borderWidth)) - avatarY);
-                  const auto nameWidth = authorWidth;
+                  const auto nameWidth = fit.nameWidth;
                   if (!local)
                     m_contextTargets.push_back(
                         {left + Style::spaceXl, avatarY, 40, avatarH, Action::UserMenu, message.authorId}
@@ -2728,7 +2710,7 @@ namespace app {
                       {left + 74, avatarY, nameWidth, std::min(18.0F, avatarH), Action::UserProfile, message.authorId}
                   );
                 }
-                float timestampX = layout::Chat::authorGutter + authorWidth + tagUsed + roleUsed + Style::spaceDense;
+                float timestampX = layout::Chat::authorGutter + fit.nameWidth + tagUsed + roleUsed + Style::spaceDense;
                 if (message.authorBot) {
                   const float badgeY = y + (layout::Chat::headerHeight - AppBadge::height) / 2;
                   rectangle(*messageContent, timestampX, badgeY, appWidth, AppBadge::height, accent, AppBadge::radius);
@@ -2737,7 +2719,7 @@ namespace app {
                       badgeY + (AppBadge::height - (appText.bottom - appText.top)) / 2, appText.width, "APP",
                       AppBadge::fontSize, ink, FontWeight::SemiBold
                   );
-                  timestampX += appSpace;
+                  timestampX += fit.appSpace;
                 }
                 const float timestampAvailable = 50 + textWidth - timestampX;
                 if (!timestamp.empty() && timestampAvailable > 0) {

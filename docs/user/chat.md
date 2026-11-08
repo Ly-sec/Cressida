@@ -207,6 +207,12 @@ accept it. Press **Enter** without a highlighted suggestion to search.
 **Escape** dismisses the menu while keeping your query. Open a result to jump to
 its message.
 
+Results group under headers naming their channel, with the channel's category
+beside it. Each hit shows the author's avatar, name, server tag, role icon and
+time like a regular message, and mentions show readable names in the accent
+color used across chat. The panel header gives the result total; numbered page
+buttons and Previous/Next arrows move through large result sets.
+
 Recent searches appear beneath the filters, separately for each server or DM.
 Choose one to restore it, or use the trash button beside **History** to clear
 that list. Search history lasts for the current session and is cleared on

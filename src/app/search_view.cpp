@@ -1,5 +1,6 @@
 #include "app/client_application.h"
 #include "app/theme.h"
+#include "render/scene/text_node.h"
 
 #include <algorithm>
 #include <array>
@@ -708,7 +709,70 @@ namespace app {
       );
       m_searchHistory.clear();
       closeSearchMenu(true);
-      std::clog << "Offline search filters, native suggestions, history and keyboard checks passed\n";
+    } else if (step == 12) {
+      const auto query = api::ChannelPageQuery{api::ChannelPage::Search, m_guildId, m_channelId, "from:11", {}, 0,
+                                               ++m_channelFeatureSerial};
+      m_channelPageRequest = query;
+      api::Event event;
+      event.operation = api::Operation::ChannelPage;
+      event.channelQuery = query;
+      auto second = m_messages.front();
+      second.id = "90002";
+      second.timestamp = "2026-10-21T10:05:00Z";
+      second.channelId = "202";
+      event.channelPage = api::ChannelPageResult{{m_messages.front(), second}, 375, true};
+      channelFeatureEvent(event);
+    } else if (step == 13) {
+      require(
+          std::ranges::count(m_hits, Action::ChannelPanelJump, &Hit::action) == 2,
+          "Grouped search results render one card per hit under channel headers"
+      );
+      float nameX = -1, tagX = -1, roleX = -1, stampX = -1;
+      const auto stamp =
+          formatMessageTimestamp(m_channelPage.messages.front().timestamp, m_preferences.twelveHourClock);
+      auto inspect = [&](auto&& self, const Node& node) -> void {
+        if (node.type() == NodeType::Text) {
+          const auto& text = static_cast<const TextNode&>(node).text();
+          if (text == "Maya")
+            nameX = node.x();
+          else if (text == "NOCT")
+            tagX = node.x();
+          else if (text == "🌙")
+            roleX = node.x();
+          else if (text == stamp)
+            stampX = node.x();
+        }
+        for (const auto& child : node.children())
+          self(self, *child);
+      };
+      inspect(inspect, *m_scene);
+      require(nameX >= 0 && tagX >= 0 && roleX >= 0 && stampX >= 0, "Search cards draw name, tag, role icon and time");
+      require(
+          nameX < tagX && tagX < roleX && roleX < stampX,
+          "Search card badges follow the name with the timestamp last, like chat"
+      );
+      require(
+          std::ranges::any_of(m_hits, [](const auto& hit) { return hit.action == Action::ChannelPanelNext; }),
+          "A search with more pages exposes the next page"
+      );
+      const auto page = std::ranges::find_if(m_hits, [&](const auto& hit) {
+        return hit.action == Action::ChannelPanelPage && hit.id == "3";
+      });
+      require(page != m_hits.end(), "Numbered pagination exposes reachable page buttons");
+      const float chrome = m_window.titlebarHeight() - layout::Window::titlebarHeight;
+      m_window.motion(page->x + page->width / 2, page->y + page->height / 2 + chrome);
+      m_window.click(page->x + page->width / 2, page->y + page->height / 2 + chrome, 272);
+      m_window.released();
+      require(
+          m_channelPageShown && m_channelPageShown->offset == 2 * layout::SearchResult::pageMessages,
+          "Choosing a page number requests its matching offset"
+      );
+      require(
+          api::channelPagePath(*m_channelPageShown).ends_with("offset=50"),
+          "A page jump keeps the resolved query and targets its offset"
+      );
+      std::clog
+          << "Offline search filters, native suggestions, history, grouped results and pagination checks passed\n";
     }
     m_window.invalidate();
   }

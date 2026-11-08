@@ -147,13 +147,29 @@ namespace app {
         }
         if (view.starts_with("search-cycle")) {
           m_demoOverlay = view;
-          m_roleDirectory.apply({false, {{.guild = m_guildId, .owner = m_account.id}}});
+          m_roleDirectory.apply(
+              {.guilds = {
+                   {.guild = m_guildId,
+                    .replaceRoles = true,
+                    .roles =
+                        {{.id = "503",
+                          .position = 4,
+                          .colors = {0xBE95EC},
+                          .name = "Moonwarden",
+                          .unicodeEmoji = "🌙"}},
+                    .owner = m_account.id}
+               }}
+          );
           m_channelPanel = "search";
           m_focusedInput = "channel-search";
           m_channelSearchText.clear();
           m_searchHistory.clear();
-          m_messages = {{"90001", m_channelId, "Maya", "Search fixture", "2026-10-21T10:00:00Z", "11"}};
-          m_channels.push_back({.id = "202", .name = "design", .type = 0});
+          m_messages = {{"90001", m_channelId, "Maya", "Search fixture mentions <@11>", "2026-10-21T10:00:00Z", "11"}};
+          m_messages.front().mentions = {{"11", "Maya"}};
+          m_messages.front().authorTag = api::GuildTag{m_guildId, "NOCT", {}};
+          m_messages.front().memberRoles = std::vector<std::string>{"503"};
+          m_channels.push_back({.id = "202", .name = "design", .type = 0, .parentId = "203"});
+          m_channels.push_back({.id = "203", .name = "Design", .type = 4});
           m_guildChannels[m_guildId] = m_channels;
           if (view.ends_with("light"))
             m_preferences.theme = "light";

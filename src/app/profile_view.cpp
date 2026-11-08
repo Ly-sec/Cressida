@@ -187,7 +187,7 @@ namespace app {
     label(root, x + inset, y + bannerHeight + 92, usernameWidth, username, Style::fontSizeCaption, foreground);
     const auto tagWidth = drawGuildTag(
         root, x + inset + usernameWidth + Style::spaceSm, y + bannerHeight + 89, inner - usernameWidth - Style::spaceSm,
-        userTag
+        userTag, true, panel
     );
     if (usernameWidth + tagWidth + (Style::space2Xl - Style::spaceXxs) < inner)
       drawRoleIcon(

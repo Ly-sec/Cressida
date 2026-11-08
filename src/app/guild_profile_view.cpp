@@ -107,7 +107,7 @@ namespace app {
           root, x + width - Style::spaceSection, y + bannerHeight + 59, Style::glyphSizeLarge, "rosette-discount-check",
           accent
       );
-    drawGuildTag(root, x + 114, y + bannerHeight + Style::spaceMd, inner - 100, guild.tag, false);
+    drawGuildTag(root, x + 114, y + bannerHeight + Style::spaceMd, inner - 100, guild.tag, false, panel);
     std::string counts;
     if (guild.online)
       counts = std::to_string(*guild.online) + " online";

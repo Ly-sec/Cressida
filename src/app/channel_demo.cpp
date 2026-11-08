@@ -293,6 +293,10 @@ namespace app {
       channelFeatureEvent(event);
     } else if (step == 10) {
       require(m_channelPanel == "search" && m_channelPage.total == 1, "Search projects typed, scoped result pages");
+      require(
+          std::ranges::count(m_hits, Action::ChannelPanelJump, &Hit::action) == m_channelPage.messages.size(),
+          "Search results render exactly one grouped card per hit"
+      );
       api::Event stale;
       stale.operation = api::Operation::ChannelPage;
       stale.channelQuery = api::ChannelPageQuery{api::ChannelPage::Search, "1", "101", "old", {}, 0, 0};

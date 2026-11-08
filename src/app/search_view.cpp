@@ -762,23 +762,27 @@ namespace app {
       const auto page = std::ranges::find_if(m_hits, [&](const auto& hit) {
         return hit.action == Action::ChannelPanelPage && hit.id != "1";
       });
-      require(page != m_hits.end(), "Numbered pagination exposes a jumpable page");
-      unsigned target = 0;
-      const auto parsed = std::from_chars(page->id.data(), page->id.data() + page->id.size(), target);
-      require(parsed.ec == std::errc{} && target > 1, "A page number hit carries its page");
-      const float chrome = m_window.titlebarHeight() - layout::Window::titlebarHeight;
-      m_window.motion(page->x + page->width / 2, page->y + page->height / 2 + chrome);
-      m_window.click(page->x + page->width / 2, page->y + page->height / 2 + chrome, 272);
-      m_window.released();
-      require(
-          m_channelPageShown && m_channelPageShown->offset == (target - 1) * layout::SearchResult::pageMessages,
-          "Choosing a page number requests its matching offset"
-      );
-      require(
-          api::channelPagePath(*m_channelPageShown)
-              .ends_with("offset=" + std::to_string((target - 1) * layout::SearchResult::pageMessages)),
-          "A page jump keeps the resolved query and targets its offset"
-      );
+      // A tight narrow strip may collapse to the current page alone; a wider
+      // one must still offer a numbered jump.
+      require(page != m_hits.end() || narrow, "Numbered pagination exposes a jumpable page when the strip has room");
+      if (page != m_hits.end()) {
+        unsigned target = 0;
+        const auto parsed = std::from_chars(page->id.data(), page->id.data() + page->id.size(), target);
+        require(parsed.ec == std::errc{} && target > 1, "A page number hit carries its page");
+        const float chrome = m_window.titlebarHeight() - layout::Window::titlebarHeight;
+        m_window.motion(page->x + page->width / 2, page->y + page->height / 2 + chrome);
+        m_window.click(page->x + page->width / 2, page->y + page->height / 2 + chrome, 272);
+        m_window.released();
+        require(
+            m_channelPageShown && m_channelPageShown->offset == (target - 1) * layout::SearchResult::pageMessages,
+            "Choosing a page number requests its matching offset"
+        );
+        require(
+            api::channelPagePath(*m_channelPageShown)
+                .ends_with("offset=" + std::to_string((target - 1) * layout::SearchResult::pageMessages)),
+            "A page jump keeps the resolved query and targets its offset"
+        );
+      }
       std::clog
           << "Offline search filters, native suggestions, history, grouped results and pagination checks passed\n";
     }

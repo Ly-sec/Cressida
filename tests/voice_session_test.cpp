@@ -32,6 +32,20 @@ namespace {
 
 int main() {
   try {
+    require(
+        api::gatewayVoiceAction("RECONNECTING") == api::GatewayVoiceAction::Preserve
+            && api::gatewayVoiceAction("RESUMED") == api::GatewayVoiceAction::Preserve,
+        "Recoverable Gateway reconnects preserve the active voice session"
+    );
+    require(
+        api::gatewayVoiceAction("READY") == api::GatewayVoiceAction::Reset
+            && api::gatewayVoiceAction("CONNECTION_FAILED") == api::GatewayVoiceAction::Reset,
+        "A fresh Gateway session or terminal failure retires stale voice state"
+    );
+    require(
+        api::gatewayVoiceAction("MESSAGE_CREATE") == api::GatewayVoiceAction::Ignore,
+        "Unrelated Gateway events do not change voice lifecycle"
+    );
     for (const bool serverFirst : {false, true}) {
       api::VoiceSession session;
       begin(session);

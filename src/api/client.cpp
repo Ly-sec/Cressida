@@ -1171,6 +1171,13 @@ namespace api {
   void Client::gatewayEvent(std::uint64_t session, const std::string& type, const Json& data) {
     if (session != m_session)
       return;
+    if (gatewayVoiceAction(type) == GatewayVoiceAction::Reset) {
+      if (type == "READY") {
+        const auto state = resetVoice(false, session);
+        publish(Event{.operation = Operation::Voice, .session = state.generation, .voice = state});
+      } else
+        leaveVoice(session);
+    }
     if (type == "PRESENCE_UPDATE" && data.is_object()) {
       std::string user;
       if (const auto at = data.find("user_id"); at != data.end() && at->is_string())
@@ -1204,8 +1211,6 @@ namespace api {
       voiceEvent(session, type, data);
       return;
     }
-    if (type == "RECONNECTING" || type == "CONNECTION_FAILED")
-      leaveVoice(session);
     bool readyBatch = false;
     ScopeExit finishReady{[this, session, &readyBatch] {
       if (readyBatch && m_authenticatedSession == session) {

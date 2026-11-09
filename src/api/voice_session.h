@@ -6,8 +6,18 @@
 #include <algorithm>
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <string_view>
 
 namespace api {
+  enum class GatewayVoiceAction { Ignore, Preserve, Reset };
+  constexpr GatewayVoiceAction gatewayVoiceAction(std::string_view type) {
+    if (type == "RECONNECTING" || type == "RESUMED")
+      return GatewayVoiceAction::Preserve;
+    if (type == "READY" || type == "CONNECTION_FAILED")
+      return GatewayVoiceAction::Reset;
+    return GatewayVoiceAction::Ignore;
+  }
+
   // Private signaling credentials remain scoped to one explicit join intention.
   class VoiceSession {
   public:

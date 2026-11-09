@@ -130,9 +130,10 @@ focus. Server permissions or a server mute can also prevent speaking.
 
 **Voice connected** with **No other participants** means the channel is ready
 and you are alone. Your microphone can show local activity; audio waits for
-encrypted group keys before transmission. A device or network error needs an
-explicit rejoin after you correct the problem. Automatic call resume is not
-implemented. See [Voice chat](voice.md) for the supported call types.
+encrypted group keys before transmission. Correct audio device issues first. If
+the voice transport failed, explicitly rejoin. Recoverable Gateway interruptions
+retain the current call; a terminal connection failure ends it. See
+[Voice chat](voice.md) for the supported call types.
 
 ## Screen sharing does not start
 

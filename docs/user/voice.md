@@ -60,6 +60,11 @@ each account. An unavailable saved device stays visible as **Unavailable saved
 device**. Select a working device and join again if audio setup fails. Calls,
 mute and deafen are not restored when you restart or sign in again.
 
+Recoverable connection interruptions preserve the current call and watched
+streams while the client reconnects. A fresh session or terminal connection
+failure clears stale call state. A voice transport failure still requires you to
+join again.
+
 ## Choose when the microphone transmits
 
 Under **Microphone activation**, choose an **Input mode**:
@@ -98,8 +103,9 @@ install libdave separately.
 
 Voice needs a working PulseAudio service or PipeWire's PulseAudio-compatible
 service. If an audio device becomes unavailable, choose a working device and
-join again. A failed network connection also requires an explicit rejoin;
-Cressida does not automatically resume the call.
+join again. Recoverable Gateway interruptions preserve the current call while
+reconnecting. A terminal connection or voice transport failure requires an
+explicit rejoin.
 
 Playback retains up to 32 speaker streams at a time. Streams idle for five
 seconds are released, so very large conversations may not play every speaker.

@@ -2018,10 +2018,13 @@ void Input::ensureCursorVisibleY() {
     return;
   }
   const TextCursorStop& stop = m_stopRect[stopIndexForByte(m_cursorPos)];
+  // A row taller than the viewport cannot expose both edges. Reveal its top
+  // slice consistently so repeated layout cannot alternate between the edges.
+  const float revealHeight = std::min(stop.height, viewH);
   if (stop.y < m_scrollOffsetY) {
     m_scrollOffsetY = stop.y;
-  } else if (stop.y + stop.height > m_scrollOffsetY + viewH) {
-    m_scrollOffsetY = stop.y + stop.height - viewH;
+  } else if (stop.y + revealHeight > m_scrollOffsetY + viewH) {
+    m_scrollOffsetY = stop.y + revealHeight - viewH;
   }
   clampScrollOffsetY();
 }

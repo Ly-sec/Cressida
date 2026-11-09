@@ -1,5 +1,6 @@
 #include "app/brand_logo.h"
 #include "app/member_list_layout.h"
+#include "core/deferred_call.h"
 #include "core/files/resource_paths.h"
 #include "core/input/key_modifiers.h"
 #include "core/input/keybind_matcher.h"
@@ -7,6 +8,8 @@
 #include "render/scene/input_area.h"
 #include "render/scene/input_dispatcher.h"
 #include "render/scene/rect_node.h"
+#include "render/scene/text_node.h"
+#include "render/text/cairo_text_renderer.h"
 #include "render/text/glyph_registry.h"
 #include "ui/controls/button.h"
 #include "ui/controls/collapsible.h"
@@ -17,11 +20,183 @@
 #include FT_FREETYPE_H
 #include "ui/controls/toggle.h"
 
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
 #include <xkbcommon/xkbcommon-keysyms.h>
+
+namespace {
+  // Input geometry uses the production Pango metrics without a graphics context.
+  class MetricsRenderer final : public Renderer {
+    CairoTextRenderer m_text;
+    float m_scale;
+
+    static TextMetrics convert(const CairoTextRenderer::TextMetrics& value) {
+      return {
+          .width = value.width,
+          .left = value.left,
+          .right = value.right,
+          .top = value.top,
+          .bottom = value.bottom,
+          .inkTop = value.inkTop,
+          .inkBottom = value.inkBottom,
+          .inkLeft = value.inkLeft,
+          .inkRight = value.inkRight,
+          .capHeight = value.capHeight,
+          .lineCount = value.lineCount
+      };
+    }
+
+  public:
+    MetricsRenderer(std::string family, float scale) : m_scale(scale) {
+      m_text.initialize(nullptr, nullptr);
+      m_text.setFontFamily(std::move(family));
+    }
+    TextMetrics measureText(
+        std::string_view text, float size, FontWeight weight, float width, int lines, TextAlign align,
+        std::string_view family, TextEllipsize ellipsize, bool markup
+    ) override {
+      return convert(m_text.measure(m_scale, text, size, weight, width, lines, align, family, ellipsize, markup));
+    }
+    TextMetrics measureFont(float size, FontWeight weight) override {
+      return convert(m_text.measureFont(m_scale, size, weight));
+    }
+    void measureTextCursorStops(
+        std::string_view text, float size, const std::vector<std::size_t>& offsets, std::vector<float>& stops,
+        FontWeight weight
+    ) override {
+      m_text.measureCursorStops(m_scale, text, size, offsets, stops, weight);
+    }
+    void measureTextCursorStopsWrapped(
+        std::string_view text, float size, const std::vector<std::size_t>& offsets, float width,
+        std::vector<TextCursorStop>& stops, FontWeight weight
+    ) override {
+      m_text.measureCursorStopsWrapped(m_scale, text, size, offsets, width, stops, weight);
+    }
+    TextMetrics measureGlyph(char32_t, float size) override { return {.width = size, .right = size, .top = -size}; }
+    TextureManager& textureManager() override { throw std::runtime_error("Input layout must not allocate textures"); }
+    float renderScale() const noexcept override { return m_scale; }
+  };
+
+  const TextNode* findTextNode(const Node& node) {
+    if (node.type() == NodeType::Text)
+      return static_cast<const TextNode*>(&node);
+    for (const auto& child : node.children())
+      if (const auto* text = findTextNode(*child))
+        return text;
+    return nullptr;
+  }
+
+  void settleDeferredCalls() {
+    for (auto& callback : DeferredCall::takePending())
+      callback();
+  }
+
+  void requireStableInputLayout(Input& field, MetricsRenderer& renderer, const char* message) {
+    field.layout(renderer);
+    const auto* text = findTextNode(field);
+    if (!text)
+      throw std::runtime_error("Input layout retains its text node");
+    float initialX = 0, initialY = 0;
+    Node::absolutePosition(text, initialX, initialY);
+    const auto initialCaret = field.textInputState();
+    constexpr int kRepeatedLayoutPasses = 8;
+    constexpr float kGeometryTolerance = 0.001F;
+    for (int pass = 0; pass < kRepeatedLayoutPasses; ++pass) {
+      field.markLayoutDirty();
+      field.layout(renderer);
+      settleDeferredCalls();
+      float x = 0, y = 0;
+      Node::absolutePosition(text, x, y);
+      const auto caret = field.textInputState();
+      if (std::abs(x - initialX) > kGeometryTolerance
+          || std::abs(y - initialY) > kGeometryTolerance
+          || caret.cursorRectX != initialCaret.cursorRectX
+          || caret.cursorRectY != initialCaret.cursorRectY
+          || caret.cursorRectHeight != initialCaret.cursorRectHeight)
+        throw std::runtime_error(message);
+    }
+  }
+
+  void inputVerticalScrollCases() {
+    for (const auto* family : {"sans-serif", "JetBrains Mono", "Noto Sans Math"}) {
+      for (const float scale : {1.0F, 1.25F, 2.0F}) {
+        MetricsRenderer renderer(family, scale);
+        const float width = Style::controlHeightLg * 6;
+        const float composerHeight = app::layout::Composer::minimumHeight - Style::spaceSm;
+        Input field;
+        field.setMultiline(true);
+        field.setMultilineCenterWhenFits(true);
+        field.setFontSize(Style::fontSizeBody);
+        field.setHorizontalPadding(Style::spaceXs);
+        field.setPlaceholder("Message this channel…");
+        field.setFrameVisible(false);
+        field.setFrameSize(width, composerHeight);
+        field.layout(renderer);
+        field.inputArea()->dispatchFocusGain();
+        settleDeferredCalls();
+        requireStableInputLayout(field, renderer, "A focused composer placeholder stays still across redraws");
+
+        // Force an oversized empty caret independently of the installed font.
+        constexpr float kViewportShortfall = Style::spaceXs - Style::borderWidth;
+        const float emptyRow = renderer.fontRowExtent(Style::fontSizeBody);
+        const float shortHeight = emptyRow + Style::spaceSm * 2 - kViewportShortfall;
+        field.setFrameSize(width, shortHeight);
+        requireStableInputLayout(field, renderer, "An empty row taller than its viewport does not oscillate");
+        field.setPlaceholder("Short hint");
+        requireStableInputLayout(field, renderer, "Replacing a placeholder preserves stable vertical placement");
+        field.inputArea()->dispatchFocusLoss();
+        requireStableInputLayout(field, renderer, "An unfocused placeholder stays still across redraws");
+        field.inputArea()->dispatchFocusGain();
+        settleDeferredCalls();
+        requireStableInputLayout(field, renderer, "Refocusing an oversized empty row does not restart jitter");
+
+        field.setValue("x");
+        std::vector<TextCursorStop> stops;
+        renderer.measureTextCursorStopsWrapped("x", Style::fontSizeBody, {0, 1}, width, stops, FontWeight::Normal);
+        if (stops.size() != 2)
+          throw std::runtime_error("A shaped test character supplies both cursor stops");
+        field.setFrameSize(width, stops.front().height + Style::spaceSm * 2 - kViewportShortfall);
+        requireStableInputLayout(field, renderer, "An oversized typed row stays still across redraws");
+
+        field.setFrameSize(width, composerHeight + Style::controlHeightSm);
+        field.setValue("First line\nSecond line\nThird line\nFourth line\nLast line");
+        requireStableInputLayout(field, renderer, "The last line remains visible without scroll oscillation");
+        const auto* text = findTextNode(field);
+        float bottomX = 0, bottomY = 0;
+        Node::absolutePosition(text, bottomX, bottomY);
+        field.inputArea()->dispatchKey(XKB_KEY_Home, 0, KeyMod::Ctrl, true);
+        requireStableInputLayout(field, renderer, "Returning to the first line settles vertical scrolling");
+        float topX = 0, topY = 0;
+        Node::absolutePosition(text, topX, topY);
+        if (field.textInputState().cursor != 0 || topY <= bottomY)
+          throw std::runtime_error("Moving to the first line reveals the beginning of a scrolled input");
+        field.inputArea()->dispatchKey(XKB_KEY_End, 0, KeyMod::Ctrl, true);
+        requireStableInputLayout(field, renderer, "Returning to the last line settles vertical scrolling");
+        if (field.textInputState().cursor != static_cast<std::int32_t>(field.value().size()))
+          throw std::runtime_error("Moving to the last line retains the final text offset");
+
+        field.setFrameSize(Style::controlHeightLg * 2, composerHeight);
+        field.setValue("A long paragraph wraps across several rows while the caret follows its final word.");
+        requireStableInputLayout(field, renderer, "Soft-wrapped text keeps its final row stable across redraws");
+        Node::absolutePosition(text, bottomX, bottomY);
+        field.inputArea()->dispatchKey(XKB_KEY_Home, 0, KeyMod::Ctrl, true);
+        requireStableInputLayout(field, renderer, "Soft-wrapped text can scroll back to its first row");
+        Node::absolutePosition(text, topX, topY);
+        if (topY <= bottomY)
+          throw std::runtime_error("Soft wrapping extends the paragraph beyond the input viewport");
+        field.inputArea()->dispatchKey(XKB_KEY_End, 0, KeyMod::Ctrl, true);
+        requireStableInputLayout(field, renderer, "Soft-wrapped text can scroll back to its final row");
+        field.setFrameSize(width, composerHeight);
+        field.setValue({});
+        requireStableInputLayout(field, renderer, "Clearing scrolled text restores a stable placeholder");
+        field.inputArea()->dispatchFocusLoss();
+      }
+    }
+  }
+} // namespace
 
 struct Clipboard final : TextClipboard {
   std::string text;
@@ -34,6 +209,7 @@ int main() {
       throw std::runtime_error(message);
   };
   try {
+    inputVerticalScrollCases();
     {
       const auto saved = palette;
       auto colors = saved;

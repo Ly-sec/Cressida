@@ -478,178 +478,9 @@ namespace app {
         cursorDevice = wp_cursor_shape_manager_v1_get_pointer(cursorManager, pointer);
     }
 
-    static inline const wl_keyboard_listener keyboardListener{
-        .keymap =
-            [](void* data, wl_keyboard*, std::uint32_t format, int fd, std::uint32_t size) {
-              auto& self = *static_cast<Impl*>(data);
-              if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1 || size == 0 || size > 4 * 1024 * 1024) {
-                ::close(fd);
-                return;
-              }
-              void* bytes = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
-              ::close(fd);
-              if (bytes == MAP_FAILED)
-                return;
-              xkb_keymap* next = nullptr;
-              if (static_cast<char*>(bytes)[size - 1] == '\0')
-                next = xkb_keymap_new_from_string(
-                    self.xkb, static_cast<char*>(bytes), XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS
-                );
-              munmap(bytes, size);
-              if (!next)
-                return;
-              auto* nextState = xkb_state_new(next);
-              if (!nextState) {
-                xkb_keymap_unref(next);
-                return;
-              }
-              if (self.state)
-                xkb_state_unref(self.state);
-              if (self.keymap)
-                xkb_keymap_unref(self.keymap);
-              self.keymap = next;
-              self.state = nextState;
-            },
-        .enter =
-            [](void* data, wl_keyboard*, std::uint32_t, wl_surface* surface, wl_array*) {
-              auto& self = *static_cast<Impl*>(data);
-              if (!self.visible)
-                return;
-              const bool changed = !self.keyboardFocused;
-              self.keyboardFocused = true;
-              self.textInput.onKeyboardFocusSurface(surface, true);
-              self.syncTextInput();
-              if (changed && self.owner.focusChanged)
-                self.owner.focusChanged(true);
-              self.owner.invalidate();
-            },
-        .leave = [](void* data, wl_keyboard*, std::uint32_t,
-                    wl_surface* surface) { static_cast<Impl*>(data)->keyboardBlur(surface); },
-        .key =
-            [](void* data, wl_keyboard*, std::uint32_t serial, std::uint32_t, std::uint32_t key, std::uint32_t state) {
-              auto& self = *static_cast<Impl*>(data);
-              if (!self.visible)
-                return;
-              if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
-                self.inputSerial = serial;
-                self.emitKey(key + 8);
-                if (self.keymap && xkb_keymap_key_repeats(self.keymap, key + 8) && self.repeatRate > 0) {
-                  self.repeatKey = key + 8;
-                  self.repeatAt = Clock::now() + std::chrono::milliseconds(self.repeatDelay);
-                }
-              } else {
-                if (self.repeatKey == key + 8)
-                  self.repeatKey = 0;
-                if (self.state)
-                  self.routeKey({.symbol = xkb_state_key_get_one_sym(self.state, key + 8)}, false);
-              }
-            },
-        .modifiers =
-            [](void* data, wl_keyboard*, std::uint32_t, std::uint32_t depressed, std::uint32_t latched,
-               std::uint32_t locked, std::uint32_t group) {
-              auto& self = *static_cast<Impl*>(data);
-              if (self.state)
-                xkb_state_update_mask(self.state, depressed, latched, locked, 0, 0, group);
-            },
-        .repeat_info =
-            [](void* data, wl_keyboard*, std::int32_t rate, std::int32_t delay) {
-              auto& self = *static_cast<Impl*>(data);
-              self.repeatRate = std::clamp(rate, 0, 100);
-              self.repeatDelay = std::clamp(delay, 0, 5000);
-            },
-    };
+    static const wl_keyboard_listener keyboardListener;
 
-    static inline const wl_pointer_listener pointerListener{
-        .enter =
-            [](void* data, wl_pointer*, std::uint32_t serial, wl_surface*, wl_fixed_t x, wl_fixed_t y) {
-              auto& self = *static_cast<Impl*>(data);
-              self.pointerX = wl_fixed_to_double(x);
-              self.pointerY = wl_fixed_to_double(y);
-              self.pointerSerial = serial;
-              if (self.cursorDevice)
-                wp_cursor_shape_device_v1_set_shape(self.cursorDevice, serial, self.cursorShape);
-              if (self.owner.motion)
-                self.owner.motion(self.pointerX / self.uiScale, self.pointerY / self.uiScale);
-            },
-        .leave =
-            [](void* data, wl_pointer*, std::uint32_t, wl_surface*) {
-              auto& self = *static_cast<Impl*>(data);
-              self.pointerSerial = 0;
-              if (self.owner.pointerLeft)
-                self.owner.pointerLeft();
-            },
-        .motion =
-            [](void* data, wl_pointer*, std::uint32_t, wl_fixed_t x, wl_fixed_t y) {
-              auto& self = *static_cast<Impl*>(data);
-              self.pointerX = wl_fixed_to_double(x);
-              self.pointerY = wl_fixed_to_double(y);
-              if (self.owner.motion)
-                self.owner.motion(self.pointerX / self.uiScale, self.pointerY / self.uiScale);
-            },
-        .button =
-            [](void* data, wl_pointer*, std::uint32_t serial, std::uint32_t, std::uint32_t button,
-               std::uint32_t state) {
-              auto& self = *static_cast<Impl*>(data);
-              if (button == 0x111) {
-                if (state == WL_POINTER_BUTTON_STATE_PRESSED && self.owner.contextClick) {
-                  self.inputSerial = serial;
-                  self.owner.contextClick(self.pointerX / self.uiScale, self.pointerY / self.uiScale);
-                }
-                return;
-              }
-              if (button != 0x110)
-                return;
-              self.inputSerial = serial;
-              if (state != WL_POINTER_BUTTON_STATE_PRESSED) {
-                if (self.owner.released)
-                  self.owner.released();
-                return;
-              }
-              if (!self.maximized
-                  && !self.fullscreen
-                  && self.decorations.clientSide()
-                  && (self.pointerX >= self.width - 7 || self.pointerY >= self.height - 7)) {
-                const auto edge = self.pointerX >= self.width - 7
-                    ? (self.pointerY >= self.height - 7 ? XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_RIGHT
-                                                        : XDG_TOPLEVEL_RESIZE_EDGE_RIGHT)
-                    : XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM;
-                xdg_toplevel_resize(self.toplevel, self.seat, serial, edge);
-              } else if (self.owner.titlebarDragContains(self.pointerX / self.uiScale, self.pointerY / self.uiScale)) {
-                if (Clock::now() - self.titleClick < std::chrono::milliseconds(350)) {
-                  self.owner.toggleMaximized();
-                  self.titleClick = {};
-                } else {
-                  self.titleClick = Clock::now();
-                  xdg_toplevel_move(self.toplevel, self.seat, serial);
-                }
-              } else if (self.owner.click)
-                self.owner.click(self.pointerX / self.uiScale, self.pointerY / self.uiScale, serial);
-            },
-        .axis =
-            [](void* data, wl_pointer* pointer, std::uint32_t time, std::uint32_t axis, wl_fixed_t value) {
-              auto& self = *static_cast<Impl*>(data);
-              if (axis == WL_POINTER_AXIS_VERTICAL_SCROLL) {
-                self.axisTime = time;
-                self.axisValue += wl_fixed_to_double(value);
-                if (wl_proxy_get_version(reinterpret_cast<wl_proxy*>(pointer)) < WL_POINTER_FRAME_SINCE_VERSION)
-                  self.dispatchAxis();
-              }
-            },
-        .frame = [](void* data, wl_pointer*) { static_cast<Impl*>(data)->dispatchAxis(); },
-        .axis_source = [](void* data, wl_pointer*,
-                          std::uint32_t source) { static_cast<Impl*>(data)->axisSource = source; },
-        .axis_stop = [](void*, wl_pointer*, std::uint32_t, std::uint32_t) {},
-        .axis_discrete =
-            [](void* data, wl_pointer*, std::uint32_t axis, std::int32_t value) {
-              if (axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
-                static_cast<Impl*>(data)->axisDiscrete += value;
-            },
-        .axis_value120 =
-            [](void* data, wl_pointer*, std::uint32_t axis, std::int32_t value) {
-              if (axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
-                static_cast<Impl*>(data)->axisValue120 += value;
-            },
-    };
+    static const wl_pointer_listener pointerListener;
 
     void bindDataDevice() {
       if (!dataManager || !seat || dataDevice)
@@ -735,6 +566,178 @@ namespace app {
         }
       }
     }
+  };
+
+  const wl_keyboard_listener Window::Impl::keyboardListener{
+      .keymap =
+          [](void* data, wl_keyboard*, std::uint32_t format, int fd, std::uint32_t size) {
+            auto& self = *static_cast<Impl*>(data);
+            if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1 || size == 0 || size > 4 * 1024 * 1024) {
+              ::close(fd);
+              return;
+            }
+            void* bytes = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+            ::close(fd);
+            if (bytes == MAP_FAILED)
+              return;
+            xkb_keymap* next = nullptr;
+            if (static_cast<char*>(bytes)[size - 1] == '\0')
+              next = xkb_keymap_new_from_string(
+                  self.xkb, static_cast<char*>(bytes), XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS
+              );
+            munmap(bytes, size);
+            if (!next)
+              return;
+            auto* nextState = xkb_state_new(next);
+            if (!nextState) {
+              xkb_keymap_unref(next);
+              return;
+            }
+            if (self.state)
+              xkb_state_unref(self.state);
+            if (self.keymap)
+              xkb_keymap_unref(self.keymap);
+            self.keymap = next;
+            self.state = nextState;
+          },
+      .enter =
+          [](void* data, wl_keyboard*, std::uint32_t, wl_surface* surface, wl_array*) {
+            auto& self = *static_cast<Impl*>(data);
+            if (!self.visible)
+              return;
+            const bool changed = !self.keyboardFocused;
+            self.keyboardFocused = true;
+            self.textInput.onKeyboardFocusSurface(surface, true);
+            self.syncTextInput();
+            if (changed && self.owner.focusChanged)
+              self.owner.focusChanged(true);
+            self.owner.invalidate();
+          },
+      .leave = [](void* data, wl_keyboard*, std::uint32_t,
+                  wl_surface* surface) { static_cast<Impl*>(data)->keyboardBlur(surface); },
+      .key =
+          [](void* data, wl_keyboard*, std::uint32_t serial, std::uint32_t, std::uint32_t key, std::uint32_t state) {
+            auto& self = *static_cast<Impl*>(data);
+            if (!self.visible)
+              return;
+            if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+              self.inputSerial = serial;
+              self.emitKey(key + 8);
+              if (self.keymap && xkb_keymap_key_repeats(self.keymap, key + 8) && self.repeatRate > 0) {
+                self.repeatKey = key + 8;
+                self.repeatAt = Clock::now() + std::chrono::milliseconds(self.repeatDelay);
+              }
+            } else {
+              if (self.repeatKey == key + 8)
+                self.repeatKey = 0;
+              if (self.state)
+                self.routeKey({.symbol = xkb_state_key_get_one_sym(self.state, key + 8)}, false);
+            }
+          },
+      .modifiers =
+          [](void* data, wl_keyboard*, std::uint32_t, std::uint32_t depressed, std::uint32_t latched,
+             std::uint32_t locked, std::uint32_t group) {
+            auto& self = *static_cast<Impl*>(data);
+            if (self.state)
+              xkb_state_update_mask(self.state, depressed, latched, locked, 0, 0, group);
+          },
+      .repeat_info =
+          [](void* data, wl_keyboard*, std::int32_t rate, std::int32_t delay) {
+            auto& self = *static_cast<Impl*>(data);
+            self.repeatRate = std::clamp(rate, 0, 100);
+            self.repeatDelay = std::clamp(delay, 0, 5000);
+          },
+  };
+
+  const wl_pointer_listener Window::Impl::pointerListener{
+      .enter =
+          [](void* data, wl_pointer*, std::uint32_t serial, wl_surface*, wl_fixed_t x, wl_fixed_t y) {
+            auto& self = *static_cast<Impl*>(data);
+            self.pointerX = wl_fixed_to_double(x);
+            self.pointerY = wl_fixed_to_double(y);
+            self.pointerSerial = serial;
+            if (self.cursorDevice)
+              wp_cursor_shape_device_v1_set_shape(self.cursorDevice, serial, self.cursorShape);
+            if (self.owner.motion)
+              self.owner.motion(self.pointerX / self.uiScale, self.pointerY / self.uiScale);
+          },
+      .leave =
+          [](void* data, wl_pointer*, std::uint32_t, wl_surface*) {
+            auto& self = *static_cast<Impl*>(data);
+            self.pointerSerial = 0;
+            if (self.owner.pointerLeft)
+              self.owner.pointerLeft();
+          },
+      .motion =
+          [](void* data, wl_pointer*, std::uint32_t, wl_fixed_t x, wl_fixed_t y) {
+            auto& self = *static_cast<Impl*>(data);
+            self.pointerX = wl_fixed_to_double(x);
+            self.pointerY = wl_fixed_to_double(y);
+            if (self.owner.motion)
+              self.owner.motion(self.pointerX / self.uiScale, self.pointerY / self.uiScale);
+          },
+      .button =
+          [](void* data, wl_pointer*, std::uint32_t serial, std::uint32_t, std::uint32_t button, std::uint32_t state) {
+            auto& self = *static_cast<Impl*>(data);
+            if (button == 0x111) {
+              if (state == WL_POINTER_BUTTON_STATE_PRESSED && self.owner.contextClick) {
+                self.inputSerial = serial;
+                self.owner.contextClick(self.pointerX / self.uiScale, self.pointerY / self.uiScale);
+              }
+              return;
+            }
+            if (button != 0x110)
+              return;
+            self.inputSerial = serial;
+            if (state != WL_POINTER_BUTTON_STATE_PRESSED) {
+              if (self.owner.released)
+                self.owner.released();
+              return;
+            }
+            if (!self.maximized
+                && !self.fullscreen
+                && self.decorations.clientSide()
+                && (self.pointerX >= self.width - 7 || self.pointerY >= self.height - 7)) {
+              const auto edge = self.pointerX >= self.width - 7
+                  ? (self.pointerY >= self.height - 7 ? XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_RIGHT
+                                                      : XDG_TOPLEVEL_RESIZE_EDGE_RIGHT)
+                  : XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM;
+              xdg_toplevel_resize(self.toplevel, self.seat, serial, edge);
+            } else if (self.owner.titlebarDragContains(self.pointerX / self.uiScale, self.pointerY / self.uiScale)) {
+              if (Clock::now() - self.titleClick < std::chrono::milliseconds(350)) {
+                self.owner.toggleMaximized();
+                self.titleClick = {};
+              } else {
+                self.titleClick = Clock::now();
+                xdg_toplevel_move(self.toplevel, self.seat, serial);
+              }
+            } else if (self.owner.click)
+              self.owner.click(self.pointerX / self.uiScale, self.pointerY / self.uiScale, serial);
+          },
+      .axis =
+          [](void* data, wl_pointer* pointer, std::uint32_t time, std::uint32_t axis, wl_fixed_t value) {
+            auto& self = *static_cast<Impl*>(data);
+            if (axis == WL_POINTER_AXIS_VERTICAL_SCROLL) {
+              self.axisTime = time;
+              self.axisValue += wl_fixed_to_double(value);
+              if (wl_proxy_get_version(reinterpret_cast<wl_proxy*>(pointer)) < WL_POINTER_FRAME_SINCE_VERSION)
+                self.dispatchAxis();
+            }
+          },
+      .frame = [](void* data, wl_pointer*) { static_cast<Impl*>(data)->dispatchAxis(); },
+      .axis_source = [](void* data, wl_pointer*,
+                        std::uint32_t source) { static_cast<Impl*>(data)->axisSource = source; },
+      .axis_stop = [](void*, wl_pointer*, std::uint32_t, std::uint32_t) {},
+      .axis_discrete =
+          [](void* data, wl_pointer*, std::uint32_t axis, std::int32_t value) {
+            if (axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
+              static_cast<Impl*>(data)->axisDiscrete += value;
+          },
+      .axis_value120 =
+          [](void* data, wl_pointer*, std::uint32_t axis, std::int32_t value) {
+            if (axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
+              static_cast<Impl*>(data)->axisValue120 += value;
+          },
   };
 
   Window::Window() : m(std::make_unique<Impl>(*this)) {}

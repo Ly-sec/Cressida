@@ -63,6 +63,43 @@ can be granted.
 Custom emoji in notification text use readable `:name:` labels because system
 notification text does not render the same way as a chat message.
 
+### Sound sets
+
+Open **Settings > Notifications > Interface sounds** to choose **Soft**,
+**Crisp** or **Warm**. Soft is the default. Your choice is saved separately for
+each account.
+
+**Sound volume** adjusts all interface cues and previews from 0% to 100%. It
+starts at 50%; 0% silences them. This per-account setting does not change call,
+video or voice-message volume.
+
+The **Notification sounds** switch enables or disables all interface sounds.
+Every event also has its own switch and a play glyph beside its heading to
+preview the sound. Previews let you compare sounds even when their switches are
+off. All fourteen events start enabled:
+
+- Messages and mentions, with a mention cue replacing the ordinary message cue.
+  Due reminders use the message cue.
+- Microphone mute and unmute, including voice commands.
+- Output mute and unmute.
+- Your voice connection joining and leaving.
+- Other participants joining and leaving your current call.
+- Your screen share starting and stopping.
+- Serious errors when voice or screen-share connections fail.
+- Serious warnings when an audio device failure interrupts a call.
+
+Message and reminder sounds follow desktop-notification eligibility, including
+mute preferences and Do Not Disturb. Participant sounds also respect Do Not
+Disturb. Explicit voice controls still provide feedback in Do Not Disturb.
+Deafening silences other cues and previews, but keeps output mute and unmute
+feedback audible.
+
+Join and sharing-start cues wait for a ready connection. Initial room rosters,
+ordinary background-request errors, opening a screen preview and successful
+voice rekeying do not play cues. Bursts are bounded; stale cues are dropped
+rather than played long after their event. Changing sound settings or signing
+out cancels queued playback.
+
 ## Window decorations
 
 In **Advanced**, use **Desktop decorations** to request your compositor's window

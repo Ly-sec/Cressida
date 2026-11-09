@@ -345,7 +345,8 @@ namespace app {
           notice.guild = saved.guild;
           notice.channel = saved.channel;
           notice.message = saved.id;
-          notice.sound = m_preferences.notificationSounds;
+          notice.sound = false;
+          playSound(SoundEvent::Message);
           notice.title = "Message reminder";
           notice.body = "A saved message is ready to revisit.";
           if (!m_preferences.notificationPrivacy)

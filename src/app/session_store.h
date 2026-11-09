@@ -1,5 +1,6 @@
 #pragma once
 #include "app/layout_metrics.h"
+#include "app/notification_sounds.h"
 #include "app/window_controls.h"
 #include "rpc/activity.h"
 #include "voice/audio.h"
@@ -40,6 +41,7 @@ namespace app {
     bool developerMode = false, convertEmoticons = true, showReactions = true, showRoleIcons = true;
     int messageGroupSpacing = 16;
     bool desktopNotifications = true, notificationSounds = true;
+    SoundSettings sounds;
     int notificationPrivacy = 0;
     std::map<std::string, std::string> keybinds;
     bool desktopDecorations = true;

@@ -107,6 +107,7 @@ namespace app {
       std::vector<int> descriptors{m_rpc.eventFd()};
       descriptors.push_back(m_voiceMessagePlayer.eventFd());
       descriptors.push_back(m_voiceMessageRecorder.eventFd());
+      descriptors.push_back(m_notificationSounds.eventFd());
       if (m_streamPopout)
         descriptors.push_back(m_streamPopout->eventFd());
       return descriptors;
@@ -4645,6 +4646,10 @@ namespace app {
     if (m_demo && m_demoOverlay.starts_with("tray-") && !m_window.visible())
       ++m_trayHiddenTicks;
     drainDesktopNotifications();
+    if (auto result = m_notificationSounds.pollResult(); result && !result->error.empty()) {
+      m_settingsStatus = std::move(result->error);
+      m_window.invalidate();
+    }
     drainServerSettingsUploads();
     if (m_soundPreview.drain())
       m_window.invalidate();
@@ -4792,7 +4797,7 @@ namespace app {
         continue;
       }
       if (event.operation == api::Operation::VoiceRoster && event.voiceRoster) {
-        m_voiceRoster.apply(*event.voiceRoster);
+        voiceRosterSounds(*event.voiceRoster);
         for (const auto& member : m_voiceRoster.members(m_voiceGuild, m_voiceState.channel))
           if (member.user == m_account.id && (member.muted || member.deafened || member.suppressed))
             releasePushToTalk();
@@ -4806,8 +4811,10 @@ namespace app {
             || event.voice->muted
             || event.voice->deafened)
           releasePushToTalk();
-        if (event.voice->phase != voice::Phase::Disconnected || m_voiceState.phase != voice::Phase::Failed)
+        if (event.voice->phase != voice::Phase::Disconnected || m_voiceState.phase != voice::Phase::Failed) {
+          voiceSoundState(*event.voice);
           m_voiceState = std::move(*event.voice);
+        }
         if (m_voiceState.phase == voice::Phase::Connected
             || m_voiceState.phase == voice::Phase::Failed
             || m_voiceState.phase == voice::Phase::WaitingForParticipants

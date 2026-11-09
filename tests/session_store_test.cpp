@@ -7,10 +7,12 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <vector>
 
 namespace {
   struct EnvironmentOverride {
@@ -40,6 +42,93 @@ int main() {
       throw std::runtime_error(message);
   };
   try {
+    {
+      const auto soundsPath = std::filesystem::path(directory) / "sounds.json";
+      app::SessionStore store(soundsPath);
+      auto preferences = store.preferences("123");
+      require(
+          preferences.sounds.pack == "soft"
+              && preferences.notificationSounds
+              && preferences.sounds.volume == app::defaultSoundVolume,
+          "Sounds default to Soft at quiet volume"
+      );
+      for (bool enabled : preferences.sounds.enabled)
+        require(enabled, "Every sound event defaults enabled");
+      preferences.sounds.pack = "warm";
+      preferences.sounds.volume = 17;
+      for (std::size_t i = 0; i < preferences.sounds.enabled.size(); ++i)
+        preferences.sounds.enabled[i] = i % 2 == 0;
+      preferences.notificationSounds = false;
+      preferences.fontFamily = "Sound test family";
+      store.savePreferences("123", preferences);
+      app::SessionStore restored(soundsPath);
+      const auto roundtrip = restored.preferences("123");
+      require(
+          roundtrip.sounds.pack == "warm"
+              && roundtrip.sounds.volume == 17
+              && !roundtrip.notificationSounds
+              && roundtrip.sounds.enabled == preferences.sounds.enabled,
+          "Sound choices survive restart"
+      );
+      require(
+          restored.preferences("456").sounds.pack == "soft"
+              && restored.preferences("456").notificationSounds
+              && restored.preferences("456").sounds.volume == app::defaultSoundVolume,
+          "Sound settings are account scoped"
+      );
+      nlohmann::json contents;
+      {
+        std::ifstream input(soundsPath);
+        input >> contents;
+      }
+      auto& saved = contents["123"]["preferences"];
+      saved["sounds"]["pack"] = "../invalid";
+      saved["sounds"]["mention"] = "invalid";
+      saved["sounds"]["volume"] = "invalid";
+      saved["notification_sounds"] = "invalid";
+      {
+        std::ofstream output(soundsPath);
+        output << contents;
+      }
+      const auto malformed = app::SessionStore(soundsPath).preferences("123");
+      require(
+          malformed.sounds.pack == "soft"
+              && malformed.sounds.volume == app::defaultSoundVolume
+              && malformed.sounds.enabled[1]
+              && malformed.notificationSounds
+              && malformed.fontFamily == preferences.fontFamily,
+          "Malformed sound values do not erase unrelated settings"
+      );
+      for (const auto& invalid :
+           std::vector<nlohmann::json>{-1, 101, 2.5, true, nullptr, std::numeric_limits<std::uint64_t>::max()}) {
+        saved["sounds"]["volume"] = invalid;
+        {
+          std::ofstream output(soundsPath);
+          output << contents;
+        }
+        require(
+            app::SessionStore(soundsPath).preferences("123").sounds.volume == app::defaultSoundVolume,
+            "Invalid sound volume retains the quiet default"
+        );
+      }
+      for (int volume : {0, app::maximumSoundVolume}) {
+        preferences.sounds.volume = volume;
+        store.savePreferences("123", preferences);
+        require(
+            app::SessionStore(soundsPath).preferences("123").sounds.volume == volume,
+            "Sound volume endpoints survive restart"
+        );
+      }
+      saved.erase("sounds");
+      saved["notification_sounds"] = false;
+      {
+        std::ofstream output(soundsPath);
+        output << contents;
+      }
+      const auto legacy = app::SessionStore(soundsPath).preferences("123");
+      require(!legacy.notificationSounds && legacy.sounds.pack == "soft", "Legacy sound opt-out stays disabled");
+      std::filesystem::remove(soundsPath);
+    }
     {
       const auto panelsPath = std::filesystem::path(directory) / "panels.json";
       app::SessionStore store(panelsPath);

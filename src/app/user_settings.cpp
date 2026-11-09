@@ -80,6 +80,8 @@ namespace app {
     }
   } // namespace
   void ClientApplication::clearAccountSettings() {
+    m_notificationSounds.clear();
+    m_soundLifecycle = {};
     rpcClear();
     m_rpcCustomExpanded = false;
     std::erase_if(m_settingsFields, [](const auto& entry) { return entry.first.starts_with("rpc:"); });
@@ -649,11 +651,15 @@ namespace app {
     };
     using SettingRow = UserSettingRow;
     const auto row = [&](const std::string& name, const std::string& description = std::string{}, float trailing = 0,
-                         float minimum = 40, bool interactive = false, bool stackControl = false) {
+                         float minimum = 40, bool interactive = false, bool stackControl = false,
+                         const std::string& headingAction = std::string{}) {
       ensureCategory();
       const float below = stackControl && width < layout::Settings::stackThreshold ? 44 : 0;
       const float top = cursor, textWidth = std::max(48.0F, width - (below ? 0 : trailing));
-      const float heading = textHeight(name, settings::rowTitle.size, settings::rowTitle.weight, textWidth);
+      const float headingWidth =
+          textWidth - (headingAction.empty() ? 0 : layout::Settings::actionHeight + Style::spaceXs);
+      const float titleHeight = textHeight(name, settings::rowTitle.size, settings::rowTitle.weight, headingWidth);
+      const float heading = headingAction.empty() ? titleHeight : std::max(titleHeight, layout::Settings::actionHeight);
       const float detail = description.empty()
           ? 0
           : textHeight(description, Style::fontSizeDescription, FontWeight::Normal, textWidth) + 4;
@@ -664,9 +670,35 @@ namespace app {
             Style::controlRadius
         );
       label(
-          p, 0, top + (height - below - heading - detail) / 2, textWidth, name, settings::rowTitle.size, foreground,
-          settings::rowTitle.weight, 0
+          p, 0, top + (height - below - heading - detail) / 2 + (heading - titleHeight) / 2, headingWidth, name,
+          settings::rowTitle.size, foreground, settings::rowTitle.weight, 0
       );
+      if (!headingAction.empty()) {
+        const auto titleMetrics = m_window.target().renderer().measureText(
+            name, settings::rowTitle.size, settings::rowTitle.weight, headingWidth, 0
+        );
+        auto saved = retained(headingAction);
+        auto control =
+            saved ? std::unique_ptr<Button>(static_cast<Button*>(saved.release())) : std::make_unique<Button>();
+        m_widgets[headingAction] = control.get();
+        control->setGlyph("player-play");
+        control->setGlyphSize(Style::glyphSizeSmall);
+        control->setPosition(
+            std::min(headingWidth, std::ceil(titleMetrics.width)) + Style::spaceXs,
+            top + (height - below - heading - detail) / 2 + (heading - layout::Settings::actionHeight) / 2
+        );
+        control->setFrameSize(layout::Settings::actionHeight, layout::Settings::actionHeight);
+        control->setControlHeight(layout::Settings::actionHeight);
+        control->setPadding(0);
+        control->setRadius(Style::scaledRadius(layout::Settings::actionRadius));
+        control->setVariant(ButtonVariant::Ghost);
+        control->setTooltip("Preview " + name);
+        control->setOnClick([this, headingAction] {
+          activate({0, 0, 0, 0, Action::Preference, headingAction});
+          m_window.invalidate();
+        });
+        p.addChild(std::move(control));
+      }
       if (!description.empty())
         label(
             p, 0, top + (height - below - heading - detail) / 2 + heading + Style::spaceXs, textWidth, description,
@@ -689,8 +721,9 @@ namespace app {
       );
     };
     const auto toggle = [&](const std::string& name, bool enabled, const std::string& id,
-                            const std::string& description, bool remote = false) {
-      const auto item = row(name, description, 62);
+                            const std::string& description, bool remote = false,
+                            const std::string& headingAction = std::string{}) {
+      const auto item = row(name, description, 62, 40, false, false, headingAction);
       const auto controlId = "toggle:" + id;
       std::unique_ptr<Node> saved;
       if (auto at = m_detachedInputs.find(controlId); at != m_detachedInputs.end()) {
@@ -1271,13 +1304,40 @@ namespace app {
       );
       toggle(
           "Notification sounds", m_preferences.notificationSounds, "notification_sounds",
-          "Play a sound for eligible desktop message notifications."
+          "Enable interface sounds. Individual events below can be disabled. Explicit previews ignore these switches."
       );
       localChoice(
           "Notification content", "notification_privacy",
           "Choose how much message information appears in desktop notifications.", m_preferences.notificationPrivacy,
           {"Name and message", "Name only", "Hide names and messages"}
       );
+      section("Interface sounds");
+      form.choose(
+          "sound-pack", "Sound set", "Choose Soft, Crisp or Warm. Soft is the default.", {"Soft", "Crisp", "Warm"},
+          std::ranges::find(soundPacks, m_preferences.sounds.pack) - soundPacks.begin(), [this](std::size_t index) {
+            if (index < soundPacks.size())
+              extendedPreference("sound-pack:" + std::string(soundPacks[index]));
+          }
+      );
+      form.slider(
+          "sound-volume", "Sound volume",
+          "Adjust all interface sounds and previews. Defaults to 50%. Zero silences them.", m_preferences.sounds.volume,
+          0, maximumSoundVolume, 1,
+          [this](double value) {
+            m_notificationSounds.clear();
+            m_preferences.sounds.volume = static_cast<int>(std::round(value));
+            savePreferences();
+            m_window.invalidate();
+          },
+          "%"
+      );
+      for (std::size_t i = 0; i < soundEvents.size(); ++i) {
+        const auto& event = soundEvents[i];
+        toggle(
+            std::string(event.label), m_preferences.sounds.enabled[i], "sound-toggle:" + std::string(event.id),
+            std::string(event.description), false, "sound-preview:" + std::string(event.id)
+        );
+      }
       section("Discord notifications");
       accountToggle(
           "In-app notifications", "in_app_notifications",

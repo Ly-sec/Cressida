@@ -405,7 +405,23 @@ namespace app {
                 controls.icons[i] = path;
             }
       }
-      result.notificationSounds = value.value("notification_sounds", true);
+      if (const auto master = value.find("notification_sounds"); master != value.end() && master->is_boolean())
+        result.notificationSounds = master->get<bool>();
+      if (const auto sounds = value.find("sounds"); sounds != value.end() && sounds->is_object()) {
+        if (const auto volume = sounds->find("volume"); volume != sounds->end()
+            && volume->is_number_integer()
+            && volume->get<double>() >= 0
+            && volume->get<double>() <= maximumSoundVolume)
+          result.sounds.volume = volume->get<int>();
+        if (const auto pack = sounds->find("pack"); pack != sounds->end() && pack->is_string()) {
+          const auto name = pack->get<std::string>();
+          if (validSoundPack(name))
+            result.sounds.pack = name;
+        }
+        for (std::size_t i = 0; i < soundEvents.size(); ++i)
+          if (const auto enabled = sounds->find(soundEvents[i].id); enabled != sounds->end() && enabled->is_boolean())
+            result.sounds.enabled[i] = enabled->get<bool>();
+      }
       result.saturation = std::clamp(value.value("saturation", 100), 0, 100);
       result.spoilerMode = std::clamp(value.value("spoiler_mode", 0), 0, 2);
       result.roleColorMode = std::clamp(value.value("role_color_mode", result.roleColors ? 0 : 2), 0, 2);
@@ -544,6 +560,16 @@ namespace app {
             {"icons", icons}}},
           {"corner_radius", std::clamp(preferences.cornerRadius, 0, Style::cornerRadiusMaximumPercent)},
           {"notification_sounds", preferences.notificationSounds},
+          {"sounds",
+           [&] {
+             nlohmann::json sounds{
+                 {"pack", validSoundPack(preferences.sounds.pack) ? preferences.sounds.pack : "soft"},
+                 {"volume", std::clamp(preferences.sounds.volume, 0, maximumSoundVolume)}
+             };
+             for (std::size_t i = 0; i < soundEvents.size(); ++i)
+               sounds[std::string(soundEvents[i].id)] = preferences.sounds.enabled[i];
+             return sounds;
+           }()},
           {"saturation", preferences.saturation},
           {"spoiler_mode", preferences.spoilerMode},
           {"role_color_mode", preferences.roleColors ? std::clamp(preferences.roleColorMode, 0, 1) : 2},

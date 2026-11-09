@@ -69,7 +69,8 @@ namespace app {
     notice.channel = channel;
     notice.message = message.id;
     notice.generation = m_session;
-    notice.sound = m_preferences.notificationSounds;
+    notice.sound = false;
+    playSound(mentioned ? SoundEvent::Mention : SoundEvent::Message);
     notice.title = "Cressida";
     notice.body = "You have a new message.";
     if (m_preferences.notificationPrivacy < 2) {

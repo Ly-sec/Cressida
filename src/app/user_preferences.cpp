@@ -51,6 +51,8 @@ namespace app {
     return found == defaultShortcuts.end() ? "Unassigned" : found->second;
   }
   bool ClientApplication::extendedPreference(const std::string& action) {
+    if (soundPreference(action))
+      return true;
     if (windowControlPreference(action))
       return true;
     const std::pair<std::string_view, bool Preferences::*> flags[] = {
@@ -83,6 +85,8 @@ namespace app {
           m_scrolling.stopAll();
         if (name == "desktop_notifications" && !m_preferences.desktopNotifications)
           m_desktopNotifications.clear();
+        if (name == "notification_sounds")
+          m_notificationSounds.clear();
         savePreferences();
         return true;
       }

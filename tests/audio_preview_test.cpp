@@ -39,7 +39,10 @@ int main(int argc, char** argv) {
     require(player.openAudio(media::memoryVideoInput(bytes), true), "Audio opens without a graphics context");
     wait(player, [](const auto& state) { return !state.loading && state.hasAudio; });
     require(
-        !player.state().playing && player.state().width == 0 && player.state().height == 0,
+        !player.state().playing
+            && player.state().width == 0
+            && player.state().height == 0
+            && player.state().volume == 25,
         "Loading an audio preview remains paused and creates no video frame"
     );
     require(player.state().duration > 0.5 && player.state().duration < 3, "Audio metadata is reported");
@@ -65,6 +68,22 @@ int main(int argc, char** argv) {
         !player.state().playing && !player.state().loading && !player.state().hasAudio,
         "Closing a preview clears playback state"
     );
+    for (double volume : {0.0, 17.0, 100.0}) {
+      require(player.openSound(media::memoryVideoInput(bytes), volume, true), "One-shot sounds open without graphics");
+      require(player.state().volume == volume && !player.state().playing, "One-shot gain is set before playback");
+      wait(player, [](const auto& state) { return !state.loading && state.hasAudio; });
+      require(player.state().volume == volume, "Loading never restores a louder gain");
+      const auto start = std::chrono::steady_clock::now();
+      const auto duration = player.state().duration;
+      player.pause(false);
+      wait(player, [](const auto& state) { return state.ended; });
+      require(
+          std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() >= duration - 0.1,
+          "One-shot completion waits for normal audio output drain"
+      );
+      require(!player.state().playing && player.state().error.empty(), "One-shot EOF completes cleanly");
+      player.close();
+    }
     const std::string playlist = "#EXTM3U\nhttps://example.invalid/never-open-this\n";
     require(
         player.openAudio(

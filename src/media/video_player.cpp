@@ -46,7 +46,7 @@ namespace media {
     mpv_render_context* renderer = nullptr;
     std::shared_ptr<VideoInput> input;
     std::atomic_bool redraw = false;
-    bool audioOnly = false;
+    bool audioOnly = false, oneShot = false;
     VideoState state;
     bool option(const char* name, const char* value) { return mpv_set_option_string(player, name, value) >= 0; }
     void flag(const char* name, bool value) {
@@ -62,7 +62,13 @@ namespace media {
   bool VideoPlayer::openAudio(std::shared_ptr<VideoInput> input, bool silent) {
     return openInternal(std::move(input), nullptr, silent, true);
   }
-  bool VideoPlayer::openInternal(std::shared_ptr<VideoInput> input, GetProc getProc, bool silent, bool audioOnly) {
+  bool VideoPlayer::openSound(std::shared_ptr<VideoInput> input, double volume, bool silent) {
+    return openInternal(std::move(input), nullptr, silent, true, true, volume);
+  }
+  bool VideoPlayer::openInternal(
+      std::shared_ptr<VideoInput> input, GetProc getProc, bool silent, bool audioOnly, bool oneShot,
+      double initialVolume
+  ) {
     close();
     m->audioOnly = audioOnly;
     m->state.loading = true;
@@ -95,7 +101,7 @@ namespace media {
           {"resume-playback", "no"},
           {"save-position-on-quit", "no"},
           {"vo", audioOnly ? "null" : "libmpv"},
-          {"keep-open", "yes"},
+          {"keep-open", oneShot ? "no" : "yes"},
           {"loop-file", "no"},
           {"vd-lavc-threads", "2"},
           {"pause", "yes"},
@@ -108,6 +114,14 @@ namespace media {
           {"cache-secs", "10"}})
       if (!m->option(name, value))
         return fail("options");
+    if (!std::isfinite(initialVolume) || initialVolume < 0 || initialVolume > 100)
+      return fail("volume");
+    if (mpv_set_option(m->player, "volume", MPV_FORMAT_DOUBLE, &initialVolume) < 0)
+      return fail("volume");
+    if (oneShot && !m->option("gapless-audio", "no"))
+      return fail("audio-drain");
+    m->state.volume = initialVolume;
+    m->oneShot = oneShot;
     // The custom stream is the only input. Embedded playlists, tracks and
     // container references cannot open files or secondary URLs through FFmpeg.
     char protocol[] = "protocol_whitelist", formats[] = "format_whitelist";
@@ -252,6 +266,8 @@ namespace media {
       if (event->event_id == MPV_EVENT_END_FILE) {
         const auto& end = *static_cast<mpv_event_end_file*>(event->data);
         m->state.loading = m->state.playing = false;
+        if (m->oneShot && end.reason == MPV_END_FILE_REASON_EOF)
+          m->state.ended = true;
         if (end.reason == MPV_END_FILE_REASON_ERROR) {
           logger.warn("playback failed mode={} code={}", m->audioOnly ? "audio" : "video", end.error);
           m->state.error = m->audioOnly ? "This sound is unavailable or unsupported."
@@ -282,7 +298,8 @@ namespace media {
           m->state.playing = !value;
         if (name == "paused-for-cache")
           m->state.buffering = value;
-        if (name == "eof-reached") {
+        // One-shot sounds finish on END_FILE so their output drains before teardown.
+        if (name == "eof-reached" && !m->oneShot) {
           m->state.ended = value;
           if (value)
             m->state.playing = false;

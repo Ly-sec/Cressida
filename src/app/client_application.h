@@ -835,6 +835,13 @@ namespace app {
     void drawSettings(Node& root, float w, float h);
     void verifySettingsScrollbarGutters() const;
     void notifyMessage(const api::Message& message, const std::string& channel);
+    void playSound(SoundEvent event, bool preview = false);
+    void voiceSoundState(const voice::State& state);
+    void voiceRosterSounds(const api::VoiceRosterUpdate& update);
+    void sharingSounds(const api::StreamSnapshot& snapshot);
+    bool soundPreference(const std::string& action);
+    static constexpr int soundReplayFrames = 9 + 2 * soundEvents.size();
+    void demoSoundStep();
     void drainDesktopNotifications();
     void desktopNoticeAction(DesktopNoticeAction action);
     bool extendedPreference(const std::string& action);
@@ -1362,6 +1369,8 @@ namespace app {
     bool m_privateReady = false;
     std::optional<api::Interaction> m_dmDemoAction;
     DesktopNotifications m_desktopNotifications;
+    NotificationSounds m_notificationSounds;
+    SoundLifecycle m_soundLifecycle;
     std::vector<std::string> m_notifiedMessages;
     Preferences m_preferences;
     UserAccountState m_userAccount;

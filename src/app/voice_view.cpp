@@ -30,8 +30,11 @@ namespace app {
     switch (command) {
     case VoiceCommand::InputMuteToggle:
     case VoiceCommand::InputMuteOn:
-    case VoiceCommand::InputMuteOff:
+    case VoiceCommand::InputMuteOff: {
+      const bool previous = m_voiceMuted;
       m_voiceMuted = command == VoiceCommand::InputMuteToggle ? !m_voiceMuted : command == VoiceCommand::InputMuteOn;
+      if (previous != m_voiceMuted)
+        playSound(m_voiceMuted ? SoundEvent::MicMute : SoundEvent::MicUnmute);
       releasePushToTalk();
       m_voiceState.muted = m_voiceMuted;
       configureVoice();
@@ -39,6 +42,7 @@ namespace app {
       return m_voiceMuted   ? "Microphone muted."
           : m_voiceDeafened ? "Microphone unmuted; deafening still blocks transmission."
                             : "Microphone unmuted.";
+    }
     default:
       return std::unexpected("Unknown voice command.");
     }
@@ -55,6 +59,7 @@ namespace app {
   void ClientApplication::voiceTick() {
     if (m_demo)
       return;
+    voiceSoundState(m_voiceState);
     const auto audio = m_client.voiceAudio();
     audio->drainEvents();
     const auto state = audio->state();
@@ -73,6 +78,9 @@ namespace app {
       releasePushToTalk();
       m_voiceState.phase = voice::Phase::Failed;
       m_voiceState.error = state.error;
+      m_soundLifecycle.channel.clear();
+      m_soundLifecycle.failed = true;
+      playSound(SoundEvent::Warning);
     }
     m_window.invalidate();
   }
@@ -113,14 +121,17 @@ namespace app {
       else
         m_voiceRoster.apply({.members = {{.guild = m_voiceGuild, .user = m_account.id}}});
       m_voiceState = {};
+      voiceSoundState(m_voiceState);
       m_voiceGuild.clear();
     } else if (action == "mute") {
       m_voiceMuted = !m_voiceMuted;
+      playSound(m_voiceMuted ? SoundEvent::MicMute : SoundEvent::MicUnmute);
       releasePushToTalk();
       m_voiceState.muted = m_voiceMuted;
       configureVoice();
     } else if (action == "deafen") {
       m_voiceDeafened = !m_voiceDeafened;
+      playSound(m_voiceDeafened ? SoundEvent::OutputMute : SoundEvent::OutputUnmute);
       releasePushToTalk();
       m_voiceState.deafened = m_voiceDeafened;
       configureVoice();

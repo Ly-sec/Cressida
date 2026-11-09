@@ -33,6 +33,7 @@ namespace app {
     return layout::Sharing::stage(chatLeft(), m_window.width(), h).chat.x;
   }
   void ClientApplication::clearSharing() {
+    m_soundLifecycle.sharing = false;
     m_streamPopout.reset();
     m_screen.stop();
     for (auto& [key, preview] : m_streamPreviewCache)
@@ -121,6 +122,8 @@ namespace app {
     const bool wasSharing = std::ranges::any_of(m_streamSnapshot.active, [](const auto& stream) {
       return stream.publishing && stream.connection.phase != voice::Phase::Failed;
     });
+    if (changed)
+      sharingSounds(snapshot);
     m_streamSnapshot = snapshot;
     if (!m_pendingStreamWatch.empty()) {
       const auto pending = api::parseStreamKey(m_pendingStreamWatch);

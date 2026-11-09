@@ -60,7 +60,8 @@
         "slug": "docs/screen-sharing"
       },
       {
-        "slug": "docs/desktop"
+        "slug": "docs/desktop",
+        "label": "Desktop integration and sounds"
       },
       {
         "slug": "docs/keyboard-shortcuts"

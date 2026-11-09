@@ -48,6 +48,8 @@ namespace app {
   using namespace theme;
 
   void ClientApplication::demoFrame(std::chrono::steady_clock::time_point drawStarted) {
+    if (m_demo && m_demoOverlay.starts_with("sound-cycle") && m_demoInteractionStep < soundReplayFrames)
+      demoSoundStep();
     if (m_demo && m_demoOverlay.starts_with("login-cycle") && m_demoInteractionStep < loginReplayFrames)
       demoLoginStep();
     if (m_demo
@@ -927,6 +929,7 @@ namespace app {
             : m_demo && view && std::string_view(view).starts_with("server-access-cycle")   ? serverAccessReplayFrames
             : m_demo && view && std::string_view(view).starts_with("permissions-cycle")     ? permissionsReplayFrames
             : m_demo && view && std::string_view(view).starts_with("outgoing-cycle")        ? outgoingReplayFrames
+            : m_demo && view && std::string_view(view).starts_with("sound-cycle")           ? soundReplayFrames
             : m_demo && view && std::string_view(view).starts_with("chat-links-cycle")      ? chatLinkReplayFrames
             : m_demo && view && std::string_view(view) == "attachment-cycle"                ? attachmentReplayFrames
             : m_demo && view && std::string_view(view).starts_with("window-controls-cycle") ? windowControlsReplayFrames
@@ -1006,6 +1009,8 @@ namespace app {
   }
 
   void ClientApplication::demoVerifyCompletion() const {
+    if (m_demoOverlay.starts_with("sound-cycle") && m_demoInteractionStep != soundReplayFrames)
+      throw std::runtime_error("Sound settings replay did not finish");
     if (m_demoOverlay.starts_with("voice-messages-cycle") && m_demoInteractionStep != voiceMessageReplaySteps)
       throw std::runtime_error("Voice message replay did not finish");
     if (m_demoOverlay.starts_with("polls-cycle") && m_demoInteractionStep != pollReplayFrames)

@@ -17,6 +17,7 @@
 #include <nlohmann/json.hpp>
 #include <set>
 #include <stdexcept>
+#include <utility>
 
 namespace app {
   using namespace theme;
@@ -37,6 +38,16 @@ namespace app {
     }
     bool channelOrderChanged(const api::Channel& before, const api::Channel& after) {
       return before.position != after.position || before.parentId != after.parentId || before.type != after.type;
+    }
+    std::string groupedNumber(unsigned value) {
+      const auto digits = std::to_string(value);
+      std::string result;
+      for (std::size_t at = 0; at < digits.size(); ++at) {
+        if (at > 0 && (digits.size() - at) % 3 == 0)
+          result += ',';
+        result += digits[at];
+      }
+      return result;
     }
   } // namespace
   const api::Channel* ClientApplication::selectedChannel() const {
@@ -961,7 +972,7 @@ namespace app {
     }
     m_window.invalidate();
   }
-  void ClientApplication::requestChannelPage(bool next, bool previous) {
+  void ClientApplication::requestChannelPage(bool next, bool previous, unsigned page) {
     if ((m_demo && !m_demoOverlay.starts_with("search-cycle"))
         || m_channelPageRequest
         || m_channelPanel.empty()
@@ -972,7 +983,7 @@ namespace app {
     query.guild = m_guildId;
     query.channel = m_channelId;
     query.text = m_channelSearchText;
-    if (query.kind == api::ChannelPage::Search && !next && !previous) {
+    if (query.kind == api::ChannelPage::Search && !next && !previous && page == 0) {
       const auto search = resolvedMessageSearch();
       if (!search) {
         m_channelPanelError = search.error;
@@ -982,12 +993,18 @@ namespace app {
       query.text = search.canonical;
     }
     query.request = ++m_channelFeatureSerial;
-    if (m_channelPageShown && m_channelPageShown->kind == query.kind && (next || previous)) {
+    if (m_channelPageShown && m_channelPageShown->kind == query.kind && (next || previous || page > 0)) {
       query = *m_channelPageShown;
       query.request = m_channelFeatureSerial;
-      if (query.kind == api::ChannelPage::Search)
-        query.offset = next ? query.offset + 25 : query.offset >= 25 ? query.offset - 25 : 0;
-      else if (next) {
+      if (query.kind == api::ChannelPage::Search) {
+        const unsigned step = layout::SearchResult::pageMessages;
+        if (page > 0)
+          query.offset = std::min<unsigned>((page - 1) * step, (layout::SearchResult::maximumPages - 1) * step);
+        else if (next)
+          query.offset = query.offset + step;
+        else
+          query.offset = query.offset >= step ? query.offset - step : 0;
+      } else if (next) {
         m_pinCursors.push_back(query.before);
         query.before = m_channelPage.before;
       } else if (!m_pinCursors.empty()) {
@@ -1037,46 +1054,244 @@ namespace app {
       if (m_channelPageShown)
         label(
             root, x + (Style::spaceLg + Style::spaceXxs), top, width - 36,
-            std::to_string(m_channelPage.total) + " results", Style::fontSizeMini, muted
+            groupedNumber(m_channelPage.total) + " results", Style::fontSizeMini, muted
         );
       top += Style::spaceXl;
     }
     const float footer = !m_channelPanelError.empty() ? 112 : 58, viewport = std::max(20.0F, y + height - top - footer);
-    constexpr float rowHeight = 138;
-    const float fullHeight = m_channelPage.messages.size() * rowHeight;
+    const bool search = m_channelPanel == "search";
+    struct Row {
+      bool header;
+      std::size_t index;
+      float height;
+      std::string text;
+      MessageLayout body;
+    };
+    std::vector<Row> rows;
+    rows.reserve(m_channelPage.messages.size() * (search ? 2 : 1));
+    auto& renderer = m_window.target().renderer();
+    const auto channelFor = [&](const std::string& id) -> const api::Channel* {
+      const auto found = std::ranges::find(m_channels, id, &api::Channel::id);
+      return found == m_channels.end() ? nullptr : &*found;
+    };
+    const auto categoryFor = [&](const api::Channel& channel) -> const api::Channel* {
+      const auto* base = channel.isThread() ? serverChannel(m_guildId, channel.parentId) : &channel;
+      if (!base || base->parentId.empty())
+        return nullptr;
+      const auto* category = serverChannel(m_guildId, base->parentId);
+      return category && category->kind() == api::ChannelType::GuildCategory ? category : nullptr;
+    };
+    const float cardTextX = Style::spaceSm + Style::spaceXxs + layout::Avatar::compact + Style::spaceSm,
+                cardTextWidth = std::max(40.0F, width - 30 - cardTextX - Style::spaceSm);
+    const auto measure = [&](std::string_view value, const MessageStyle& style) {
+      return renderer
+          .measureText(
+              messageMarkup(value, style), style.size, style.bold ? FontWeight::Bold : FontWeight::Normal, 0, 1,
+              TextAlign::Start, style.code ? "monospace" : "", TextEllipsize::End, true
+          )
+          .width;
+    };
+    const auto cardBody = [&](const api::Message& message) {
+      auto mentions = message.mentions;
+      for (auto& [id, name] : mentions)
+        name = userName(id, name);
+      return layoutMessage(
+          message.content, cardTextWidth, measure, m_preferences.messageSize, mentions,
+          {.unicodeEmoji = [this](std::string_view value) { return m_emojiCatalog.isUnicode(value); },
+           .channelMention = [this](auto guild, auto channel) { return channelMention(guild, channel); },
+           .roleMention =
+               [this](auto role) { return m_roleDirectory.roleName(m_dmMode ? "" : m_guildId, std::string(role)); }}
+      );
+    };
+    for (std::size_t i = 0; i < m_channelPage.messages.size(); ++i) {
+      const auto& message = m_channelPage.messages[i];
+      if (search && (i == 0 || message.channelId != m_channelPage.messages[i - 1].channelId))
+        rows.push_back({true, i, layout::SearchResult::headerHeight, {}});
+      if (!search) {
+        rows.push_back({false, i, layout::SearchResult::cardHeight, {}});
+        continue;
+      }
+      MessageLayout body;
+      std::string text = message.content;
+      if (text.empty())
+        text = !message.attachments.empty() ? "Attachment" : "Message";
+      else
+        body = cardBody(message);
+      float textHeight = 0.0F;
+      if (!body.runs.empty()) {
+        textHeight = body.height;
+      } else {
+        const auto metrics = renderer.measureText(text, m_preferences.messageSize, FontWeight::Normal, cardTextWidth);
+        textHeight = metrics.bottom - metrics.top;
+      }
+      const float pitch =
+          Style::spaceMd + layout::Avatar::compact + Style::spaceSm + textHeight + Style::spaceMd + Style::spaceDense;
+      rows.push_back({false, i, pitch, std::move(text), std::move(body)});
+    }
+    float fullHeight = 0;
+    for (const auto& row : rows)
+      fullHeight += row.height;
     m_scrolling.limit(m_channelPanelScroll, std::max(0.0F, fullHeight - viewport));
     auto content = std::make_unique<Node>();
     content->setPosition(x + Style::spaceMd, top);
     content->setSize(width - Style::spaceXl, viewport);
     content->setClipChildren(true);
     content->setTextScrollOffset(-m_channelPanelScroll);
-    for (std::size_t i = 0; i < m_channelPage.messages.size(); ++i) {
-      const auto& message = m_channelPage.messages[i];
-      const float ry = i * rowHeight - m_channelPanelScroll;
+    float offset = -m_channelPanelScroll;
+    for (const auto& row : rows) {
+      const float rowHeight = row.height;
+      const float ry = offset;
+      offset += rowHeight;
       if (ry + rowHeight <= 0 || ry >= viewport)
         continue;
+      const auto& message = m_channelPage.messages[row.index];
+      if (row.header) {
+        const auto* channel = channelFor(message.channelId);
+        const float iconX = Style::spaceSm + Style::spaceXxs,
+                    iconY = ry + (layout::SearchResult::headerHeight - Style::glyphSizeMedium) / 2;
+        if (channel)
+          channelIcon(*content, iconX, iconY, Style::glyphSizeMedium, *channel, muted, panel);
+        else
+          glyph(*content, iconX, iconY, Style::glyphSizeMedium, "hash", muted);
+        const float textX = iconX + Style::glyphSizeMedium + Style::spaceSm,
+                    textY = ry + Style::spaceSm + Style::spaceXxs;
+        float nameWidth = width - 30 - textX - Style::spaceSm;
+        if (const auto* category = channel ? categoryFor(*channel) : nullptr) {
+          const float categoryWidth =
+              std::ceil(renderer.measureText(category->name, Style::fontSizeMini, FontWeight::Medium).width);
+          label(
+              *content, width - 30 - Style::spaceSm - categoryWidth, textY, categoryWidth, category->name,
+              Style::fontSizeMini, muted, FontWeight::Medium
+          );
+          nameWidth -= categoryWidth + Style::spaceMd;
+        }
+        label(
+            *content, textX, textY, std::max(20.0F, nameWidth),
+            channel ? channelName(*channel) : std::string("Channel"), Style::fontSizeCaption, foreground,
+            FontWeight::SemiBold
+        );
+        continue;
+      }
       const auto rowTop = std::max(top, top + ry),
                  rowEnd = std::min(top + viewport, top + ry + rowHeight - Style::spaceDense);
+      const bool rowHovered = hovered(x + Style::spaceMd, rowTop, width - 30, rowEnd - rowTop);
       rectangle(
-          *content, 0, ry, width - 30, rowHeight - Style::spaceDense,
-          hovered(x + Style::spaceMd, rowTop, width - 30, rowEnd - rowTop) ? raised : panel, Style::radiusLg
+          *content, 0, ry, width - 30, rowHeight - Style::spaceDense, rowHovered ? raised : panel, Style::radiusLg
       );
-      label(
-          *content, 12, ry + (Style::spaceMd + Style::borderWidth), width - 56,
-          userName(message.authorId, message.author), Style::fontSizeCaption, foreground, FontWeight::SemiBold
-      );
-      const auto channel = std::ranges::find(m_channels, message.channelId, &api::Channel::id);
-      label(
-          *content, 12, ry + ((Style::space2Xl + Style::spaceXxs) + Style::borderWidth), width - 56,
-          (channel == m_channels.end() ? "Channel" : "#" + channel->name)
-              + " · "
-              + formatMessageTime(message.timestamp, "%Y-%m-%d"),
-          Style::fontSizeDetail, muted
-      );
-      auto text = oneLineReplyText(message.content);
-      if (text.empty())
-        text = !message.attachments.empty() ? "Attachment" : "Message";
-      label(*content, 12, ry + 58, width - 56, text, Style::fontSizeDescription, foreground, FontWeight::Normal, 3);
+      if (search) {
+        const auto name = userName(message.authorId, message.author);
+        const auto avatarTop = ry + Style::spaceMd;
+        avatar(
+            *content, Style::spaceSm + Style::spaceXxs, avatarTop, layout::Avatar::compact, message.avatar, name,
+            message.authorId
+        );
+        // Card header hangs from one shared baseline — the name's cap band
+        // centers on the avatar, like chat.
+        const auto nameFont = renderer.measureFont(Style::fontSizeBody, FontWeight::SemiBold);
+        const float avatarCenter = avatarTop + layout::Avatar::compact / 2;
+        const float headerBaseline = avatarCenter + nameFont.capHeight / 2;
+        const float nameY = headerBaseline + renderer.measureText(name, Style::fontSizeBody, FontWeight::SemiBold).top;
+        using AppBadge = layout::MessageAppBadge;
+        const auto appText = renderer.measureText("APP", AppBadge::fontSize, FontWeight::SemiBold);
+        const float appWidth = AppBadge::width(std::ceil(appText.width));
+        const auto stamp = formatMessageTimestamp(message.timestamp, m_preferences.twelveHourClock);
+        const float stampWidth =
+            stamp.empty() ? 0 : std::ceil(renderer.measureText(stamp, Style::fontSizeDescription).width);
+        const float headerWidth = std::max(24.0F, cardTextWidth - (stamp.empty() ? 0 : stampWidth + Style::spaceDense));
+        const auto tag = !m_dmMode && m_preferences.showGuildTags
+            ? m_userDirectory.guildTag(message.authorId, message.authorTag)
+            : std::nullopt;
+        const float nameInset = m_preferences.roleColors
+                && m_preferences.roleColorMode == 1
+                && !m_dmMode
+                && m_roleDirectory.colors(m_guildId, message.authorId, message.memberRoles)
+            ? Style::spaceMd
+            : 0;
+        const auto fit = fitMessageHeader(
+            headerWidth, appWidth, message.authorBot,
+            m_preferences.showRoleIcons
+                && !m_dmMode
+                && m_roleDirectory.icon(m_guildId, message.authorId, message.memberRoles),
+            tag && !tag->tag.empty(),
+            tag && !tag->tag.empty() ? renderer.measureText(tag->tag, Style::fontSizeMini, FontWeight::Medium).width
+                                     : 0,
+            renderer.measureText(name, Style::fontSizeBody, FontWeight::SemiBold).width, nameInset
+        );
+        roleLabel(
+            *content, cardTextX, nameY, fit.nameMax, name, Style::fontSizeBody, foreground, FontWeight::SemiBold,
+            message.authorId, "message:" + message.id, rowHovered, message.memberRoles
+        );
+        // drawGuildTag's pill is 20px tall; center it on the shared cap band.
+        const float tagUsed = m_preferences.showGuildTags && fit.tagFits
+            ? drawGuildTag(
+                  *content, cardTextX + fit.nameWidth + Style::spaceXs, avatarCenter - 10, fit.tagMax, tag, false,
+                  raised
+              )
+            : 0;
+        const float roleUsed =
+            m_preferences.showRoleIcons && !m_dmMode && headerWidth - fit.nameWidth - tagUsed - fit.appSpace >= 22
+            ? drawRoleIcon(
+                  *content, cardTextX + fit.nameWidth + tagUsed + 4, avatarCenter - 8, m_guildId, message.authorId,
+                  message.memberRoles
+              )
+            : 0;
+        float cursor = cardTextX + fit.nameWidth + tagUsed + roleUsed + Style::spaceDense;
+        if (message.authorBot) {
+          const float badgeY = avatarCenter - AppBadge::height / 2;
+          rectangle(*content, cursor, badgeY, appWidth, AppBadge::height, accent, AppBadge::radius);
+          label(
+              *content, cursor + AppBadge::padding, badgeY + (AppBadge::height - (appText.bottom - appText.top)) / 2,
+              appText.width, "APP", AppBadge::fontSize, ink, FontWeight::SemiBold
+          );
+          cursor += fit.appSpace;
+        }
+        if (!stamp.empty() && cursor + stampWidth <= cardTextX + cardTextWidth) {
+          const float stampY = headerBaseline + renderer.measureText(stamp, Style::fontSizeDescription).top;
+          label(*content, cursor, stampY, stampWidth, stamp, Style::fontSizeDescription, muted);
+        }
+        const float textY = ry + Style::spaceMd + layout::Avatar::compact + Style::spaceSm;
+        if (row.body.runs.empty()) {
+          label(
+              *content, cardTextX, textY, cardTextWidth, row.text, m_preferences.messageSize, foreground,
+              FontWeight::Normal, 0
+          );
+        } else {
+          for (const auto& box : row.body.boxes)
+            rectangle(*content, cardTextX + box.x, textY + box.y, box.width, box.height, raised, Style::radiusSm);
+          for (const auto& run : row.body.runs) {
+            if (run.style.spoiler)
+              continue;
+            if (!run.image.empty())
+              emojiImage(*content, cardTextX + run.x, textY + run.y, run.width, run.image);
+            else
+              label(
+                  *content, cardTextX + run.x, textY + run.y, run.width + Style::spaceXxs,
+                  messageMarkup(run.text, run.style, false), run.style.size,
+                  run.style.link.empty() && !run.style.mention ? foreground : accent, FontWeight::Normal, 1, true
+              );
+          }
+          for (const auto& area : messageSpoilerAreas(row.body))
+            rectangle(*content, cardTextX + area.x, textY + area.y, area.width, area.height, raised, Style::radiusSm);
+          drawMessageStrikes(*content, row.body, cardTextX, textY, foreground, false, {}, row.body.height);
+        }
+      } else {
+        label(
+            *content, 12, ry + (Style::spaceMd + Style::borderWidth), width - 56,
+            userName(message.authorId, message.author), Style::fontSizeCaption, foreground, FontWeight::SemiBold
+        );
+        const auto channel = std::ranges::find(m_channels, message.channelId, &api::Channel::id);
+        label(
+            *content, 12, ry + ((Style::space2Xl + Style::spaceXxs) + Style::borderWidth), width - 56,
+            (channel == m_channels.end() ? "Channel" : "#" + channel->name)
+                + " · "
+                + formatMessageTime(message.timestamp, "%Y-%m-%d"),
+            Style::fontSizeDetail, muted
+        );
+        auto text = oneLineReplyText(message.content);
+        if (text.empty())
+          text = !message.attachments.empty() ? "Attachment" : "Message";
+        label(*content, 12, ry + 58, width - 56, text, Style::fontSizeDescription, foreground, FontWeight::Normal, 3);
+      }
       m_hits.push_back(
           {x + Style::spaceMd, rowTop, width - 30, std::max(0.0F, rowEnd - rowTop), Action::ChannelPanelJump,
            message.channelId + ":" + message.id}
@@ -1126,7 +1341,124 @@ namespace app {
       label(
           root, x + (Style::spaceLg + Style::spaceXxs), fy, width - 36, "Loading…", Style::fontSizeDescription, muted
       );
-    else {
+    else if (search) {
+      const auto page = m_channelPageShown && m_channelPageShown->kind == api::ChannelPage::Search
+          ? m_channelPageShown->offset / layout::SearchResult::pageMessages + 1
+          : 1;
+      const auto pages = std::min<std::size_t>(
+          layout::SearchResult::maximumPages,
+          (m_channelPage.total + layout::SearchResult::pageMessages - 1) / layout::SearchResult::pageMessages
+      );
+      const auto footerButton = [&](bool next) -> float {
+        const bool enabled = next ? m_channelPage.more : page > 1;
+        const auto text = next ? "Next" : "Previous";
+        const auto metrics = renderer.measureText(text, Style::fontSizeBody, FontWeight::SemiBold);
+        const float textWidth = std::ceil(metrics.width);
+        const float strip = Style::glyphSizeSmall + Style::spaceXs + textWidth;
+        const float bx = next ? x + width - Style::spaceLg - strip : x + Style::spaceLg;
+        if (enabled && hovered(bx, fy, strip, 30))
+          rectangle(root, bx - Style::spaceSm, fy + 2, strip + Style::spaceSm * 2, 26, raised, Style::radiusLg);
+        const float glyphX = next ? bx + textWidth + Style::spaceXs : bx;
+        const float textX = next ? bx : bx + Style::glyphSizeSmall + Style::spaceXs;
+        glyph(
+            root, glyphX, fy + (30 - Style::glyphSizeSmall) / 2, Style::glyphSizeSmall,
+            next ? "chevron-right" : "chevron-left", muted
+        );
+        label(
+            root, textX, fy + (30 - (metrics.bottom - metrics.top)) / 2, textWidth, text, Style::fontSizeBody,
+            enabled ? foreground : muted, FontWeight::SemiBold
+        );
+        if (enabled)
+          m_hits.push_back({bx, fy, strip, 30, next ? Action::ChannelPanelNext : Action::ChannelPanelPrevious, {}});
+        return strip;
+      };
+      const float prevStrip = footerButton(false), nextStrip = footerButton(true);
+      if (pages > 1) {
+        const float left = x + Style::spaceLg + prevStrip, right = x + width - Style::spaceLg - nextStrip;
+        const float available = std::max(0.0F, right - left);
+        const float itemGap = Style::spaceLg;
+        // Tabler's "dots" glyph paints round dots with a predictable span; the
+        // text font's "…" metrics can't.
+        const float ellipsisWidth = Style::glyphSizeMedium;
+        const auto digitWidth = [&](std::size_t value) {
+          return std::ceil(
+              renderer.measureText(std::to_string(value), Style::fontSizeBody, FontWeight::SemiBold).width
+          );
+        };
+        // A page's slot is its painted width, so edge gaps stay uniform.
+        const auto itemWidth = [&](std::size_t value) {
+          return value == page ? std::max(30.0F, digitWidth(value) + Style::spaceSm * 2) : digitWidth(value);
+        };
+        // Pagination window: the first three pages while current is among
+        // them, else first/current/last with ellipses, mirrored at the tail.
+        const auto planValues = [&] {
+          std::vector<std::size_t> values{1};
+          const auto add = [&](std::size_t value) {
+            if (value >= 1 && value <= pages && std::ranges::find(values, value) == values.end())
+              values.push_back(value);
+          };
+          if (page <= 3) {
+            add(2);
+            add(3);
+          } else if (page + 2 >= pages) {
+            add(pages - 2);
+            add(pages - 1);
+          } else
+            add(page);
+          add(pages);
+          std::ranges::sort(values);
+          return values;
+        };
+        // Mirrors the painted loop: number slots plus an ellipsis per gap.
+        const auto stripLayout = [&](const std::vector<std::size_t>& values) -> std::pair<float, std::size_t> {
+          float content = 0;
+          std::size_t count = 0;
+          for (std::size_t at = 0; at < values.size(); ++at) {
+            if (at > 0 && values[at] - values[at - 1] > 1) {
+              content += ellipsisWidth;
+              ++count;
+            }
+            content += itemWidth(values[at]);
+            ++count;
+          }
+          return {content, count};
+        };
+        auto values = planValues();
+        while (values.size() > 1) {
+          const auto [stripWidth, stripCount] = stripLayout(values);
+          if (stripWidth + (stripCount + 1) * itemGap <= available)
+            break;
+          values.erase(std::ranges::find_if(values, [&](std::size_t value) { return value != page; }));
+        }
+        // One uniform gap spreads across the strip and both ends.
+        const auto [stripWidth, stripCount] = stripLayout(values);
+        const float gap = std::max(itemGap, (available - stripWidth) / (stripCount + 1));
+        float px = left + gap;
+        for (std::size_t at = 0; at < values.size(); ++at) {
+          if (at > 0 && values[at] - values[at - 1] > 1) {
+            glyph(root, px, fy + (30 - Style::glyphSizeMedium) / 2, Style::glyphSizeMedium, "dots", muted);
+            px += ellipsisWidth + gap;
+          }
+          const auto text = std::to_string(values[at]);
+          const auto metrics = renderer.measureText(text, Style::fontSizeBody, FontWeight::SemiBold);
+          const float textWidth = std::ceil(metrics.width);
+          const bool current = values[at] == page;
+          const float slot = itemWidth(values[at]);
+          const float textX = px + (slot - textWidth) / 2;
+          if (current) {
+            rectangle(root, px, fy, slot, 30, accent, slot / 2);
+          } else if (hovered(px, fy, slot, 30)) {
+            rectangle(root, px - Style::spaceMd, fy + 2, slot + Style::spaceMd * 2, 26, raised, Style::radiusLg);
+          }
+          label(
+              root, textX, fy + (30 - (metrics.bottom - metrics.top)) / 2, textWidth, text, Style::fontSizeBody,
+              current ? ink : foreground, FontWeight::SemiBold
+          );
+          m_hits.push_back({px, fy, slot, 30, Action::ChannelPanelPage, text});
+          px += slot + gap;
+        }
+      }
+    } else {
       if (m_channelPageShown && (m_channelPageShown->offset > 0 || !m_pinCursors.empty()))
         button(root, {x + Style::spaceLg, fy, 90, 30, Action::ChannelPanelPrevious, {}}, "Previous");
       if (m_channelPage.more)
@@ -2082,6 +2414,13 @@ namespace app {
       const auto separator = hit.id.find(':');
       if (separator != std::string::npos)
         jumpToMessage(hit.id.substr(0, separator), hit.id.substr(separator + 1));
+      break;
+    }
+    case Action::ChannelPanelPage: {
+      unsigned target = 0;
+      const auto parsed = std::from_chars(hit.id.data(), hit.id.data() + hit.id.size(), target);
+      if (parsed.ec == std::errc{} && target > 0)
+        requestChannelPage(false, false, target);
       break;
     }
     case Action::MessageButton: {

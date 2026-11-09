@@ -13,7 +13,8 @@ namespace app {
   using namespace theme;
 
   float ClientApplication::drawGuildTag(
-      Node& parent, float x, float y, float available, const std::optional<api::GuildTag>& tag, bool clickable
+      Node& parent, float x, float y, float available, const std::optional<api::GuildTag>& tag, bool clickable,
+      Color fill
   ) {
     if (!tag || tag->tag.empty() || available < 42)
       return 0;
@@ -28,7 +29,7 @@ namespace app {
       oy += node->y();
     }
     const bool over = clickable && hovered(ox + x, oy + y, width, 20);
-    rectangle(parent, x, y, width, 20, over ? raised : panel, Style::radiusMd);
+    rectangle(parent, x, y, width, 20, over ? raised : fill, Style::radiusMd);
     if (!picture(
             parent, x + Style::spaceXs, y + Style::spaceXxs, 16, 16, tag->badge, 0, false, false, ImageFitMode::Contain
         ))

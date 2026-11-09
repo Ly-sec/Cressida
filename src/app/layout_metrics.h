@@ -673,6 +673,11 @@ namespace app::layout {
     static constexpr float maximumHeight = rowHeight * 9 + headingHeight * 2 + inset;
     static constexpr std::size_t maximumSuggestions = 50, maximumRecent = 5, maximumHistory = 20;
   };
+  struct SearchResult {
+    static constexpr float headerHeight = Style::space2Xl;
+    static constexpr float cardHeight = Style::spaceGroup + Style::spaceSection + Style::space2Xl + Style::spaceLg;
+    static constexpr std::size_t pageMessages = 25, maximumPages = 400;
+  };
   struct Titlebar {
     static constexpr float height = Window::titlebarHeight;
     static constexpr float defaultButtonWidth = Style::windowButtonWidth;

@@ -266,7 +266,7 @@ namespace app {
     label(*body, P::inset, usernameY, inner, username, Style::fontSizeCaption, theme::foreground);
     const float tagWidth = drawGuildTag(
         *body, P::inset + usernameWidth + P::gap, usernameY - Style::spaceXxs, inner - usernameWidth - P::gap, tag,
-        false
+        false, theme::panel
     );
     if (tag && tagWidth > 0 && api::validSnowflake(tag->guild))
       hit(P::inset + usernameWidth + P::gap, usernameY - Style::spaceXxs, tagWidth - Style::spaceCompact,

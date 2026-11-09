@@ -319,6 +319,7 @@ namespace app {
       ChannelPanelPrevious,
       ChannelPanelRetry,
       ChannelPanelJump,
+      ChannelPanelPage,
       MessageButton,
       DismissEphemeral,
       SubmitApplicationModal,
@@ -604,7 +605,7 @@ namespace app {
     void demoProfileStep();
     void prepareProfileDemo();
     float drawGuildTag(
-        Node& parent, float x, float y, float width, const std::optional<api::GuildTag>& tag, bool clickable = true
+        Node& parent, float x, float y, float width, const std::optional<api::GuildTag>& tag, bool clickable, Color fill
     );
     float drawRoleIcon(
         Node& parent, float x, float y, const std::string& guild, const std::string& user,
@@ -671,7 +672,7 @@ namespace app {
     void drawChannelPanel(Node& root, float x, float y, float width, float height);
     void openChannelDialog(const std::string& kind, const std::string& channel = {});
     bool channelEditClose();
-    void requestChannelPage(bool next = false, bool previous = false);
+    void requestChannelPage(bool next = false, bool previous = false, unsigned page = 0);
     void searchChannel();
     std::vector<api::Account> searchPeople() const;
     std::vector<api::Channel> searchChannels() const;
@@ -701,7 +702,7 @@ namespace app {
     void demoInboxStep();
     static constexpr int inboxReplayFrames = 24;
 
-    static constexpr int searchReplayFrames = 12;
+    static constexpr int searchReplayFrames = 14;
     void jumpToMessage(const std::string& channel, const std::string& message);
     void prepareChannelDemo(const std::string& view);
     void demoChannelStep();

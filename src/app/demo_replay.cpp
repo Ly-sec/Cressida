@@ -38,6 +38,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <linux/input-event-codes.h>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -48,6 +49,112 @@ namespace app {
   using namespace theme;
 
   void ClientApplication::demoFrame(std::chrono::steady_clock::time_point drawStarted) {
+    if (m_demo && m_demoOverlay.starts_with("blocked-cycle") && m_demoInteractionStep < blockedReplayFrames) {
+      const auto require = [](bool condition, const char* reason) {
+        if (!condition)
+          throw std::runtime_error(reason);
+      };
+      for (const auto& hit : m_hits)
+        if (hit.action == Action::ToggleBlocked && hit.height > 0)
+          require(
+              hit.y >= m_messageViewportTop && hit.y + hit.height <= m_messageViewportBottom,
+              "Visibility controls remain clipped to the conversation viewport"
+          );
+      const auto& blocked = m_messages.front();
+      const auto& ignored = m_messages[1];
+      const auto clickToggle = [&](const api::Message& message) {
+        const auto target = std::ranges::find_if(m_hits, [&](const auto& hit) {
+          return hit.action == Action::ToggleBlocked && hit.id == message.id && hit.height > 0;
+        });
+        require(target != m_hits.end(), "A visible hidden-message toggle remains clickable after redraw");
+        const auto hit = *target;
+        const float x = hit.x + hit.width / 2;
+        const float y = hit.y + hit.height / 2 + m_window.titlebarHeight() - layout::Window::titlebarHeight;
+        m_window.motion(x, y);
+        m_window.click(x, y, BTN_LEFT);
+        m_window.released();
+      };
+      const auto step = m_demoInteractionStep++;
+      std::clog << "Hidden message replay step " << step << '\n';
+      if (step == 0) {
+        require(blockedMessage(blocked) && blockedMessage(ignored), "Blocked and ignored messages start collapsed");
+        require(
+            !m_chatSelectionDocument.find(blocked.id) && !m_chatSelectionDocument.find(ignored.id),
+            "Collapsed messages stay outside chat selection"
+        );
+        clickToggle(blocked);
+      } else if (step == 1) {
+        const auto* section = m_chatSelectionDocument.find(blocked.id);
+        require(!blockedMessage(blocked) && section, "The eye control reveals the selected blocked message");
+        m_selectedMessage = blocked.id;
+        m_selectedText = m_chatSelectionDocument.text;
+        m_chatEdit.anchor = section->offset;
+        m_chatEdit.caret = section->offset + section->size;
+        clickToggle(blocked);
+      } else if (step == 2) {
+        require(
+            blockedMessage(blocked) && !m_chatSelectionDocument.find(blocked.id) && m_selectedText.empty(),
+            "Hiding again removes the revealed content and revokes its text selection"
+        );
+        clickToggle(ignored);
+      } else if (step == 3) {
+        require(!blockedMessage(ignored) && blockedMessage(blocked), "Ignored messages reveal independently");
+        const auto row = std::ranges::find_if(m_contextTargets, [&](const auto& hit) {
+          return hit.action == Action::MessageMenu && hit.id == ignored.id;
+        });
+        require(row != m_contextTargets.end(), "The revealed message retains its context-menu target");
+        openContext(row->x + row->width - Style::spaceLg, row->y + row->height / 2);
+        require(
+            m_contextOpen
+                && std::ranges::any_of(
+                    m_contextEntries,
+                    [&](const auto& entry) {
+                      return entry.id == static_cast<int>(Action::ToggleBlocked)
+                          && entry.label == "Hide Message"
+                          && entry.icon == "eye-off";
+                    }
+                ),
+            "A revealed message offers a crossed-eye Hide Message menu action"
+        );
+        contextAction(Action::ToggleBlocked);
+      } else if (step == 4) {
+        require(blockedMessage(ignored) && blockedMessage(blocked), "The context menu restores the collapsed state");
+        clickToggle(blocked);
+      } else if (step == 5) {
+        require(!blockedMessage(blocked), "Repeated reveal works without changing conversations");
+        clickToggle(ignored);
+      } else if (step == 6) {
+        require(
+            !blockedMessage(blocked) && !blockedMessage(ignored), "Multiple messages can remain revealed independently"
+        );
+        m_window.motion(
+            chatLeft() + layout::Chat::authorGutter,
+            m_messageTops.at(blocked.id) + Style::spaceSm + m_window.titlebarHeight() - layout::Window::titlebarHeight
+        );
+      } else if (step == 7) {
+        clickToggle(blocked);
+      } else if (step == 8) {
+        require(
+            blockedMessage(blocked) && !blockedMessage(ignored),
+            "Collapsing one message retains another revealed message"
+        );
+        m_contextMessage = ignored.id;
+        m_contextChannel = m_channelId;
+        contextAction(Action::ToggleBlocked);
+      } else {
+        require(
+            blockedMessage(blocked) && blockedMessage(ignored) && m_revealedBlocked.empty(),
+            "Both messages can be collapsed again without a chat reload"
+        );
+        require(
+            m_userDirectory.relationship(blocked.authorId) == 2 && m_userDirectory.ignored(ignored.authorId),
+            "Visibility toggles preserve blocked and ignored relationships"
+        );
+        interactionAction({.action = Action::ToggleBlocked, .id = m_messages[2].id});
+        require(m_revealedBlocked.empty(), "A stale toggle cannot reveal an ordinary author's message");
+      }
+      m_window.invalidate();
+    }
     if (m_demo && m_demoOverlay.starts_with("sound-cycle") && m_demoInteractionStep < soundReplayFrames)
       demoSoundStep();
     if (m_demo && m_demoOverlay.starts_with("login-cycle") && m_demoInteractionStep < loginReplayFrames)
@@ -924,7 +1031,8 @@ namespace app {
             || std::string_view(view) == "history-cycle"
             || std::string_view(view) == "video-cycle");
     return (
-        m_demo && view && std::string_view(view).starts_with("voice-messages-cycle")        ? 512
+        m_demo && view && std::string_view(view).starts_with("blocked-cycle")               ? blockedReplayFrames
+            : m_demo && view && std::string_view(view).starts_with("voice-messages-cycle")  ? 512
             : m_demo && view && std::string_view(view).starts_with("forward-cycle")         ? forwardReplayFrames
             : m_demo && view && std::string_view(view).starts_with("polls-cycle")           ? pollReplayFrames
             : m_demo && view && std::string_view(view).starts_with("inbox-cycle")           ? inboxReplayFrames
@@ -1056,6 +1164,8 @@ namespace app {
       throw std::runtime_error("Server hover replay did not finish");
     if (m_demoOverlay == "themes-cycle" && m_demoInteractionStep != themeReplayFrames)
       throw std::runtime_error("Theme settings replay did not finish");
+    if (m_demoOverlay.starts_with("blocked-cycle") && m_demoInteractionStep != blockedReplayFrames)
+      throw std::runtime_error("Hidden-message visibility replay did not finish");
     if (m_demoOverlay.starts_with("message-hover-cycle") && m_demoInteractionStep != 10)
       throw std::runtime_error("Message hover replay did not finish");
     if (m_demoOverlay == "join-cycle" && m_demoInteractionStep != 4)

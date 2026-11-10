@@ -49,6 +49,15 @@ Timestamp syntax inside inline code or code blocks stays literal.
 Bot authors show an **APP** chip beside their name and role icon. The chip
 remains visible when role icons are turned off.
 
+### Hidden messages
+
+Messages from blocked or ignored authors stay collapsed until you click their
+row or eye icon. To collapse a revealed message again, hover it and choose the
+crossed-eye **Hide message** button. Its right-click menu also offers **Hide
+Message**. You can show and hide each message independently without leaving the
+conversation. This only changes what you see, not the author's blocked or
+ignored status.
+
 ### System notices
 
 Server joins and pinned messages appear as short one-line notices instead of

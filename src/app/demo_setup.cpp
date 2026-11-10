@@ -972,7 +972,8 @@ namespace app {
             || view == "guild-profile"
             || view == "reactions"
             || view == "tooltip-long"
-            || view == "blocked") {
+            || view == "blocked"
+            || view.starts_with("blocked-cycle")) {
           m_demoOverlay = view;
           if (view == "profile-card-light")
             m_preferences.theme = "light";
@@ -988,7 +989,26 @@ namespace app {
           m_messages[2].reactions = {{"", "👍", 3, true}, {"", "🎉", 2}, {"", "❤️", 5}};
           m_messages[1].reply = api::MessageReference{"1", m_channelId, "11", "Maya", m_messages.front().content};
           api::UserUpdates users;
-          users.users["11"].relationship = view == "blocked" ? 2 : 1;
+          users.users["11"].relationship = view == "blocked" || view.starts_with("blocked-cycle") ? 2 : 1;
+          if (view.starts_with("blocked-cycle")) {
+            m_messages.resize(3);
+            m_messages.front().content = "A blocked message.";
+            m_messages[1].content = "An ignored message.";
+            m_messages[2].content = "A visible message.";
+            for (auto& message : m_messages) {
+              message.reply.reset();
+              message.attachments.clear();
+              message.embeds.clear();
+              message.stickers.clear();
+              message.reactions.clear();
+            }
+            users.users["12"].ignored = true;
+            m_showMembers = false;
+            if (view.ends_with("light"))
+              m_preferences.theme = "light";
+            if (view.ends_with("narrow"))
+              m_window.setUiScale(1.5F);
+          }
           m_userDirectory.apply(users);
           if (view.starts_with("guild-tag") || view == "guild-profile")
             prepareGuildTagDemo();

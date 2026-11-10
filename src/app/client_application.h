@@ -89,6 +89,7 @@ namespace app {
     static constexpr int embedReplayFrames = 23;
     static constexpr int botMessagesReplayFrames = 8;
     static constexpr int timestampReplayFrames = 40;
+    static constexpr int blockedReplayFrames = 10;
     static constexpr int reactionBrowserReplayFrames = 23;
     static constexpr int sidebarActivityReplayFrames = 13;
     static constexpr int loginReplayFrames = 18;
@@ -268,7 +269,7 @@ namespace app {
       SubmitDialog,
       CloseDialog,
       JumpReply,
-      RevealBlocked,
+      ToggleBlocked,
       QuickReaction,
       ProfileExpand,
       ProfileMessage,

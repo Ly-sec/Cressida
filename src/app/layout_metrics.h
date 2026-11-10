@@ -494,6 +494,20 @@ namespace app::layout {
     static constexpr float unreadTimelineTop = 166;
     static constexpr float minimumHistoryFetchDistance = 240;
   };
+  struct MessageVisibility {
+    static constexpr float hiddenHeight = Style::controlHeightSm + Style::spaceXs;
+    static constexpr float buttonWidth = Style::spaceWide;
+    static constexpr float buttonHeight = Style::spaceXl + Style::spaceXxs;
+    static constexpr float actionStep = buttonWidth + Style::spaceXxs;
+    static constexpr Frame hiddenButton(float y) {
+      return {(Chat::authorGutter - buttonWidth) / 2, y + (hiddenHeight - buttonHeight) / 2, buttonWidth, buttonHeight};
+    }
+    static constexpr Frame toolbarButton(float width, float y, float toolbarWidth) {
+      return {
+          width - Chat::authorGutter - Style::spaceMd - toolbarWidth, y - Style::spaceXs, buttonWidth, buttonHeight
+      };
+    }
+  };
   struct Reactions {
     static constexpr float maximumWidth = Style::embedMaximumWidth + Style::spaceSection * 4;
     static constexpr float maximumHeight = Style::profileCardWidth * 2 + Style::spaceSection * 2;

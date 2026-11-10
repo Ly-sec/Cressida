@@ -140,6 +140,9 @@ namespace app {
         entry.icon = "eraser";
         entry.danger = action == Action::RemoveFromLog;
         break;
+      case Action::ToggleBlocked:
+        entry.icon = m_revealedBlocked.contains(m_contextMessage) ? "eye-off" : "eye";
+        break;
       case Action::CopyMessage:
         entry.icon = "copy";
         break;
@@ -256,6 +259,8 @@ namespace app {
         add(Action::RemindMessage, "Remind Me");
       }
       add(Action::UserProfile, "View Author Profile");
+      if (m_userDirectory.relationship(message->authorId) == 2 || m_userDirectory.ignored(message->authorId))
+        add(Action::ToggleBlocked, blockedMessage(*message) ? "Show Message" : "Hide Message");
       separator();
       add(Action::CopyMessage, "Copy Text");
       add(Action::CopyLink, "Copy Message Link");
@@ -1059,6 +1064,14 @@ namespace app {
         if (found->content.empty() && !found->stickers.empty())
           m_replies[m_channelId].content = "Sticker: " + found->stickers.front().name;
         m_focusedInput = "composer";
+      }
+      break;
+    case Action::ToggleBlocked:
+      if (m_contextChannel == m_channelId
+          && found != m_messages.end()
+          && (m_userDirectory.relationship(found->authorId) == 2 || m_userDirectory.ignored(found->authorId))) {
+        if (!m_revealedBlocked.erase(found->id))
+          m_revealedBlocked.insert(found->id);
       }
       break;
     case Action::ForwardMessage:
@@ -1996,6 +2009,7 @@ namespace app {
     case Action::AddReaction:
     case Action::RemoveEmbeds:
     case Action::ForwardMessage:
+    case Action::ToggleBlocked:
       m_contextMessage = hit.id;
       m_contextChannel = m_channelId;
       contextAction(hit.action);
@@ -2030,9 +2044,6 @@ namespace app {
           || m_dialogKind == "guild-profile"
           || m_dialogKind == "sidebar-invite")
         closeDialog();
-      break;
-    case Action::RevealBlocked:
-      m_revealedBlocked.insert(hit.id);
       break;
     case Action::JumpReply:
       jumpToMessage(m_channelId, hit.id);

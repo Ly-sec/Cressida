@@ -2185,7 +2185,7 @@ namespace app {
           const float bodyHeight = m_messageEdit && m_messageEdit->message == message.id
               ? messageEditHeight(textWidth)
               : std::max(22.0F, cached.layout.height);
-          const float height = blockedMessage(message)                                        ? 36
+          const float height = blockedMessage(message) ? layout::MessageVisibility::hiddenHeight
               : compactSystemNotice(message.type) || message.type == autoModerationActionType ? std::max(
                                                                                                     22.0F,
                                                                                                     cached.layout.height
@@ -2390,6 +2390,14 @@ namespace app {
               rowNode->setOpacity(Style::mutedChannelOpacity);
             content->addChild(std::move(rowNode));
             const auto firstHit = m_hits.size();
+            const auto clipRowHits = [&] {
+              for (auto index = firstHit; index < m_hits.size(); ++index) {
+                auto& hit = m_hits[index];
+                const float end = std::min(bottom, hit.y + hit.height);
+                hit.y = std::max(top, hit.y);
+                hit.height = std::max(0.0F, end - hit.y);
+              }
+            };
             const auto rowTop = std::max(top, top + y), rowBottom = std::min(bottom, top + y + heights[i]);
             if (!local)
               m_contextTargets.push_back(
@@ -2397,16 +2405,23 @@ namespace app {
                    Action::MessageMenu, message.id}
               );
             if (blockedMessage(message)) {
+              const auto control = layout::MessageVisibility::hiddenButton(y);
+              iconButton(
+                  *messageContent,
+                  {control.x, control.y, control.width, control.height, Action::ToggleBlocked, message.id}, "eye",
+                  "Show message"
+              );
               label(
-                  *messageContent, 50, y + (Style::spaceCompact + Style::borderWidth), textWidth,
-                  m_userDirectory.ignored(message.authorId) ? "Ignored message — click to show"
-                                                            : "Blocked message — click to show",
+                  *messageContent, layout::Chat::authorGutter, y + Style::spaceCompact + Style::borderWidth, textWidth,
+                  m_userDirectory.ignored(message.authorId) ? "Ignored message: click to show"
+                                                            : "Blocked message: click to show",
                   Style::fontSizeDescription, muted
               );
               m_hits.push_back(
                   {left + Style::spaceXl, rowTop, bodyWidth - Style::spaceGroup, std::max(0.0F, rowBottom - rowTop),
-                   Action::RevealBlocked, message.id}
+                   Action::ToggleBlocked, message.id}
               );
+              clipRowHits();
               y += heights[i];
               continue;
             }
@@ -3139,15 +3154,30 @@ namespace app {
               }
             }
             if (messageHovered) {
-              const float toolbarWidth = message.deleted ? 64 : compactSystemNotice(message.type) ? 94 : 124;
+              const bool revealed = m_revealedBlocked.contains(message.id)
+                  && (m_userDirectory.relationship(message.authorId) == 2 || m_userDirectory.ignored(message.authorId));
+              const float visibilityWidth = revealed ? layout::MessageVisibility::actionStep : 0;
+              const float toolbarWidth = (message.deleted                         ? 64
+                                              : compactSystemNotice(message.type) ? 94
+                                                                                  : 124)
+                  + visibilityWidth;
               rectangle(
                   *messageContent, bodyWidth - 66 - toolbarWidth, y - Style::spaceSm, toolbarWidth, 34, panel,
                   Style::hoverRadius
               );
+              if (revealed) {
+                const auto control = layout::MessageVisibility::toolbarButton(bodyWidth, y, toolbarWidth);
+                iconButton(
+                    *messageContent,
+                    {control.x, control.y, control.width, control.height, Action::ToggleBlocked, message.id}, "eye-off",
+                    "Hide message"
+                );
+              }
               iconButton(
                   *messageContent,
-                  {bodyWidth - 62 - toolbarWidth, y - Style::spaceXs, 28, 26, Action::CopyMessage, message.id}, "copy",
-                  "Copy text"
+                  {bodyWidth - 62 - toolbarWidth + visibilityWidth, y - Style::spaceXs, 28, 26, Action::CopyMessage,
+                   message.id},
+                  "copy", "Copy text"
               );
               if (!message.deleted
                   && !compactSystemNotice(message.type)
@@ -3193,12 +3223,7 @@ namespace app {
                 m_tooltipY = top + statusY;
               }
             }
-            for (auto index = firstHit; index < m_hits.size(); ++index) {
-              auto& hit = m_hits[index];
-              const float end = std::min(bottom, hit.y + hit.height);
-              hit.y = std::max(top, hit.y);
-              hit.height = std::max(0.0F, end - hit.y);
-            }
+            clipRowHits();
           }
           y = originalY + heights[i];
         }

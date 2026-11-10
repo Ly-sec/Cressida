@@ -705,6 +705,12 @@ namespace app {
         m_window.invalidate();
         return;
       }
+      if (m_dialogKind == "forward" && m_forwardEditor) {
+        if (m_forwardEditor->viewport.contains(m_pointerX, m_pointerY))
+          scroll(m_forwardEditor->scroll, delta);
+        m_window.invalidate();
+        return;
+      }
       if (m_dialogKind == "dm-create") {
         if (m_dmCreateBounds.contains(m_pointerX, m_pointerY))
           scroll(m_dmCreateScroll, delta);
@@ -3678,7 +3684,7 @@ namespace app {
       drawPresenceMenu(root, h);
     if (m_settingsOpen && userAccountDialogOpen())
       drawUserAccountDialog(root, w, h);
-    if (m_emojiMenu && !settingsVisible() && m_viewImage.empty())
+    if (m_emojiMenu && !settingsVisible() && m_viewImage.empty() && !(m_forwardEditor && m_forwardEditor->emoji))
       drawEmojiPicker(root, w, h);
     if (m_gifMenu && !settingsVisible() && m_viewImage.empty())
       drawGifPicker(root, w, h);
@@ -3711,6 +3717,8 @@ namespace app {
       drawInboxButton(root, w);
       drawInbox(root, w, h);
       drawDialog(root, w, h);
+      if (m_emojiMenu && m_forwardEditor && m_forwardEditor->emoji)
+        drawEmojiPicker(root, w, h);
       if (voiceMenuCovered) {
         m_pointerX = pointer.first;
         m_pointerY = pointer.second;
@@ -5095,6 +5103,7 @@ namespace app {
         auto users = event.users;
         rpcProtectPublishedActivity(users);
         m_userDirectory.apply(users);
+        revokeUnavailableOutgoing();
         if (!m_dmMode)
           if (const auto hidden = m_userDirectory.guildPreferences(m_guildId).hideMutedChannels)
             m_channelListPreferences.hideMuted = *hidden;
@@ -5280,6 +5289,7 @@ namespace app {
         m_channelMessages.erase(event.resource);
         m_channelHistoryState.erase(event.resource);
         std::erase_if(m_privateChannels, [&](const auto& channel) { return channel.id == event.resource; });
+        revokeUnavailableOutgoing();
         if (m_dmMode) {
           m_channels = dmConversations();
           if (m_channelId == event.resource) {

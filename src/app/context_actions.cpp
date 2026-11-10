@@ -123,6 +123,9 @@ namespace app {
       case Action::Reply:
         entry.icon = "corner-up-left";
         break;
+      case Action::ForwardMessage:
+        entry.icon = "corner-up-right";
+        break;
       case Action::EditMessage:
       case Action::SetNickname:
         entry.icon = "pencil";
@@ -229,6 +232,10 @@ namespace app {
           && message->type != autoModerationActionType
           && replyAllowed())
         add(Action::Reply, "Reply");
+      if (api::canForwardMessage(*message)
+          && !blockedMessage(*message)
+          && forwardSourceAllowed({message->id, message->channelId, m_dmMode ? "" : m_guildId}))
+        add(Action::ForwardMessage, "Forward");
       const auto selected = std::ranges::find(m_channels, m_channelId, &api::Channel::id);
       if (!message->deleted
           && !compactSystemNotice(message->type)
@@ -612,6 +619,12 @@ namespace app {
     closeContext();
   }
   bool ClientApplication::overlayClick(float x, float y) {
+    if (m_forwardEditor && m_forwardEditor->emoji && m_emojiMenu) {
+      if (m_emojiBounds.contains(x, y))
+        return false;
+      closeEmojiPicker();
+      return true;
+    }
     if (reactionBrowserClick(x, y))
       return true;
     if (m_reactionTooltip && !m_hoverReactionKey.empty() && m_reactionTooltipBounds.contains(x, y)) {
@@ -698,6 +711,10 @@ namespace app {
     return false;
   }
   bool ClientApplication::overlayKey(const Key& key) {
+    if (m_forwardEditor && m_forwardEditor->emoji && m_emojiMenu && key.symbol == XKB_KEY_Escape) {
+      closeEmojiPicker();
+      return true;
+    }
     if (reactionBrowserKey(key))
       return true;
     if (voiceMenuKey(key))
@@ -789,13 +806,15 @@ namespace app {
         return false;
       if (key.control && key.symbol == XKB_KEY_comma)
         return true;
-      if (m_dialogKind == "poll-create")
+      if (m_dialogKind == "poll-create" || m_dialogKind == "forward")
         for (const auto& [id, widget] : m_widgets)
-          if (id.starts_with("poll-create:"))
+          if (id.starts_with("poll-create:") || id.starts_with("forward:"))
             for (const auto* node = static_cast<const Node*>(m_controlInput.focusedArea()); node; node = node->parent())
               if (node == widget)
                 return false;
       if (!m_focusedInput.starts_with("poll-create:")
+          && !m_focusedInput.starts_with("forward:")
+          && !(m_forwardEditor && m_emojiMenu && m_focusedInput == "emoji-search")
           && !m_focusedInput.starts_with("composer-link:")
           && !m_focusedInput.starts_with("channel-")
           && !m_focusedInput.starts_with("application-field:")
@@ -1042,6 +1061,10 @@ namespace app {
         m_focusedInput = "composer";
       }
       break;
+    case Action::ForwardMessage:
+      if (found != m_messages.end())
+        openForwardMessage(*found);
+      break;
     case Action::AddReaction:
       if (found != m_messages.end()) {
         m_reactionMessage = found->id;
@@ -1212,6 +1235,14 @@ namespace app {
       m_dialogError = m_status;
   }
   void ClientApplication::closeDialog() {
+    if (m_forwardEditor) {
+      m_scrolling.stop(m_forwardEditor->scroll);
+      closeEmojiPicker();
+      m_forwardEditor.reset();
+      for (auto& [id, input] : m_inputs)
+        if (id.starts_with("forward:"))
+          input->setValue("");
+    }
     m_pendingVoiceJoinChannel.clear();
     m_pendingVoiceJoinStream.clear();
     m_serverAccessList = {};
@@ -1399,6 +1430,10 @@ namespace app {
     m_tooltip.clear();
   }
   void ClientApplication::drawDialog(Node& root, float w, float h) {
+    if (m_dialogKind == "forward") {
+      drawForwardDialog(root, w, h);
+      return;
+    }
     if (m_dialogKind == "poll-create") {
       drawPollDialog(root, w, h);
       return;
@@ -1960,9 +1995,13 @@ namespace app {
     case Action::Reply:
     case Action::AddReaction:
     case Action::RemoveEmbeds:
+    case Action::ForwardMessage:
       m_contextMessage = hit.id;
       m_contextChannel = m_channelId;
       contextAction(hit.action);
+      break;
+    case Action::ForwardAction:
+      forwardAction(hit.id);
       break;
     case Action::CancelReply:
       m_replies.erase(m_channelId);

@@ -653,7 +653,15 @@ namespace app {
         return false;
       });
       field->setOnChange([this, id](const std::string& text) {
-        if (id == "composer") {
+        if (id.starts_with("forward:") && m_forwardEditor && m_dialogKind == "forward") {
+          if (id == "forward:search" && text.size() <= api::maximumForwardSearchBytes) {
+            m_forwardEditor->query = text;
+            m_scrolling.stop(m_forwardEditor->scroll);
+            m_forwardEditor->scroll = 0;
+          } else if (id == "forward:comment" && text.size() <= api::maximumForwardCommentBytes)
+            m_forwardEditor->comment = text;
+          m_dialogError.clear();
+        } else if (id == "composer") {
           if (text.size() <= 8000 && selectedChannelWriteAccess() == api::MessageWriteAccess::Allowed) {
             m_drafts[m_channelId] = text;
             m_edit.end(text);
@@ -784,7 +792,10 @@ namespace app {
         m_window.invalidate();
       });
       field->setOnSubmit([this, id](const std::string&) {
-        if (id.starts_with("composer-link:"))
+        if (id == "forward:comment")
+          forwardAction("send");
+        else if (id == "forward:search") {
+        } else if (id.starts_with("composer-link:"))
           submitComposerLink();
         else if (id == "composer")
           send();
@@ -851,6 +862,7 @@ namespace app {
         id == "composer"
         || id == "dialog"
         || id == "message-edit"
+        || id == "forward:comment"
         || id.starts_with("slash-field:")
         || id == "slash-options"
     );
@@ -867,7 +879,8 @@ namespace app {
          || (m_dialogKind == "guild-access" && id.starts_with("server-access:"))
          || id == "dm-create-search"
          || (m_dialogKind == "composer-link" && id.starts_with("composer-link:"))
-         || (m_dialogKind == "poll-create" && id.starts_with("poll-create:")))
+         || (m_dialogKind == "poll-create" && id.starts_with("poll-create:"))
+         || (m_dialogKind == "forward" && (id.starts_with("forward:") || (id == "emoji-search" && m_emojiMenu))))
         && (!m_serverSettings.open || id.starts_with("server-settings:"))
         && (id != "composer" || selectedChannelWriteAccess() == api::MessageWriteAccess::Allowed)
         && (id.starts_with("server-access:") ? !m_dialogPending

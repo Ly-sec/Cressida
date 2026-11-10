@@ -300,6 +300,7 @@ namespace api {
     std::string nonce;
     bool authorBot = false;
     std::optional<Poll> poll;
+    bool hasCall = false, hasActivity = false;
   };
 
   struct MessagePatch {
@@ -327,6 +328,7 @@ namespace api {
     std::optional<bool> authorBot;
     std::optional<std::optional<Poll>> poll;
     std::vector<PollVote> pollVotes;
+    std::optional<bool> hasCall, hasActivity;
     void apply(Message& message) const;
   };
   MessagePatch parseMessagePatch(const nlohmann::json& value);

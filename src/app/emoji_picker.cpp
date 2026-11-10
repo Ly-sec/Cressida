@@ -8,6 +8,23 @@
 #include <cmath>
 
 namespace app {
+  namespace {
+    template <class Destinations, class ExternalAccess>
+    bool commentEmojiAvailable(
+        const api::Emoji& emoji, const Destinations& destinations, int premium, ExternalAccess externalAccess
+    ) {
+      if (!emoji.available || (!emoji.id.empty() && destinations.empty()))
+        return false;
+      return std::ranges::all_of(destinations, [&](const auto& entry) {
+        const auto& destination = entry.second;
+        return !api::emojiNeedsImage(emoji, destination.guild, premium)
+            && (emoji.guild.empty()
+                || destination.guild.empty()
+                || emoji.guild == destination.guild
+                || externalAccess(destination.guild, destination.channel));
+      });
+    }
+  } // namespace
   using namespace theme;
   void ClientApplication::prepareEmojiPicker() {
     m_emojiCatalog.load(paths::assetPath("emoji.json"), paths::assetPath("emoji-aliases.json"));
@@ -73,6 +90,9 @@ namespace app {
     }
   }
   void ClientApplication::closeEmojiPicker() {
+    const bool forward = m_forwardEditor && m_forwardEditor->emoji;
+    if (m_forwardEditor)
+      m_forwardEditor->emoji = false;
     m_emojiMenu = m_emojiOpened = false;
     m_stickerTab = m_stickerInfo = false;
     m_inspectedEmoji.reset();
@@ -85,6 +105,8 @@ namespace app {
       m_controlInput.setFocus(nullptr);
       m_focusedInput.clear();
     }
+    if (forward)
+      m_focusedInput = "forward:comment";
   }
   void ClientApplication::clearEmojiState() {
     closeEmojiPicker();
@@ -182,6 +204,26 @@ namespace app {
   }
   void ClientApplication::pickEmoji(const std::string& key) {
     const auto* emoji = m_emojiCatalog.find(key);
+    if (m_forwardEditor && m_forwardEditor->emoji && m_dialogKind == "forward") {
+      if (!emoji || !emoji->available)
+        return;
+      if (!commentEmojiAvailable(
+              *emoji, m_forwardEditor->selected, m_account.premiumType.value_or(0),
+              [this](const auto& guild, const auto& channel) {
+                return channelAllows(guild, channel, api::permission::useExternalEmojis);
+              }
+          )) {
+        m_dialogError = "This emoji is not available in every selected destination.";
+        return;
+      }
+      const auto token = emoji->token();
+      const auto identity = emoji->key();
+      closeEmojiPicker();
+      focusControl("forward:comment");
+      pasteControl("forward:comment", token);
+      recordEmojiUse(identity);
+      return;
+    }
     if (!emoji || (!emoji->available && (!m_reactionMessage.empty() || !m_preferences.emojiImageLinks)))
       return;
     if (m_reactionMessage.empty()
@@ -224,9 +266,17 @@ namespace app {
       m_focusedInput = "emoji-search";
     }
     prepareEmojiPicker();
-    const auto frame = layout::pickerFrame(
+    auto frame = layout::pickerFrame(
         w - memberPaneWidth(), m_composerTop, false, layout::Picker::emojiWidth, layout::Picker::emojiMinimumHeight
     );
+    if (m_forwardEditor && m_forwardEditor->emoji) {
+      const auto& anchor = m_forwardEditor->emojiAnchor;
+      frame = layout::pickerFrame(w, anchor.y, false, layout::Picker::emojiWidth, layout::Picker::emojiMinimumHeight);
+      frame.x = std::clamp(
+          anchor.x + anchor.width - frame.width, Style::spaceLg,
+          std::max(Style::spaceLg, w - frame.width - Style::spaceLg)
+      );
+    }
     const auto [x, y, width, height] = frame;
     m_emojiBounds = {x, y, width, height, Action::None, {}};
     m_hits.push_back(
@@ -234,13 +284,14 @@ namespace app {
     );
     rectangle(root, x, y, width, height, sidebar, Style::radiusXl);
     m_hits.push_back(m_emojiBounds);
-    if (m_reactionMessage.empty())
+    if (m_reactionMessage.empty() && !(m_forwardEditor && m_forwardEditor->emoji))
       button(root, {x + Style::spaceMd, y + Style::spaceDense, 66, 30, Action::ToggleGif, {}}, "GIFs");
-    if (m_reactionMessage.empty())
+    if (m_reactionMessage.empty() && !(m_forwardEditor && m_forwardEditor->emoji))
       button(root, {x + 160, y + Style::spaceDense, 88, 30, Action::ToggleStickers, {}}, "Stickers");
     label(
-        root, x + (m_reactionMessage.empty() ? 92 : 16), y + (Style::spaceLg + Style::borderWidth), width - 150,
-        m_reactionMessage.empty() ? "Emoji" : "Add reaction", Style::fontSizeTitle, foreground, FontWeight::SemiBold
+        root, x + (m_reactionMessage.empty() && !(m_forwardEditor && m_forwardEditor->emoji) ? 92 : 16),
+        y + (Style::spaceLg + Style::borderWidth), width - 150, m_reactionMessage.empty() ? "Emoji" : "Add reaction",
+        Style::fontSizeTitle, foreground, FontWeight::SemiBold
     );
     iconButton(
         root, {x + width - 44, y + (Style::spaceSm + Style::borderWidth), 32, 32, Action::CloseEmoji, {}}, "x",
@@ -437,9 +488,16 @@ namespace app {
                      layout::Picker::railItemSize, api::emojiPath(emoji.id, emoji.animated)
                  ))
           glyph(*grid, ex + Style::spaceMd, ey + Style::spaceDense, Style::glyphSizeLarge, "loader", muted);
-        const bool selectable = m_reactionMessage.empty() ? m_preferences.emojiImageLinks
+        const bool selectable = m_forwardEditor && m_forwardEditor->emoji
+            ? commentEmojiAvailable(
+                  emoji, m_forwardEditor->selected, m_account.premiumType.value_or(0),
+                  [this](const auto& guild, const auto& channel) {
+                    return channelAllows(guild, channel, api::permission::useExternalEmojis);
+                  }
+              )
+            : m_reactionMessage.empty() ? m_preferences.emojiImageLinks
                 || !api::emojiNeedsImage(emoji, m_dmMode ? "" : m_guildId, m_account.premiumType.value_or(0))
-                                                          : emoji.available;
+                                        : emoji.available;
         if (selectable)
           m_hits.push_back(
               {gridX + ex, top + clippedTop, cell, clippedBottom - clippedTop, Action::PickEmoji, emoji.key()}

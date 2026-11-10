@@ -48,7 +48,6 @@ namespace app {
         || (previous.type != api::defaultMessageType && previous.type != api::replyMessageType)
         || current.type != api::defaultMessageType
         || current.reply
-        || previous.forwarded
         || current.forwarded
         || ((previous.flags | current.flags) & 64))
       return false;

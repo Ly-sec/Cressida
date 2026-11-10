@@ -962,6 +962,17 @@ namespace app::layout {
     static constexpr float top = Window::titlebarHeight + Style::spaceXs;
     static constexpr float belowAnchor = 38;
   };
+  struct ForwardDialog {
+    static constexpr float maximumWidth = Style::embedMaximumWidth + Style::spaceGroup;
+    static constexpr float maximumHeight = Style::profileCardWidth * 2 + Style::spaceGroup;
+    static constexpr float padding = Style::spaceLg;
+    static constexpr float heading = Style::controlHeight + Style::spaceXl;
+    static constexpr float rowHeight = Style::controlHeightLg + Style::spaceMd;
+    static constexpr float avatar = Style::space2Xl;
+    static constexpr float previewHeight = Style::controlHeightLg;
+    static constexpr float errorHeight = Style::fontSizeDescription * 2 + Style::spaceMd;
+    static constexpr float footer = previewHeight + Style::controlHeightLg + errorHeight + padding * 2;
+  };
   struct Cosmetics {
     static Frame profileFrameBody(const Frame& bounds, float overflowHorizontal) {
       return {bounds.x - overflowHorizontal, bounds.y, bounds.width + overflowHorizontal * 2, bounds.height};

@@ -488,6 +488,8 @@ namespace app {
       demoBotMessagesStep();
     if (m_demo && m_demoOverlay.starts_with("timestamps-cycle") && m_demoInteractionStep < timestampReplayFrames)
       demoTimestampStep();
+    if (m_demo && m_demoOverlay.starts_with("forward-cycle") && m_demoInteractionStep < forwardReplayFrames)
+      demoForwardStep();
     if (m_demo
         && m_demoOverlay.starts_with("reaction-browser-cycle")
         && m_demoInteractionStep < reactionBrowserReplayFrames)
@@ -923,6 +925,7 @@ namespace app {
             || std::string_view(view) == "video-cycle");
     return (
         m_demo && view && std::string_view(view).starts_with("voice-messages-cycle")        ? 512
+            : m_demo && view && std::string_view(view).starts_with("forward-cycle")         ? forwardReplayFrames
             : m_demo && view && std::string_view(view).starts_with("polls-cycle")           ? pollReplayFrames
             : m_demo && view && std::string_view(view).starts_with("inbox-cycle")           ? inboxReplayFrames
             : m_demo && view && std::string_view(view).starts_with("search-cycle")          ? searchReplayFrames
@@ -1111,6 +1114,8 @@ namespace app {
       throw std::runtime_error("Bot identity and message deletion replay did not complete");
     if (m_demoOverlay.starts_with("timestamps-cycle") && m_demoInteractionStep != timestampReplayFrames)
       throw std::runtime_error("Message timestamp replay did not complete");
+    if (m_demoOverlay.starts_with("forward-cycle") && m_demoInteractionStep != forwardReplayFrames)
+      throw std::runtime_error("Message forwarding replay did not complete");
     if (m_demoOverlay.starts_with("composer-edit-cycle") && m_demoInteractionStep != composerEditReplayFrames)
       throw std::runtime_error("Composer editing replay did not complete");
     if (m_demoOverlay.starts_with("sidebar-activity-cycle") && m_demoInteractionStep != sidebarActivityReplayFrames)

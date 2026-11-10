@@ -527,6 +527,10 @@ namespace api {
       if (patch.stickers->size() > 3)
         patch.stickers->resize(3);
     }
+    if (value.contains("call"))
+      patch.hasCall = !value["call"].is_null();
+    if (value.contains("activity"))
+      patch.hasActivity = !value["activity"].is_null();
     if (value.contains("edited_timestamp")) {
       if (value["edited_timestamp"].is_null())
         patch.editedTimestamp = "";
@@ -745,6 +749,10 @@ namespace api {
     return patch;
   }
   void MessagePatch::apply(Message& message) const {
+    if (hasCall)
+      message.hasCall = *hasCall;
+    if (hasActivity)
+      message.hasActivity = *hasActivity;
     if (poll)
       mergePoll(message.poll, *poll);
     if (message.poll)

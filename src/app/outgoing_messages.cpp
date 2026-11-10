@@ -66,7 +66,9 @@ namespace app {
     if (poll && (!canCreatePoll() || !api::pollDraftError(*poll).empty()))
       return false;
     std::size_t retained = 0, retainedTextures = 0, submittedTextures = 0;
+    std::size_t slots = m_pendingSends.size();
     for (const auto& [_, pending] : m_pendingSends) {
+      slots += !pending.forwardComment.empty();
       if (pending.voice)
         retained += pending.voice->bytes.size();
       for (const auto& image : pending.images) {
@@ -79,7 +81,7 @@ namespace app {
         submittedTextures += image.texture.allocationBytes;
     for (const auto& upload : uploads)
       retained += upload.bytes.size();
-    if (m_pendingSends.size() >= maximumPendingMessages
+    if (slots >= maximumPendingMessages
         || retained > maximumPendingUploadBytes
         || retainedTextures + submittedTextures > std::max(maximumPendingTextureBytes, submittedTextures)) {
       m_status = "Finish or restore pending messages before sending more.";
@@ -173,6 +175,86 @@ namespace app {
     return true;
   }
 
+  bool ClientApplication::queueForward(
+      const ForwardDestination& destination, const api::ForwardReference& source, const api::ForwardedMessage& snapshot,
+      std::string comment
+  ) {
+    if (!m_connected
+        || (m_demo && !m_demoOverlay.starts_with("forward-cycle"))
+        || !forwardSourceAllowed(source)
+        || !forwardDestinationAllowed(destination)
+        || comment.size() > api::maximumForwardCommentBytes
+        || api::utf8Length(comment) > api::maximumForwardCommentCharacters)
+      return false;
+    std::size_t slots = m_pendingSends.size() + 1 + !comment.empty();
+    for (const auto& [_, pending] : m_pendingSends)
+      slots += !pending.forwardComment.empty();
+    if (slots > maximumPendingMessages) {
+      m_status = "Finish or restore pending messages before forwarding more.";
+      return false;
+    }
+    const auto nonce = outgoingNonce();
+    const auto revoked = std::make_shared<std::atomic_bool>(false);
+    if (!m_demo && !m_client.send(destination.channel, "", {}, {}, {}, nonce, revoked, {}, source)) {
+      m_status = "Could not queue this forward. Your choices are retained.";
+      return false;
+    }
+    PendingSend pending;
+    pending.guild = destination.guild;
+    pending.revoked = revoked;
+    pending.forward = source;
+    pending.forwardComment = std::move(comment);
+    pending.preview = {
+        .id = "pending:" + nonce,
+        .channelId = destination.channel,
+        .author = m_account.name,
+        .timestamp = outgoingTimestamp(),
+        .authorId = m_account.id,
+        .avatar = m_account.avatar
+    };
+    pending.preview.forwarded = snapshot;
+    pending.preview.nonce = nonce;
+    pending.preview.authorTag = m_account.guildTag;
+    m_pendingSends.emplace(nonce, std::move(pending));
+    m_sending = true;
+    m_status.clear();
+    m_window.invalidate();
+    return true;
+  }
+  void ClientApplication::queueForwardComment(std::string guild, std::string channel, std::string comment) {
+    if (comment.empty())
+      return;
+    const auto nonce = outgoingNonce();
+    PendingSend pending;
+    pending.guild = std::move(guild);
+    pending.revoked = std::make_shared<std::atomic_bool>(false);
+    pending.preview = {
+        .id = "pending:" + nonce,
+        .channelId = std::move(channel),
+        .author = m_account.name,
+        .content = std::move(comment),
+        .timestamp = outgoingTimestamp(),
+        .authorId = m_account.id,
+        .avatar = m_account.avatar
+    };
+    pending.preview.nonce = nonce;
+    pending.preview.authorTag = m_account.guildTag;
+    if (!forwardDestinationAllowed({pending.guild, pending.preview.channelId})
+        || (!m_demo
+            && !m_client.send(
+                pending.preview.channelId, pending.preview.content, {}, {}, {}, nonce, pending.revoked
+            ))) {
+      pending.revoked->store(true);
+      pending.completed = true;
+      pending.error =
+          "The forward was delivered, but its comment could not be queued. Restore the comment to send it explicitly.";
+    }
+    m_pendingSends.emplace(nonce, std::move(pending));
+    m_sending = std::ranges::any_of(m_pendingSends, [](const auto& entry) {
+      return !entry.second.completed && entry.second.confirmed.empty();
+    });
+  }
+
   void ClientApplication::releaseOutgoing(PendingSend& pending) {
     if (pending.revoked)
       pending.revoked->store(true);
@@ -197,16 +279,21 @@ namespace app {
   }
   void ClientApplication::revokeUnavailableOutgoing() {
     for (auto& [_, pending] : m_pendingSends) {
-      if (pending.completed || pending.guild.empty() || !pending.revoked || pending.revoked->load())
+      if (pending.completed || !pending.revoked || pending.revoked->load())
+        continue;
+      if (pending.guild.empty() && !pending.forward)
         continue;
       const auto* channel = serverChannel(pending.guild, pending.preview.channelId);
       if (!channel)
         channel = m_threads.find(pending.guild, pending.preview.channelId);
       const auto permissions = serverChannelPermissions(pending.guild, pending.preview.channelId);
-      if (channel
-          && api::messageWriteAccess(*channel, permissions) == api::MessageWriteAccess::Allowed
-          && (!pending.poll || (permissions && (*permissions & api::permission::sendPolls)))
-          && (!pending.voice || channelCan(pending.guild, pending.preview.channelId, can::sendVoiceMessage)))
+      if ((!pending.forward || forwardSourceAllowed(*pending.forward))
+          && (!pending.forward || forwardDestinationAllowed({pending.guild, pending.preview.channelId}))
+          && (pending.guild.empty()
+              || (channel
+                  && api::messageWriteAccess(*channel, permissions) == api::MessageWriteAccess::Allowed
+                  && (!pending.poll || (permissions && (*permissions & api::permission::sendPolls)))
+                  && (!pending.voice || channelCan(pending.guild, pending.preview.channelId, can::sendVoiceMessage)))))
         continue;
       pending.revoked->store(true);
       pending.completed = true;
@@ -230,6 +317,8 @@ namespace app {
       return;
     if (pending.voice && !(message.flags & api::messageVoice))
       return;
+    if (pending.forward && !api::confirmsForward(message, *pending.forward))
+      return;
     if (message.reply
         && !message.reply->available
         && pending.preview.reply
@@ -239,6 +328,31 @@ namespace app {
     }
     if (pending.confirmed.empty()) {
       pending.confirmed = message.id;
+      auto comment = std::exchange(pending.forwardComment, {});
+      if (!comment.empty()) {
+        if (pending.revoked && pending.revoked->load()) {
+          const auto nonce = outgoingNonce();
+          PendingSend note;
+          note.guild = pending.guild;
+          note.completed = true;
+          note.revoked = std::make_shared<std::atomic_bool>(true);
+          note.error = "The forward was delivered after cancellation. Its comment was kept without sending. Restore it "
+                       "to send explicitly.";
+          note.preview = {
+              .id = "pending:" + nonce,
+              .channelId = pending.preview.channelId,
+              .author = m_account.name,
+              .content = std::move(comment),
+              .timestamp = outgoingTimestamp(),
+              .authorId = m_account.id,
+              .avatar = m_account.avatar
+          };
+          note.preview.nonce = nonce;
+          note.preview.authorTag = m_account.guildTag;
+          m_pendingSends.emplace(nonce, std::move(note));
+        } else
+          queueForwardComment(pending.guild, pending.preview.channelId, std::move(comment));
+      }
       if (!pending.error.empty()
           && m_status == "Message delivery was not confirmed. Restore the pending message to edit it.")
         m_status.clear();
@@ -273,6 +387,7 @@ namespace app {
           || !api::validSnowflake(message.id)
           || (pending.poll && !message.poll)
           || (pending.voice && !(message.flags & api::messageVoice))
+          || (pending.forward && !api::confirmsForward(message, *pending.forward))
           || (!message.nonce.empty() && message.nonce != event.nonce);
     });
     pending.completed = true;
@@ -321,6 +436,18 @@ namespace app {
       }
       openVoiceMessage(false);
       m_voiceMessageDraft = std::move(found->second.voice);
+      releaseOutgoing(found->second);
+      m_pendingSends.erase(found);
+      return;
+    }
+    if (found->second.forward) {
+      if (!m_dialogKind.empty()) {
+        m_status = "Close the current dialog before restoring this forward.";
+        return;
+      }
+      const auto& pending = found->second;
+      ForwardDestination destination{pending.guild, pending.preview.channelId};
+      openForwardEditor(*pending.forward, *pending.preview.forwarded, pending.forwardComment, destination);
       releaseOutgoing(found->second);
       m_pendingSends.erase(found);
       return;

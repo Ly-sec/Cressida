@@ -24,6 +24,8 @@ namespace app {
   }
 
   void ClientApplication::inspectEmoji(const Hit& hit) {
+    if (m_forwardEditor)
+      return;
     const auto found = m_chatEmojiTargets.find(hit.id);
     if (found == m_chatEmojiTargets.end())
       return;

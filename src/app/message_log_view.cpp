@@ -70,6 +70,8 @@ namespace app {
       for (auto& message : cached->second)
         if (message.id == id)
           patch.apply(message);
+    if (patch.hasCall || patch.hasActivity || patch.poll || patch.type || patch.flags)
+      revokeUnavailableOutgoing();
     if (channel != m_channelId)
       return;
     for (auto& message : m_messages)
@@ -78,6 +80,8 @@ namespace app {
         m_messageLayouts.erase(message.id);
         m_liveChanges[message.id] = message;
       }
+    if (patch.hasCall || patch.hasActivity || patch.poll || patch.type || patch.flags)
+      revokeUnavailableOutgoing();
     m_window.invalidate();
   }
   void ClientApplication::logMessageEdit(const api::Message& before, const api::Message& after) {
@@ -85,6 +89,16 @@ namespace app {
       m_messageLayouts.erase(before.id);
   }
   void ClientApplication::deleteMessages(const std::string& channel, const std::vector<std::string>& ids) {
+    for (auto& [_, pending] : m_pendingSends)
+      if (pending.forward
+          && pending.forward->channel == channel
+          && std::ranges::find(ids, pending.forward->message) != ids.end()
+          && pending.confirmed.empty()) {
+        if (pending.revoked)
+          pending.revoked->store(true);
+        pending.completed = true;
+        pending.error = "The source message was deleted before forwarding was confirmed.";
+      }
     for (const auto& id : ids)
       m_pollUi.erase({channel, id});
     if (channel.empty() || ids.empty())

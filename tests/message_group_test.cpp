@@ -131,7 +131,11 @@ int main() {
       switch (reason) {
       case 0:
         next.forwarded = api::ForwardedMessage{};
-        break;
+        require(
+            !app::continuesMessageGroup(first, next) && app::continuesMessageGroup(next, first),
+            "A forward starts a group while its ordinary follow-up shares the author header"
+        );
+        continue;
       case 1:
         next.flags = 64;
         break;
@@ -156,7 +160,7 @@ int main() {
       }
       require(
           !app::continuesMessageGroup(first, next) && !app::continuesMessageGroup(next, first),
-          "Forwards, ephemeral/system messages and changed identities delimit groups in both directions"
+          "Private/system messages and changed identities delimit groups in both directions"
       );
     }
     auto parsed = api::parseMessages(nlohmann::json::parse(R"JSON([

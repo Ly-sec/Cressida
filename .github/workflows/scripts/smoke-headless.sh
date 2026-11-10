@@ -54,7 +54,7 @@ for view in polls-cycle polls-cycle-light polls-cycle-narrow startup-transition 
     autocomplete-tokens autocomplete-tokens-light slash-commands-cycle slash-commands-cycle-light slash-commands-cycle-narrow reply-grouping reply-grouping-light reply-grouping-compact \
     bot-messages-cycle bot-messages-cycle-light bot-messages-cycle-narrow \
     sharing-cycle sharing-cycle-light sharing-cycle-narrow rpc-cycle rpc-cycle-light rpc-cycle-narrow unread-badge-cycle unread-badge-cycle-light server-hover-cycle sidebar-activity-cycle sidebar-activity-cycle-light sidebar-activity-cycle-narrow \
-    timestamps-cycle timestamps-cycle-light timestamps-cycle-narrow reaction-browser-cycle reaction-browser-cycle-light reaction-browser-cycle-narrow composer-edit-cycle composer-edit-cycle-light composer-edit-cycle-narrow \
+    timestamps-cycle timestamps-cycle-light timestamps-cycle-narrow forward-cycle forward-cycle-light forward-cycle-narrow reaction-browser-cycle reaction-browser-cycle-light reaction-browser-cycle-narrow composer-edit-cycle composer-edit-cycle-light composer-edit-cycle-narrow \
     voice-messages-cycle voice-messages-cycle-light voice-messages-cycle-narrow \
     inline-edit-cycle inline-edit-cycle-light inline-edit-cycle-narrow \
     media-gallery-cycle media-gallery-cycle-light image-menu-cycle image-menu-cycle-light tray-cycle \

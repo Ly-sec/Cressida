@@ -211,6 +211,8 @@ namespace app {
       SelectMessage,
       SignOut,
       MessageMenu,
+      ForwardMessage,
+      ForwardAction,
       UserMenu,
       ConversationMenu,
       ChannelMenu,
@@ -570,6 +572,36 @@ namespace app {
     std::uint64_t m_voiceMessageGeneration = 0;
     void openComposerTools();
     void openPoll();
+    struct ForwardDestination {
+      std::string guild, channel, name, detail, avatar;
+    };
+    struct ForwardEditor {
+      api::ForwardReference source;
+      api::ForwardedMessage snapshot;
+      std::string query, comment;
+      std::map<std::string, ForwardDestination> selected;
+      float scroll = 0;
+      layout::Frame viewport{}, emojiAnchor{};
+      bool emoji = false;
+    };
+    std::optional<ForwardEditor> m_forwardEditor;
+    void openForwardMessage(const api::Message& message);
+    void openForwardEditor(
+        api::ForwardReference source, api::ForwardedMessage snapshot, std::string comment = {},
+        std::optional<ForwardDestination> destination = {}
+    );
+    bool forwardSourceAllowed(const api::ForwardReference& source) const;
+    bool forwardDestinationAllowed(const ForwardDestination& destination) const;
+    std::vector<ForwardDestination> forwardDestinations() const;
+    void drawForwardDialog(Node& root, float width, float height);
+    void forwardAction(const std::string& action);
+    bool queueForward(
+        const ForwardDestination& destination, const api::ForwardReference& source,
+        const api::ForwardedMessage& snapshot, std::string comment
+    );
+    void queueForwardComment(std::string guild, std::string channel, std::string comment);
+    void demoForwardStep();
+    static constexpr int forwardReplayFrames = 18;
     void drawPollDialog(Node& root, float width, float height);
     void submitPoll();
     void drawPollCard(Node& parent, const api::Message& message, const MessageLayout& body, float x, float y);
@@ -1868,6 +1900,8 @@ namespace app {
       std::shared_ptr<std::atomic_bool> revoked;
       std::optional<api::PollDraft> poll;
       std::optional<api::Upload> voice;
+      std::optional<api::ForwardReference> forward;
+      std::string forwardComment;
       bool completed = false, composer = false, securityChallenge = false;
     };
     std::map<std::string, PendingSend> m_pendingSends;

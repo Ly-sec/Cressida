@@ -112,6 +112,8 @@ namespace app {
       merge(combined.buttons, patch.buttons);
       merge(combined.applicationId, patch.applicationId);
       merge(combined.authorBot, patch.authorBot);
+      merge(combined.hasCall, patch.hasCall);
+      merge(combined.hasActivity, patch.hasActivity);
       merge(combined.flags, patch.flags);
       merge(combined.type, patch.type);
       merge(combined.webhookId, patch.webhookId);

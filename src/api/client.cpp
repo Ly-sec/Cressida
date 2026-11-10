@@ -976,14 +976,22 @@ namespace api {
   bool Client::send(
       const std::string& id, std::string content, std::vector<Upload> uploads, std::optional<MessageReference> reply,
       std::vector<std::string> stickers, std::string nonce, std::shared_ptr<std::atomic_bool> revoked,
-      std::optional<PollDraft> poll
+      std::optional<PollDraft> poll, std::optional<ForwardReference> forward
   ) {
     const bool voice = uploads.size() == 1 && uploads.front().voice.has_value();
     if ((revoked && revoked->load())
         || !validSnowflake(id)
         || (!nonce.empty() && !validSnowflake(nonce))
         || !validStickerIds(stickers)
-        || (content.empty() && uploads.empty() && stickers.empty() && !poll)
+        || (content.empty() && uploads.empty() && stickers.empty() && !poll && !forward)
+        || (forward
+            && (!validForwardReference(*forward)
+                || nonce.empty()
+                || !content.empty()
+                || !uploads.empty()
+                || reply
+                || !stickers.empty()
+                || poll))
         || (poll && (!pollDraftError(*poll).empty() || !uploads.empty() || !stickers.empty()))
         || content.size() > 8000
         || utf8Length(content) > 2000
@@ -993,6 +1001,7 @@ namespace api {
       return false;
     Command command{Operation::Send, m_session, id, std::move(content), {}, std::move(uploads)};
     command.reply = std::move(reply);
+    command.forward = std::move(forward);
     command.stickers = std::move(stickers);
     command.nonce = std::move(nonce);
     command.messageRevoked = std::move(revoked);
@@ -3122,6 +3131,8 @@ namespace api {
         case Operation::Send:
           path = "/channels/" + command.resource + "/messages";
           body = messageBody(command.content, command.reply, command.stickers, command.nonce);
+          if (command.forward)
+            body = forwardMessageBody(*command.forward, command.nonce);
           if (command.poll)
             body["poll"] = pollCreateBody(*command.poll);
           if (command.uploads.size() == 1 && command.uploads.front().voice) {

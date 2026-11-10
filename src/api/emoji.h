@@ -17,6 +17,7 @@ namespace api {
   };
   struct EmojiPreferences {
     std::vector<std::string> favorites, frequent;
+    std::vector<std::string> frequentChannels;
   };
   bool validEmojiKey(const std::string& key);
   bool emojiNeedsImage(const Emoji& emoji, const std::string& guild, int premiumType);

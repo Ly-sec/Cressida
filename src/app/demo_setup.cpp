@@ -256,6 +256,29 @@ namespace app {
               : view.find("three") != std::string::npos || view.find("portrait") != std::string::npos         ? 3
                                                                                                               : 5;
           prepareMediaGalleryDemo(count, view.find("portrait") != std::string::npos);
+        } else if (view.starts_with("forward-cycle")) {
+          m_demoOverlay = view;
+          m_showMembers = false;
+          if (view.ends_with("light"))
+            m_preferences.theme = "light";
+          if (view.ends_with("narrow"))
+            m_window.setUiScale(1.5F);
+          m_roleDirectory.apply({.guilds = {{.guild = m_guildId, .owner = m_account.id}}});
+          for (std::size_t index = 0; index < api::maximumForwardDestinations + 2; ++index)
+            m_channels.push_back(
+                {.id = std::to_string(99100 + index),
+                 .name = "destination-" + std::to_string(index),
+                 .type = 0,
+                 .overwrites = std::vector<api::PermissionOverwrite>{}}
+            );
+          m_guildChannels[m_guildId] = m_channels;
+          m_privateChannels.insert(
+              m_privateChannels.begin(), {.id = "99001", .type = 1, .recipients = {{"99002", "Native friend"}}}
+          );
+          m_messages = {{"98001", m_channelId, "Maya", "A message to forward.", "2026-11-10T10:00:00Z", "11"}};
+          m_drafts[m_channelId] = "Keep the composer draft";
+          m_history.restoreLatest(m_messages, true);
+          m_messageLayouts.clear();
         } else if (view.starts_with("forwarded")) {
           m_demoOverlay = view;
           m_showMembers = false;

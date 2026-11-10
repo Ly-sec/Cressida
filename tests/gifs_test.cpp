@@ -162,6 +162,39 @@ int main() {
             == std::vector<std::string>{"fire", "heart"},
         "Discord's provided recency/frequency score takes precedence over lifetime usage"
     );
+    const auto channelEntry = [&](std::uint64_t id, std::uint64_t score, std::uint64_t recent) {
+      std::string key(1, char(9));
+      for (unsigned byte = 0; byte < sizeof(id); ++byte)
+        key += static_cast<char>((id >> (byte * 8)) & 255);
+      return field(1, key + field(2, scalar(1, 100) + field(2, varint(recent)) + scalar(4, score)));
+    };
+    const auto channelUsage = field(
+        12, channelEntry(100, 1, 30) + channelEntry(200, 10, 20) + channelEntry(300, 10, 40) + channelEntry(300, 10, 40)
+    );
+    const auto importedUsage = api::parseEmojiPreferences({{"settings", encode(version + scoredUsage + channelUsage)}});
+    require(
+        importedUsage.frequentChannels == std::vector<std::string>{"300", "200", "100"}
+            && importedUsage.frequent == std::vector<std::string>{"fire", "heart"},
+        "Account channel usage ranks by provided score and recent timestamps independently of emoji preferences"
+    );
+    require(
+        api::parseEmojiPreferences(
+            {{"settings", encode(field(12, field(1, scalar(1, 100) + field(2, scalar(4, 50)))))}}
+        ).frequentChannels.empty(),
+        "Channel usage requires validated fixed-width source identities"
+    );
+    const auto truncatedChannels = field(12, field(1, std::string(1, char(9))));
+    rejects(
+        [&] { api::parseEmojiPreferences({{"settings", encode(truncatedChannels)}}); },
+        "Truncated channel identities fail without inventing a ranking"
+    );
+    std::string tooManyChannels;
+    for (std::uint64_t id = 1; id <= 4097; ++id)
+      tooManyChannels += channelEntry(id, 1, id);
+    rejects(
+        [&] { api::parseEmojiPreferences({{"settings", encode(field(12, tooManyChannels))}}); },
+        "Account channel usage has a bounded result count"
+    );
     const auto decayedUsage = field(
         6,
         field(1, field(1, "heart") + field(2, scalar(1, 1000) + scalar(3, 1)))

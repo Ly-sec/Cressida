@@ -4,6 +4,7 @@
 #include "api/channel_features.h"
 #include "api/connection_bootstrap.h"
 #include "api/emoji.h"
+#include "api/forwarding.h"
 #include "api/gateway.h"
 #include "api/gifs.h"
 #include "api/guild_settings.h"
@@ -229,7 +230,8 @@ namespace api {
     bool send(
         const std::string& channelId, std::string content, std::vector<Upload> uploads = {},
         std::optional<MessageReference> reply = {}, std::vector<std::string> stickers = {}, std::string nonce = {},
-        std::shared_ptr<std::atomic_bool> revoked = {}, std::optional<PollDraft> poll = {}
+        std::shared_ptr<std::atomic_bool> revoked = {}, std::optional<PollDraft> poll = {},
+        std::optional<ForwardReference> forward = {}
     );
     bool interact(api::Interaction action);
     bool resumeMessageChallenge(const std::string& channel);
@@ -278,6 +280,7 @@ namespace api {
       std::optional<std::string> customStatus;
       std::uint64_t presenceRevision = 0;
       std::optional<MessageReference> reply;
+      std::optional<ForwardReference> forward;
       std::optional<api::Interaction> interaction;
       bool restoredLogin = false;
       std::optional<HistoryQuery> history;

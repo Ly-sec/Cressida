@@ -152,6 +152,47 @@ Use **Tab** and **Shift+Tab** to move through visible controls, **Page Up** and
 **Page Down** to scroll the people list, and **Escape** to close the window.
 Clicking a reaction badge still adds or removes your own reaction.
 
+## Forward a message
+
+Right-click a message and choose **Forward**. Search by conversation, channel or
+server name, then select up to five destinations. The list includes existing
+direct and group conversations and cached server channels and threads where you
+can send messages. It does not start new conversations. Read-only source
+channels can still be forwarded from when you can read their message history.
+
+Destinations use the account's saved channel usage rankings when available, with
+cached navigation and message activity filling in the remaining entries. Channel
+rows show their server icon, the channel name and the server name underneath.
+The whole row, including its checkbox, is selectable. The message preview
+renders Markdown and emoji, with a thumbnail for supported images, following
+your display preferences.
+
+Add an optional comment beside the message preview. The emoji button opens the
+usual searchable emoji picker and inserts your choice into this comment. The
+main composer draft, attachments and reply stay separate. **Escape** closes the
+emoji picker first; another **Escape**, the close button or an outside click
+cancels the forwarding dialog.
+
+Choose **Send** to forward the message to the selected destinations. Each
+forward contains a snapshot created by the service, including supported
+attachments. Cressida shows it with a **Forwarded** label. The optional comment
+is sent as a separate message only after that destination's forward is
+confirmed. Duplicate confirmations do not send the comment again. The comment
+shares the forward's author header like other consecutive messages.
+
+If delivery cannot be confirmed, the pending forward keeps its comment. Open the
+destination conversation and choose **Restore** on the pending message to reopen
+the forwarding dialog. Check the conversation before sending again. Cressida
+does not retry uncertain forwards automatically. If a forward is confirmed but
+its comment cannot be queued, the comment remains as a separate pending message
+for explicit restoration.
+
+Forwarding checks source access and destination write permissions again when you
+send. A deleted source or lost access revokes queued work. System notices,
+polls, call or activity messages, private app responses and unavailable
+snapshots cannot be forwarded. Service restrictions can also reject a forward,
+with an explicit delivery error.
+
 ## Edit a sent message
 
 Right-click one of your messages and choose **Edit Message**. Edit its text

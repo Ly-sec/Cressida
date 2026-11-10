@@ -154,7 +154,56 @@ namespace api {
     Wire root(bytes);
     EmojiPreferences result;
     std::vector<std::pair<std::uint64_t, std::string>> usage;
+    struct ChannelUsage {
+      std::string id;
+      std::uint64_t score = 0, recent = 0;
+    };
+    std::vector<ChannelUsage> channels;
+    constexpr unsigned channelFrecencyField = 12;
+    constexpr std::size_t maximumChannelFrecencyEntries = 4096;
     while (root.next()) {
+      if (root.type == 2 && root.field == channelFrecencyField) {
+        Wire items(root.data);
+        while (items.next()) {
+          if (items.field != 1 || items.type != 2)
+            continue;
+          if (channels.size() >= maximumChannelFrecencyEntries)
+            throw std::runtime_error("Too many channel usage entries");
+          Wire entry(items.data);
+          ChannelUsage channel;
+          std::uint64_t uses = 0, frequency = 0, score = 0;
+          while (entry.next()) {
+            if (entry.field == 1 && entry.type == 1)
+              channel.id = std::to_string(entry.number);
+            else if (entry.field == 2 && entry.type == 2) {
+              Wire counts(entry.data);
+              while (counts.next()) {
+                if (counts.field == 1 && counts.type == 0)
+                  uses = std::min<std::uint64_t>(counts.number, std::numeric_limits<std::uint32_t>::max());
+                else if (
+                    counts.field == 3 && counts.type == 0 && counts.number <= std::numeric_limits<std::int32_t>::max()
+                )
+                  frequency = counts.number;
+                else if (
+                    counts.field == 4 && counts.type == 0 && counts.number <= std::numeric_limits<std::int32_t>::max()
+                )
+                  score = counts.number;
+                else if (counts.field == 2 && counts.type == 0)
+                  channel.recent = std::max(channel.recent, counts.number);
+                else if (counts.field == 2 && counts.type == 2) {
+                  Wire packed(counts.data);
+                  while (!packed.bytes.empty())
+                    channel.recent = std::max(channel.recent, packed.varint());
+                }
+              }
+            }
+          }
+          channel.score = score ? score : frequency ? frequency : uses;
+          if (validSnowflake(channel.id) && (channel.score || channel.recent))
+            channels.push_back(std::move(channel));
+        }
+        continue;
+      }
       if (root.type != 2 || (root.field != 5 && root.field != 6))
         continue;
       const auto group = root.field;
@@ -199,6 +248,13 @@ namespace api {
     for (const auto& [_, key] : usage)
       if (result.frequent.size() < 64)
         result.frequent.push_back(key);
+    std::ranges::sort(channels, [](const auto& a, const auto& b) {
+      return a.score != b.score ? a.score > b.score : a.recent != b.recent ? a.recent > b.recent : a.id < b.id;
+    });
+    std::set<std::string> seenChannels;
+    for (const auto& channel : channels)
+      if (seenChannels.insert(channel.id).second)
+        result.frequentChannels.push_back(channel.id);
     return result;
   }
   nlohmann::json emojiFavoritePatch(const nlohmann::json& snapshot, const std::string& key, bool add) {

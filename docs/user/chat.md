@@ -49,6 +49,17 @@ Timestamp syntax inside inline code or code blocks stays literal.
 Bot authors show an **APP** chip beside their name and role icon. The chip
 remains visible when role icons are turned off.
 
+### Message menu
+
+Right-click a message for its actions. Reaction controls come first, followed by
+editing, reply, forwarding and thread actions. A divider separates these from
+**Copy Text**, pinning, bookmarks, reminders and **Copy Message Link**. Author
+profile and message visibility actions appear in this group too.
+
+**Delete Message** has its own section. **Copy Message ID**, when Developer Mode
+is enabled, and any local history removal actions appear below another divider.
+Unavailable actions are omitted.
+
 ### Hidden messages
 
 Messages from blocked or ignored authors stay collapsed until you click their

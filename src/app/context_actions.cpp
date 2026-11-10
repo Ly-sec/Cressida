@@ -138,7 +138,7 @@ namespace app {
       case Action::RemoveFromLog:
       case Action::ClearEditHistory:
         entry.icon = "eraser";
-        entry.danger = action == Action::RemoveFromLog;
+        entry.danger = true;
         break;
       case Action::ToggleBlocked:
         entry.icon = m_revealedBlocked.contains(m_contextMessage) ? "eye-off" : "eye";
@@ -208,6 +208,10 @@ namespace app {
       const auto message = std::ranges::find(m_messages, target->id, &api::Message::id);
       if (message == m_messages.end())
         return;
+      const auto beginSection = [&] {
+        if (!m_contextEntries.empty() && !m_contextEntries.back().separator)
+          separator();
+      };
       m_contextMessage = message->id;
       m_contextUser = message->authorId;
       if (!message->deleted) {
@@ -215,9 +219,8 @@ namespace app {
           add(Action::AddReaction, "Add Reaction");
         if (!message->reactions.empty())
           add(Action::ViewReactions, "View Reactions");
-        if (messageActionAllowed(can::addReaction) || !message->reactions.empty())
-          separator();
       }
+      beginSection();
       if (!message->deleted
           && message->authorId == m_account.id
           && message->webhookId.empty()
@@ -251,6 +254,8 @@ namespace app {
           add(Action::CreateThread, existing ? "Open Thread" : "Create Thread");
       }
 
+      beginSection();
+      add(Action::CopyMessage, "Copy Text");
       if (messagePinnable(*message))
         add(message->pinned ? Action::UnpinMessage : Action::PinMessage,
             message->pinned ? "Unpin Message" : "Pin Message");
@@ -261,25 +266,21 @@ namespace app {
       add(Action::UserProfile, "View Author Profile");
       if (m_userDirectory.relationship(message->authorId) == 2 || m_userDirectory.ignored(message->authorId))
         add(Action::ToggleBlocked, blockedMessage(*message) ? "Show Message" : "Hide Message");
-      separator();
-      add(Action::CopyMessage, "Copy Text");
       add(Action::CopyLink, "Copy Message Link");
+      if (api::canDeleteMessage(*message, m_account.id, channelPermissionsFor(m_contextChannel))) {
+        beginSection();
+        add(Action::DeleteMessage, "Delete Message");
+      }
       const bool retainedMessage = m_messageLog.retained(m_contextChannel, message->id);
       const bool rememberedEdits = !m_messageLog.edits(m_contextChannel, message->id).empty();
-      if (retainedMessage || rememberedEdits) {
-        separator();
+      if (m_preferences.developerMode || m_demo || retainedMessage || rememberedEdits) {
+        beginSection();
+        if (m_preferences.developerMode || m_demo)
+          add(Action::CopyId, "Copy Message ID");
         if (retainedMessage)
           add(Action::RemoveFromLog, "Remove from Log");
         if (rememberedEdits)
           add(Action::ClearEditHistory, "Clear Edit History");
-      }
-      if (api::canDeleteMessage(*message, m_account.id, channelPermissionsFor(m_contextChannel))) {
-        separator();
-        add(Action::DeleteMessage, "Delete Message");
-      }
-      if (m_preferences.developerMode || m_demo) {
-        separator();
-        add(Action::CopyId, "Copy Message ID");
       }
     } else {
       if (target->action == Action::ConversationMenu) {

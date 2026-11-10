@@ -130,6 +130,58 @@ Never compile a temporary staging path into that option.
 
 ## CI and release scope
 
+### Updating installed copies
+
+The native **Settings > Updates** page detects AppImage, Flatpak, Nix, Guix and
+other installations. AppImages use the published release assets and SHA-256
+checksums. Flatpaks use their configured origin through the host's update
+portal. Package-managed and source installations retain their own update
+procedure. See [Updates](updates.md).
+
+The existing website branch can include a signed Flatpak repository in the same
+Pages artifact as the website and documentation. The source helper lives on main
+at `.github/workflows/scripts/flatpak_repository.py`; the website workflow owns
+deployment. Binary bundles and repository objects are generated during that job,
+not stored on the website branch.
+
+To enable the feed after both branches contain these changes:
+
+1. Keep a dedicated OpenPGP signing key for the repository. Add its armored
+   private key as the repository Actions secret `CRESSIDA_FLATPAK_GPG_KEY`. If
+   the key has a passphrase, add its exact passphrase as another repository
+   Actions secret named `CRESSIDA_FLATPAK_GPG_PASSPHRASE`. Keep the private key
+   protected; the signing job unlocks it without an interactive prompt.
+2. Set the Actions variable `CRESSIDA_FLATPAK_GPG_FINGERPRINT` to its full
+   primary fingerprint without spaces. Keep the same key for future feed
+   updates.
+3. Set the Actions variable `CRESSIDA_FLATPAK_UPDATES` to `true` and run
+   **Documentation website** manually after a stable release has been published.
+
+Configure these under the repository's **Settings > Secrets and variables >
+Actions**, rather than the `github-pages` environment. Signing happens in the
+build job before deployment. Passphrases must fit on one line, without a
+trailing newline.
+
+The website workflow imports both verified release bundles, signs their commits
+and repository summary, and places the feed under `flatpak/`. Its `.flatpakref`
+and `.flatpakrepo` files contain the public signing key and the website's actual
+base URL, including a repository subpath or custom domain. The private key and
+passphrase stay outside the public artifact. The passphrase reaches the isolated
+signing agent through standard input, and the agent stops when preparation ends.
+Preparation verifies the release metadata and checksums and rejects a combined
+site larger than the Pages size limit.
+
+Feed preparation failures stop deployment and leave the previously published
+site in place. Leaving the feature disabled keeps the ordinary website build.
+After each new stable release, use the existing manual deployment to refresh the
+feed. The existing deployment triggers stay unchanged.
+
+Land the website workflow's optional signing-secret interface before the main
+workflow starts passing those secrets. Main-only changes cannot publish this
+feed.
+
+### Published packages
+
 CI covers native glibc builds on x86_64 and aarch64, plus an x86_64 musl build
 in Alpine edge. The musl build links dynamically to system libraries; it is not
 a portable static package.

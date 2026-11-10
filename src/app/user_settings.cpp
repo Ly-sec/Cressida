@@ -43,6 +43,7 @@ namespace app {
         {"cosmetics", "Profile cosmetics", "CRESSIDA",
          "avatar decorations nameplates profile effects frames banners backgrounds colors"},
         {"themes", "Themes", "CRESSIDA", "theme palette catppuccin rose pine gruvbox custom toml colors dark light"},
+        {"updates", "Updates", "CRESSIDA", "update upgrade appimage flatpak release version download restart"},
         {"account", "My Account", "ACCOUNT"},
         {"profile", "Profiles", "ACCOUNT"},
         {"presence", "Status", "ACCOUNT"},
@@ -928,7 +929,8 @@ namespace app {
           unit
       );
     };
-    if (drawUserAccountSettings(form)) {
+    if (drawUpdateSettings(form)) {
+    } else if (drawUserAccountSettings(form)) {
     } else if (drawUserSettingsLists(form)) {
     } else if (m_settingsPage == "cosmetics") {
       section("Profile cosmetics");

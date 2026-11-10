@@ -54,8 +54,10 @@ unavailable, extract and run the same package:
 ./squashfs-root/AppRun
 ```
 
-To update, download the newer release and replace the executable. The AppImage
-does not install an automatic updater or alter your account data.
+Open **Settings > Updates** to check, download and explicitly restart into a
+newer AppImage. Keep it in a writable folder owned by your user. Older images
+without this page, extracted images and read-only installations need a manual
+download and replacement. See [Updates](updates.md#appimage).
 
 ## Flatpak
 
@@ -71,7 +73,10 @@ flatpak run dev.lysec.Cressida
 
 The installer can fetch the required Freedesktop 26.08 runtime from Flathub. The
 bundle itself comes from the release, not a Flathub application listing. Install
-a newer release bundle to update Cressida.
+a newer release bundle to update Cressida. Repository-based installations can
+also use **Settings > Updates** or the desktop's software manager. See
+[Updates](updates.md#flatpak) for the signed feed's publication requirements and
+bundle migration.
 
 The package permits Wayland, network, graphics, desktop audio, keyring,
 notification and tray access. Files are selected through desktop portals; it

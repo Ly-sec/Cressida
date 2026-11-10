@@ -49,6 +49,7 @@ namespace app {
     int cornerRadius = Style::cornerRadiusDefaultPercent;
     bool randomizeMediaFilenames = false;
     bool twelveHourClock = false;
+    bool updateChecks = false, updateDownloads = false, updatePrereleases = false;
     bool confirmVoiceJoin = true;
     voice::AudioSettings voice;
     voice::ShareSettings sharing;

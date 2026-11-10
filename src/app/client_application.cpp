@@ -15,6 +15,7 @@
 #include "app/stream_popout.h"
 #include "app/system_message.h"
 #include "app/theme.h"
+#include "core/build_info.h"
 #include "core/deferred_call.h"
 #include "core/environment.h"
 #include "core/files/resource_paths.h"
@@ -100,11 +101,15 @@ namespace app {
 
   ClientApplication::ClientApplication(bool demoMode, std::string token, SingleInstance* instance)
       : m_voiceMessageRecorder(demoMode ? demoVoiceMessageCapture() : voice::MessageRecorder::CaptureFactory{}),
-        m_instance(instance), m_screen([this](auto frame) { m_client.streams().preview()->source(std::move(frame)); }),
+        m_instance(instance), m_updater(
+                                  {.installation = updates::detectInstallation(),
+                                   .currentVersion = std::string(cressida::build_info::version())}
+                              ),
+        m_screen([this](auto frame) { m_client.streams().preview()->source(std::move(frame)); }),
         m_token(std::move(token)) {
     m_window.setTextInputDispatcher(&m_controlInput);
     m_window.auxiliaryFds = [this] {
-      std::vector<int> descriptors{m_rpc.eventFd()};
+      std::vector<int> descriptors{m_rpc.eventFd(), m_updater.eventFd()};
       descriptors.push_back(m_voiceMessagePlayer.eventFd());
       descriptors.push_back(m_voiceMessageRecorder.eventFd());
       descriptors.push_back(m_notificationSounds.eventFd());
@@ -4662,6 +4667,7 @@ namespace app {
   }
 
   void ClientApplication::tick() {
+    updateTick();
     voiceMessageTick();
     rpcTick();
     voiceTick();
@@ -6044,7 +6050,8 @@ namespace app {
       if (hit.id.starts_with("voice:"))
         voiceAction(hit.id.substr(6));
       else if (!userSettingsListsAction(hit.id))
-        userAccountAction(hit.id);
+        if (!updateAction(hit.id))
+          userAccountAction(hit.id);
       break;
     case Action::Preference:
       if (rpcAction(hit.id))

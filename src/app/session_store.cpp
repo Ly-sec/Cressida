@@ -361,6 +361,14 @@ namespace app {
           && value["emoji_with_reduced_motion"].get<bool>();
       result.animateEmoji = value.value("animate_emoji", true);
       result.animateAvatars = value.value("animate_avatars", true);
+      result.updateChecks =
+          value.contains("update_checks") && value["update_checks"].is_boolean() && value["update_checks"].get<bool>();
+      result.updateDownloads = value.contains("update_downloads")
+          && value["update_downloads"].is_boolean()
+          && value["update_downloads"].get<bool>();
+      result.updatePrereleases = value.contains("update_prereleases")
+          && value["update_prereleases"].is_boolean()
+          && value["update_prereleases"].get<bool>();
       result.developerMode = value.value("developer_mode", false);
       result.convertEmoticons = value.value("convert_emoticons", true);
       result.showReactions = value.value("show_reactions", true);
@@ -538,6 +546,9 @@ namespace app {
           {"emoji_with_reduced_motion", preferences.emojiWithReducedMotion},
           {"animate_emoji", preferences.animateEmoji},
           {"animate_avatars", preferences.animateAvatars},
+          {"update_checks", preferences.updateChecks},
+          {"update_downloads", preferences.updateDownloads},
+          {"update_prereleases", preferences.updatePrereleases},
           {"developer_mode", preferences.developerMode},
           {"convert_emoticons", preferences.convertEmoticons},
           {"show_reactions", preferences.showReactions},

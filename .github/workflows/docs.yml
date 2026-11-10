@@ -27,6 +27,9 @@ jobs:
       pages: write
       id-token: write
     uses: Ly-sec/Cressida/.github/workflows/pages.yml@website
+    secrets:
+      CRESSIDA_FLATPAK_GPG_KEY: ${{ secrets.CRESSIDA_FLATPAK_GPG_KEY }}
+      CRESSIDA_FLATPAK_GPG_PASSPHRASE: ${{ secrets.CRESSIDA_FLATPAK_GPG_PASSPHRASE }}
     with:
       website-ref: website
       docs-ref: ${{ github.event_name == 'push' && github.sha || 'main' }}

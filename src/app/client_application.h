@@ -58,6 +58,7 @@
 #include "ui/controls/context_menu.h"
 #include "ui/controls/input.h"
 #include "ui/controls/select_popup_context.h"
+#include "updates/updater.h"
 #include "voice/message_recorder.h"
 
 #include <EGL/egl.h>
@@ -75,6 +76,8 @@ namespace app {
     ~ClientApplication();
     int run(bool smokeTest = false, bool startMinimized = false);
     bool restartRequested() const { return m_restartRequested; }
+    std::string restartImage() const { return m_updater.installation().image.string(); }
+    bool restartInFlatpak() const { return m_updater.installation().kind == updates::InstallationKind::Flatpak; }
 
   private:
     static constexpr int chatLinkReplayFrames = 6;
@@ -1247,6 +1250,16 @@ namespace app {
     std::array<std::string, windowIconNames.size()> m_windowIconErrors;
     ScrollMotion m_scrolling;
     api::Client m_client;
+    updates::Updater m_updater;
+    updates::Snapshot m_updateSnapshot;
+    Timer m_updateTimer;
+    bool m_updateRestartPending = false, m_updateAutomatic = false;
+    bool drawUpdateSettings(UserSettingsForm& form);
+    bool updateAction(const std::string& action);
+    bool updateRestartBusy() const;
+    void updateTick();
+    void demoUpdatesStep();
+    static constexpr int updatesReplayFrames = 12;
     voice::State m_voiceState;
     api::VoiceRoster m_voiceRoster;
     std::string m_voiceGuild;

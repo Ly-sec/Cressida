@@ -155,6 +155,8 @@ namespace app {
       }
       m_window.invalidate();
     }
+    if (m_demo && m_demoOverlay.starts_with("updates-cycle") && m_demoInteractionStep < updatesReplayFrames)
+      demoUpdatesStep();
     if (m_demo && m_demoOverlay.starts_with("sound-cycle") && m_demoInteractionStep < soundReplayFrames)
       demoSoundStep();
     if (m_demo && m_demoOverlay.starts_with("login-cycle") && m_demoInteractionStep < loginReplayFrames)
@@ -1031,7 +1033,8 @@ namespace app {
             || std::string_view(view) == "history-cycle"
             || std::string_view(view) == "video-cycle");
     return (
-        m_demo && view && std::string_view(view).starts_with("blocked-cycle")               ? blockedReplayFrames
+        m_demo && view && std::string_view(view).starts_with("updates-cycle")               ? updatesReplayFrames
+            : m_demo && view && std::string_view(view).starts_with("blocked-cycle")         ? blockedReplayFrames
             : m_demo && view && std::string_view(view).starts_with("voice-messages-cycle")  ? 512
             : m_demo && view && std::string_view(view).starts_with("forward-cycle")         ? forwardReplayFrames
             : m_demo && view && std::string_view(view).starts_with("polls-cycle")           ? pollReplayFrames
@@ -1120,6 +1123,8 @@ namespace app {
   }
 
   void ClientApplication::demoVerifyCompletion() const {
+    if (m_demoOverlay.starts_with("updates-cycle") && m_demoInteractionStep != updatesReplayFrames)
+      throw std::runtime_error("Updates replay did not finish");
     if (m_demoOverlay.starts_with("sound-cycle") && m_demoInteractionStep != soundReplayFrames)
       throw std::runtime_error("Sound settings replay did not finish");
     if (m_demoOverlay.starts_with("voice-messages-cycle") && m_demoInteractionStep != voiceMessageReplaySteps)

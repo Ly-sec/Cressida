@@ -363,6 +363,38 @@ int main() {
       );
     }
     {
+      const auto updatesPath = std::filesystem::path(directory) / "updates.json";
+      app::SessionStore store(updatesPath);
+      const auto defaults = store.preferences("123");
+      require(
+          !defaults.updateChecks && !defaults.updateDownloads && !defaults.updatePrereleases,
+          "Update checking and downloading require opt-in"
+      );
+      auto preferences = defaults;
+      preferences.updateChecks = preferences.updateDownloads = preferences.updatePrereleases = true;
+      store.savePreferences("123", preferences);
+      const auto restored = app::SessionStore(updatesPath).preferences("123");
+      require(
+          restored.updateChecks
+              && restored.updateDownloads
+              && restored.updatePrereleases
+              && !store.preferences("456").updateChecks
+              && !store.startupPreferences().updateChecks,
+          "Update choices survive restart and stay scoped to their account"
+      );
+      std::ofstream(
+          updatesPath
+      ) << R"({"123":{"preferences":{"update_checks":"yes","update_downloads":1,"update_prereleases":[],"theme":"light"}}})";
+      const auto malformed = app::SessionStore(updatesPath).preferences("123");
+      require(
+          !malformed.updateChecks
+              && !malformed.updateDownloads
+              && !malformed.updatePrereleases
+              && malformed.theme == "light",
+          "Malformed update choices retain opt-in defaults without resetting appearance"
+      );
+    }
+    {
       const auto clockPath = std::filesystem::path(directory) / "clock.json";
       app::SessionStore store(clockPath);
       require(!store.preferences("123").twelveHourClock, "The clock defaults to 24-hour time");

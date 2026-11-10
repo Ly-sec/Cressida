@@ -5,6 +5,7 @@
 #include "core/build_info.h"
 #include "core/environment.h"
 #include "core/log.h"
+#include "updates/flatpak.h"
 
 #include <cstdlib>
 #include <fstream>
@@ -116,7 +117,8 @@ int main(int argc, char** argv) {
       return result.applied() ? 0 : 1;
     }
     int result;
-    bool restart;
+    bool restart, restartFlatpak = false;
+    std::string restartImage;
     {
       std::unique_ptr<app::SingleInstance> instance;
       if (!demo && !newInstance) {
@@ -153,13 +155,18 @@ int main(int argc, char** argv) {
       kLog.info("application initialized; entering event loop");
       result = application.run(smoke, startMinimized);
       restart = application.restartRequested();
+      restartImage = application.restartImage();
+      restartFlatpak = application.restartInFlatpak();
       kLog.info("event loop stopped result={} restart={}", result, restart);
     }
     if (restart && !demo) {
       stage = "restart";
       kLog.info("restarting process");
       flushLogFile();
-      app::restartProcess(argv);
+      if (restartFlatpak)
+        updates::relaunchFlatpak(argv);
+      else
+        app::restartProcess(argv, restartImage);
     }
     kLog.info("shutdown complete result={}", result);
     return result;

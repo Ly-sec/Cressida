@@ -51,6 +51,8 @@ namespace app {
     return found == defaultShortcuts.end() ? "Unassigned" : found->second;
   }
   bool ClientApplication::extendedPreference(const std::string& action) {
+    if (updateAction(action))
+      return true;
     if (soundPreference(action))
       return true;
     if (windowControlPreference(action))

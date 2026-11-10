@@ -10,6 +10,9 @@
         "label": "Install Cressida: AppImage, Flatpak and source"
       },
       {
+        "slug": "docs/updates"
+      },
+      {
         "slug": "docs/nix",
         "label": "Install with a Nix flake"
       },
@@ -99,6 +102,9 @@
       {
         "slug": "docs/faq",
         "label": "Capabilities and account-risk FAQ"
+      },
+      {
+        "slug": "docs/changelog"
       }
     ]
   },

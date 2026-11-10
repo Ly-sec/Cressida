@@ -1739,6 +1739,16 @@ namespace app {
           selectSettingsPage("advanced");
           m_demoOverlay = view;
           m_demoInteractionStep = 0;
+        } else if (view.starts_with("updates-cycle")) {
+          if (view.ends_with("light"))
+            m_preferences.theme = "light";
+          if (view.ends_with("narrow"))
+            m_window.setUiScale(1.8F);
+          m_drafts[m_channelId] = "Keep my draft";
+          openSettings();
+          selectSettingsPage("updates");
+          m_demoOverlay = view;
+          m_demoInteractionStep = 0;
         } else if (view.starts_with("sound-cycle")) {
           if (view.ends_with("light"))
             m_preferences.theme = "light";

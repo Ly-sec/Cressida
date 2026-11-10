@@ -267,6 +267,7 @@ namespace app {
         const bool hidden = run.style.spoiler && !m_profileRevealSpoilers;
         if (hidden)
           continue;
+        messageTimestampHover(*text, run, run.x, run.y);
         if (!run.image.empty())
           emojiImage(*text, run.x, run.y, run.width, run.image);
         else

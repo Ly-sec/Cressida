@@ -324,6 +324,7 @@ namespace app {
         ++runIndex;
         if (run.style.spoiler)
           continue;
+        messageTimestampHover(*body, run, P::inset + run.x, bioY + run.y);
         if (!run.image.empty())
           emojiImage(*body, P::inset + run.x, bioY + run.y, run.width, run.image);
         else

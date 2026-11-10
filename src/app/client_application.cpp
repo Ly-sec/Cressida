@@ -2547,6 +2547,7 @@ namespace app {
                 for (const auto& run : previewRuns) {
                   if (run.style.spoiler && !spoilersVisible(reply.message))
                     continue;
+                  messageTimestampHover(*previewNode, run, run.x, 0);
                   if (!run.image.empty()) {
                     if (!emojiImage(*previewNode, run.x, mediaTop, layout::Reply::avatarSize, run.image))
                       label(
@@ -2946,6 +2947,7 @@ namespace app {
                   const bool hidden = run.style.spoiler && !spoilersVisible(message.id);
                   if (hidden)
                     continue;
+                  messageTimestampHover(*messageContent, run, rx, ry + continuationTextOffset);
                   auto selectionRun = run;
                   selectionRun.offset += selectionOffset;
                   chatSelectionText(

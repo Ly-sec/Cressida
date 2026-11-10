@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -28,6 +29,7 @@ namespace app {
     std::size_t spoilerId = 0;
     std::size_t strikeId = 0;
     bool neutralLink = false;
+    std::optional<std::int64_t> timestamp;
   };
   struct MessageRun {
     std::string text, image;
@@ -111,7 +113,7 @@ namespace app {
   struct MessageOptions {
     bool emojiImageLinks = false, compact = false;
     std::function<bool(std::string_view)> unicodeEmoji;
-    bool discordTimestamps = false;
+    bool discordTimestamps = true;
     bool mentionPrefix = true;
     struct ChannelMention {
       std::string name, link;

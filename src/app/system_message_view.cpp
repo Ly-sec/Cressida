@@ -1,5 +1,6 @@
 #include "app/automod_message.h"
 #include "app/client_application.h"
+#include "app/discord_timestamp.h"
 #include "app/message_time.h"
 #include "app/system_message.h"
 #include "app/theme.h"
@@ -12,6 +13,38 @@
 #include <xkbcommon/xkbcommon-keysyms.h>
 
 namespace app {
+  void ClientApplication::messageTimestampHover(Node& parent, const MessageRun& run, float x, float y) {
+    if (!run.style.timestamp
+        || run.style.code
+        || m_contextOpen
+        || settingsVisible()
+        || m_emojiMenu
+        || m_gifMenu
+        || m_presenceMenu
+        || m_selectRequest
+        || userAccountDialogOpen()
+        || !m_searchInput.empty()
+        || (!m_dialogKind.empty() && m_dialogKind != "profile"))
+      return;
+    float right = x + run.width, bottom = y + run.height;
+    for (const auto* node = &parent; node && node != m_scene.get(); node = node->parent()) {
+      if (node->clipChildren()) {
+        x = std::max(x, 0.0F);
+        y = std::max(y, 0.0F);
+        right = std::min(right, node->width());
+        bottom = std::min(bottom, node->height());
+      }
+      x += node->x();
+      y += node->y();
+      right += node->x();
+      bottom += node->y();
+    }
+    if (right > x && bottom > y && hovered(x, y, right - x, bottom - y)) {
+      m_tooltip = timestampMentionTooltip(*run.style.timestamp, m_preferences.twelveHourClock);
+      m_tooltipX = (x + right) / 2;
+      m_tooltipY = y;
+    }
+  }
   float ClientApplication::timestampLabel(
       Node& parent, float x, float y, float width, const std::string& caption, std::string_view timestamp, float size,
       Color color
@@ -136,6 +169,38 @@ namespace app {
           m_tooltipY >= m_messageViewportTop && m_tooltipY < m_messageViewportBottom,
           "Timestamp hover anchors stay inside the clipped conversation"
       );
+    };
+    constexpr std::int64_t mentionSeconds = 1793041200;
+    constexpr std::size_t clippedParagraphs = 40;
+    const auto mentionArea = [&](const char* message) {
+      return area([&](const auto& text) {
+        return text.message == message && !text.header && text.run.style.timestamp;
+      });
+    };
+    const auto hoverArea = [&](const TextArea& text) {
+      move(text.x + text.run.width / 2, text.y + text.run.height / 2);
+    };
+    const auto mentionTooltip = [&] {
+      const auto caption = timestampMentionTooltip(mentionSeconds, m_preferences.twelveHourClock);
+      require(
+          m_tooltip == caption && findText(caption),
+          "Inline timestamp hover paints the full local date and preferred time"
+      );
+    };
+    const auto hoverProfileMention = [&] {
+      const auto caption = discordTimestamp("t:1793041200:t");
+      require(caption.has_value(), "The profile fixture contains a valid timestamp mention");
+      const auto* text = findText(*caption);
+      require(text != nullptr, "The profile paints its formatted timestamp mention");
+      float x = 0, y = 0;
+      for (const auto* node = static_cast<const Node*>(text); node && node != m_scene.get(); node = node->parent()) {
+        x += node->x();
+        y += node->y();
+      }
+      const auto metrics = m_window.target().renderer().measureText(*caption, text->fontSize());
+      const float pointerY = y + (metrics.inkTop + metrics.inkBottom) / 2;
+      move(x + metrics.width / 2, pointerY);
+      return pointerY;
     };
     switch (m_demoInteractionStep++) {
     case 0:
@@ -312,6 +377,107 @@ namespace app {
           "Select all copies the full loaded conversation after selecting chat text"
       );
       std::clog << "Offline message dates, header/channel selection and multi-message copying check passed\n";
+      break;
+    case 25:
+      m_selectedMessage.clear();
+      m_selectedText.clear();
+      m_chatEdit = {};
+      m_preferences.twelveHourClock = false;
+      m_preferences.spoilerMode = 0;
+      m_revealedSpoilers.erase("9604");
+      m_messages = {
+          {"9601", m_channelId, "Maya", "<t:1793041200:t>", "2026-10-15T14:22:00Z", "11"},
+          {"9602", m_channelId, "Maya", "<t:1793041200:R>", "2026-10-15T14:23:00Z", "11"},
+          {"9603", m_channelId, "Maya", "`<t:1793041200:t>`", "2026-10-15T14:24:00Z", "11"},
+          {"9604", m_channelId, "Maya", "||<t:1793041200:t>||", "2026-10-15T14:25:00Z", "11"}
+      };
+      m_messageLayouts.clear();
+      m_scrolling.stop(m_messageScroll);
+      m_messageScroll = 0;
+      move(Style::spaceXs, layout::Window::titlebarHeight + Style::spaceXs);
+      break;
+    case 26:
+      hoverArea(mentionArea("9601"));
+      break;
+    case 27:
+      mentionTooltip();
+      m_preferences.twelveHourClock = true;
+      hoverArea(mentionArea("9602"));
+      break;
+    case 28:
+      mentionTooltip();
+      hoverArea(area([](const auto& text) { return text.message == "9603" && text.run.style.code; }));
+      break;
+    case 29: {
+      require(m_tooltip.empty(), "Timestamp syntax inside code has no date tooltip");
+      const auto hidden = std::ranges::find_if(m_hits, [](const auto& hit) {
+        return hit.action == Action::RevealSpoiler && hit.id == "9604";
+      });
+      require(hidden != m_hits.end(), "The concealed timestamp has a native spoiler target");
+      move(hidden->x + hidden->width / 2, hidden->y + hidden->height / 2);
+      break;
+    }
+    case 30:
+      require(m_tooltip.empty(), "Concealed timestamp mentions never expose their date on hover");
+      m_window.click(m_pointerX, m_pointerY + m_window.titlebarHeight() - layout::Window::titlebarHeight, 272);
+      m_window.released();
+      break;
+    case 31:
+      require(spoilersVisible("9604"), "A native spoiler click reveals the timestamp mention");
+      hoverArea(mentionArea("9604"));
+      break;
+    case 32:
+      mentionTooltip();
+      move(Style::spaceXs, layout::Window::titlebarHeight + Style::spaceXs);
+      break;
+    case 33:
+      require(m_tooltip.empty(), "Leaving an inline timestamp clears its tooltip");
+      showProfile("11");
+      m_dialogAccount.bio = "Profile <t:1793041200:t>";
+      m_profileCard.user = m_dialogAccount;
+      break;
+    case 34:
+      hoverProfileMention();
+      break;
+    case 35:
+      mentionTooltip();
+      m_dialogAccount.bio.clear();
+      for (std::size_t index = 0; index < clippedParagraphs; ++index)
+        m_dialogAccount.bio += "Profile padding.\n\n";
+      m_dialogAccount.bio += "<t:1793041200:t>";
+      m_profileCard.user = m_dialogAccount;
+      break;
+    case 36:
+      require(
+          hoverProfileMention() >= m_dialogBounds.y + m_dialogBounds.height,
+          "The collapsed profile fixture clips its final timestamp out of view"
+      );
+      break;
+    case 37: {
+      require(m_tooltip.empty(), "A timestamp beyond the profile clip has no hover tooltip");
+      closeDialog();
+      std::string content = "<t:1793041200:t>\n\n";
+      for (std::size_t index = 0; index < clippedParagraphs; ++index)
+        content += "Message padding.\n\n";
+      content += "Visible message tail.";
+      m_messages = {{"9701", m_channelId, "Maya", std::move(content), "2026-10-15T14:22:00Z", "11"}};
+      m_messageLayouts.clear();
+      m_scrolling.stop(m_messageScroll);
+      m_messageScroll = 0;
+      break;
+    }
+    case 38: {
+      const auto clipped = mentionArea("9701");
+      require(
+          clipped.y + clipped.run.height <= m_messageViewportTop,
+          "The scrolled conversation fixture clips its initial timestamp above the viewport"
+      );
+      hoverArea(clipped);
+      break;
+    }
+    case 39:
+      require(m_tooltip.empty(), "A timestamp outside the conversation viewport has no hover tooltip");
+      std::clog << "Offline inline timestamp formatting, hover, spoiler and clipping check passed\n";
       break;
     }
     m_window.invalidate();

@@ -302,13 +302,16 @@ namespace app {
             plain, textWidth, measure, Style::fontSizeDescription, {},
             {.compact = true, .unicodeEmoji = [this](std::string_view text) { return m_emojiCatalog.isUnicode(text); }}
         );
-        auto line = std::make_unique<Node>();
-        line->setPosition(layout::Forum::previewInset, ry + layout::Forum::previewTop);
-        line->setSize(textWidth, layout::Forum::previewHeight);
-        line->setClipChildren(true);
+        auto previewLine = std::make_unique<Node>();
+        previewLine->setPosition(layout::Forum::previewInset, ry + layout::Forum::previewTop);
+        previewLine->setSize(textWidth, layout::Forum::previewHeight);
+        previewLine->setClipChildren(true);
+        auto* line = content->addChild(std::move(previewLine));
         for (const auto& run : layout.runs) {
           if (run.y >= layout::Forum::previewHeight)
             continue;
+          if (!run.style.spoiler)
+            messageTimestampHover(*line, run, run.x, run.y);
           if (!run.image.empty())
             emojiImage(*line, run.x, run.y, run.width, run.image);
           else
@@ -318,7 +321,6 @@ namespace app {
             );
         }
         drawMessageStrikes(*line, layout, 0, 0, muted);
-        content->addChild(std::move(line));
       } else {
         const bool deleted = m_forumDeletedStarters.contains(thread.id);
         const bool unavailable = m_forumPreviewErrors.contains(thread.id);

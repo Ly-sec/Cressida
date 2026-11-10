@@ -238,7 +238,11 @@ namespace app {
           rebased.emplace(result.size(), std::move(fenceBody->second));
           ++fenceBody;
         }
-        if (std::binary_search(underscores.begin(), underscores.end(), i)) {
+        if (text[i] == '\\') {
+          const auto size = std::min<std::size_t>(2, text.size() - i);
+          result.append(text.substr(i, size));
+          i += size;
+        } else if (std::binary_search(underscores.begin(), underscores.end(), i)) {
           result += underline;
           i += 2;
         } else if (std::binary_search(spoilers.begin(), spoilers.end(), i)) {
@@ -868,11 +872,15 @@ namespace app {
             if (end != std::string_view::npos && end - pos <= 128) {
               const auto token = text.substr(pos + 1, end - pos - 1);
               if (options && options->discordTimestamps)
-                if (const auto timestamp = discordTimestamp(token)) {
-                  word(*timestamp);
-                  pos = end + 1;
-                  continue;
-                }
+                if (const auto timestamp = parseTimestampMention(token))
+                  if (const auto caption = formatTimestampMention(*timestamp)) {
+                    const auto previous = style.timestamp;
+                    style.timestamp = timestamp->seconds;
+                    word(*caption);
+                    style.timestamp = previous;
+                    pos = end + 1;
+                    continue;
+                  }
               const auto colon = token.rfind(':');
               if (token.starts_with('@') || token.starts_with('#')) {
                 auto id = token.substr(1);
@@ -1101,7 +1109,7 @@ namespace app {
         break;
       case MD_SPAN_A: {
         const auto& href = static_cast<MD_SPAN_A_DETAIL*>(detail)->href;
-        l.style.link.assign(href.text, href.size);
+        l.style.link = restoreEmoji(std::string(href.text, href.size));
         l.style.linkId = ++l.linkSequence;
         break;
       }
@@ -1129,6 +1137,16 @@ namespace app {
       if (type == MD_TEXT_BR || type == MD_TEXT_SOFTBR) {
         l.flush();
         l.newline(true);
+      } else if (
+          type == MD_TEXT_NORMAL
+          && size == 1
+          && text[0] == '<'
+          && offset
+          && *offset > 0
+          && l.source[*offset - 1] == '\\'
+      ) {
+        l.flush();
+        l.text(std::string_view(text, size), true);
       } else if (type == MD_TEXT_NULLCHAR)
         l.pending += "�";
       else if (type == MD_TEXT_CODE) {

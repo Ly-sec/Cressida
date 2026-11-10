@@ -88,7 +88,7 @@ namespace app {
     static constexpr int composerEditReplayFrames = 23;
     static constexpr int embedReplayFrames = 23;
     static constexpr int botMessagesReplayFrames = 8;
-    static constexpr int timestampReplayFrames = 25;
+    static constexpr int timestampReplayFrames = 40;
     static constexpr int reactionBrowserReplayFrames = 23;
     static constexpr int sidebarActivityReplayFrames = 13;
     static constexpr int loginReplayFrames = 18;
@@ -518,6 +518,7 @@ namespace app {
     void demoHistoryStep();
     void demoRoleStep();
     void drawSystemNotice(Node& parent, const api::Message& message, const MessageLayout& layout, float y, float width);
+    void messageTimestampHover(Node& parent, const MessageRun& run, float x, float y);
     void drawMessageStrikes(
         Node& parent, const MessageLayout& message, float x, float y, Color color, bool showSpoilers = false,
         std::optional<float> baseline = {}, std::optional<float> height = {}

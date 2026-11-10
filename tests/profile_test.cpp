@@ -329,9 +329,45 @@ int main() {
         app::discordTimestamp("t:7200:R", 0) == "in 2 hours" && app::discordTimestamp("t:0:R", 60) == "1 minute ago",
         "Relative timestamps can be formatted deterministically"
     );
+    for (const std::string suffix : {"", ":t", ":T", ":d", ":D", ":f", ":F", ":R"}) {
+      const auto timestamp = app::parseTimestampMention("t:1793041212" + suffix);
+      require(
+          timestamp
+              && timestamp->seconds == 1793041212
+              && app::timestampMentionTooltip(timestamp->seconds) == "Monday, 26 October 2026 at 19:00"
+              && app::timestampMentionTooltip(timestamp->seconds, true) == "Monday, 26 October 2026 at 7:00 PM",
+          "Every display style shares one exact instant and full-date hover caption"
+      );
+    }
+    require(
+        app::timestampMentionTooltip(0) == "Thursday, 1 January 1970 at 00:00"
+            && app::timestampMentionTooltip(0, true) == "Thursday, 1 January 1970 at 12:00 AM"
+            && app::timestampMentionTooltip(-1) == "Wednesday, 31 December 1969 at 23:59"
+            && app::timestampMentionTooltip(-1, true) == "Wednesday, 31 December 1969 at 11:59 PM",
+        "Timestamp hover captions preserve epoch zero, negative instants and midnight clock conventions"
+    );
+    require(
+        app::timestampMentionTooltip(app::TimestampMention::minimumSeconds - 1).empty()
+            && app::timestampMentionTooltip(app::TimestampMention::maximumSeconds + 1).empty(),
+        "Out-of-range instants never produce misleading timestamp hover captions"
+    );
     for (const auto token :
          {"t:", "t:123:x", "t:123:tt", "t:123x:t", "t:999999999999999999999", "t:253402300800", "t:-62135596801"})
       require(!app::discordTimestamp(token), "Malformed or out-of-range timestamps remain literal");
+    require(setenv("TZ", "IST-5:30", 1) == 0, "The half-hour test timezone can be set");
+    tzset();
+    require(
+        app::timestampMentionTooltip(1793041212) == "Tuesday, 27 October 2026 at 00:30"
+            && app::timestampMentionTooltip(1793041212, true) == "Tuesday, 27 October 2026 at 12:30 AM",
+        "Timestamp hover captions convert the full date and both clock formats through local midnight"
+    );
+    require(setenv("TZ", "PST8PDT,M3.2.0/2,M11.1.0/2", 1) == 0, "The daylight-saving test timezone can be set");
+    tzset();
+    require(
+        app::timestampMentionTooltip(1754172000) == "Saturday, 2 August 2025 at 15:00"
+            && app::timestampMentionTooltip(0, true) == "Wednesday, 31 December 1969 at 4:00 PM",
+        "Timestamp hover captions follow local daylight-saving rules and calendar-year boundaries"
+    );
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;

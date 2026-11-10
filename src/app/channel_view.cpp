@@ -739,7 +739,8 @@ namespace app {
           continue;
         if (run.style.spoiler)
           continue;
-        else if (!run.image.empty())
+        messageTimestampHover(*topic, run, run.x, Style::spaceXxs);
+        if (!run.image.empty())
           emojiImage(*topic, run.x, 0, run.width, run.image);
         else
           label(
@@ -852,7 +853,8 @@ namespace app {
         continue;
       if (run.style.spoiler)
         continue;
-      else if (!run.image.empty())
+      messageTimestampHover(*root, run, x + run.x, y + layout::ChannelIntro::descriptionTop + run.y);
+      if (!run.image.empty())
         emojiImage(*root, x + run.x, y + layout::ChannelIntro::descriptionTop + run.y, run.width, run.image);
       else
         label(
@@ -1261,6 +1263,7 @@ namespace app {
           for (const auto& run : row.body.runs) {
             if (run.style.spoiler)
               continue;
+            messageTimestampHover(*content, run, cardTextX + run.x, textY + run.y);
             if (!run.image.empty())
               emojiImage(*content, cardTextX + run.x, textY + run.y, run.width, run.image);
             else

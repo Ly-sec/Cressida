@@ -25,6 +25,156 @@ int main(int argc, char** argv) {
     const app::MessageMeasure editMeasure = [](std::string_view text, const app::MessageStyle& style) {
       return static_cast<float>(text.size()) * style.size * .5F;
     };
+    const std::string timestampToken = "<t:1793041200:t>";
+    constexpr std::int64_t timestampSeconds = 1793041200;
+    const auto timestampText = *app::discordTimestamp("t:1793041200:t");
+    for (const std::string suffix : {"", ":t", ":T", ":d", ":D", ":f", ":F"}) {
+      const auto token = "t:1793041200" + suffix;
+      const auto rendered = app::layoutMessage("My midnight is <" + token + ">.", 900, editMeasure);
+      require(
+          rendered.plainText.contains(*app::discordTimestamp(token)) && !rendered.plainText.contains("<t:"),
+          "Ordinary messages render every absolute timestamp style and the default date and time"
+      );
+      require(
+          std::ranges::any_of(rendered.runs, [&](const auto& run) { return run.style.timestamp == timestampSeconds; })
+              && !rendered.runs.front().style.timestamp
+              && !rendered.runs.back().style.timestamp,
+          "Every timestamp style retains its exact hover instant without marking surrounding prose"
+      );
+    }
+    const auto relativeTimestamp = app::layoutMessage("<t:0:R>", 900, editMeasure);
+    require(
+        relativeTimestamp.plainText.contains("ago")
+            && !relativeTimestamp.plainText.contains("<t:")
+            && std::ranges::all_of(relativeTimestamp.runs, [](const auto& run) { return run.style.timestamp == 0; }),
+        "Relative timestamp mentions render readable elapsed time in ordinary messages"
+    );
+    const auto relativeSameInstant = app::layoutMessage("<t:1793041200:R>", 900, editMeasure);
+    require(
+        std::ranges::all_of(
+            relativeSameInstant.runs, [&](const auto& run) { return run.style.timestamp == timestampSeconds; }
+        ),
+        "Relative display text keeps the same hover instant as every absolute display style"
+    );
+    const auto wrappedTimestamp = app::layoutMessage("<t:1793041200:F>", Style::space2Xl, editMeasure);
+    require(
+        wrappedTimestamp.runs.size() > 1
+            && wrappedTimestamp.runs.back().y > wrappedTimestamp.runs.front().y
+            && std::ranges::all_of(
+                wrappedTimestamp.runs, [&](const auto& run) { return run.style.timestamp == timestampSeconds; }
+            ),
+        "Every wrapped timestamp fragment retains the same full-date hover instant"
+    );
+    for (const std::string& content :
+         {"`" + timestampToken + "`", "```text\n" + timestampToken + "\n```", "\\" + timestampToken}) {
+      const auto literalTimestamp = app::layoutMessage(content, 900, editMeasure);
+      require(
+          literalTimestamp.plainText.contains(timestampToken)
+              && !literalTimestamp.plainText.contains(timestampText)
+              && std::ranges::none_of(
+                  literalTimestamp.runs, [](const auto& run) { return run.style.timestamp.has_value(); }
+              ),
+          "Inline code, fenced code and escaped timestamp mentions retain their source text"
+      );
+    }
+    const auto mixedTimestamps =
+        app::layoutMessage("\\" + timestampToken + " then " + timestampToken, 900, editMeasure);
+    require(
+        mixedTimestamps.plainText.starts_with(timestampToken + " then " + timestampText),
+        "Escaping one timestamp consumes its backslash without suppressing the next timestamp"
+    );
+    const auto pairedBackslashes = app::layoutMessage(std::string(2, '\\') + timestampToken, 900, editMeasure);
+    const auto escapedBackslashes = app::layoutMessage(std::string(3, '\\') + timestampToken, 900, editMeasure);
+    require(
+        pairedBackslashes.plainText.starts_with("\\" + timestampText)
+            && escapedBackslashes.plainText.starts_with("\\" + timestampToken),
+        "Paired backslashes remain visible while only an unpaired backslash escapes a timestamp"
+    );
+    for (const std::string& content : {"`\\" + timestampToken + "`", "```text\n\\" + timestampToken + "\n```"}) {
+      const auto literalBackslash = app::layoutMessage(content, 900, editMeasure);
+      require(
+          literalBackslash.plainText.contains("\\" + timestampToken)
+              && !literalBackslash.plainText.contains(timestampText)
+              && std::ranges::none_of(
+                  literalBackslash.runs, [](const auto& run) { return run.style.timestamp.has_value(); }
+              ),
+          "Inline and fenced code preserve backslashes before literal timestamp mentions"
+      );
+    }
+    const auto malformedTimestamps =
+        app::layoutMessage("<t:invalid:t> <t:1793041200:x> <t:253402300800:t>", 900, editMeasure);
+    require(
+        malformedTimestamps.plainText.contains("<t:invalid:t>")
+            && malformedTimestamps.plainText.contains("<t:1793041200:x>")
+            && malformedTimestamps.plainText.contains("<t:253402300800:t>")
+            && std::ranges::none_of(
+                malformedTimestamps.runs, [](const auto& run) { return run.style.timestamp.has_value(); }
+            ),
+        "Malformed timestamps and unsupported styles remain literal"
+    );
+    api::Message timestampMessage;
+    timestampMessage.content = "**My midnight** is " + timestampToken;
+    const auto richTimestamp = app::layoutRichMessage(timestampMessage, 900, editMeasure);
+    require(
+        richTimestamp.plainText.contains(timestampText)
+            && !richTimestamp.plainText.contains("<t:")
+            && std::ranges::any_of(richTimestamp.runs, [](const auto& run) { return run.style.bold; }),
+        "Rich message bodies render timestamp mentions alongside Markdown without special options"
+    );
+    const api::MessageReference timestampReference{.content = timestampToken};
+    const auto replyTimestamp = app::layoutReplyPreview(timestampReference, "Maya", 900, editMeasure);
+    require(
+        replyTimestamp.plainText.contains(timestampText)
+            && !replyTimestamp.plainText.contains("<t:")
+            && !replyTimestamp.runs.front().style.timestamp
+            && std::ranges::any_of(
+                replyTimestamp.runs, [&](const auto& run) { return run.style.timestamp == timestampSeconds; }
+            ),
+        "Reply previews use the same readable timestamp mentions as message bodies"
+    );
+    timestampMessage.content.clear();
+    timestampMessage.embeds = {{.description = "Starts at " + timestampToken}};
+    const auto embedTimestamp = app::layoutRichMessage(timestampMessage, 900, editMeasure);
+    require(
+        embedTimestamp.plainText.contains(timestampText)
+            && !embedTimestamp.plainText.contains("<t:")
+            && std::ranges::any_of(
+                embedTimestamp.runs, [&](const auto& run) { return run.style.timestamp == timestampSeconds; }
+            ),
+        "Embed descriptions render timestamp mentions with the default message options"
+    );
+    timestampMessage.embeds.clear();
+    timestampMessage.forwarded = api::ForwardedMessage{.content = timestampToken, .available = true};
+    const auto forwardedTimestamp = app::layoutRichMessage(timestampMessage, 900, editMeasure);
+    require(
+        forwardedTimestamp.plainText.contains(timestampText)
+            && !forwardedTimestamp.plainText.contains("<t:")
+            && std::ranges::any_of(
+                forwardedTimestamp.runs, [&](const auto& run) { return run.style.timestamp == timestampSeconds; }
+            ),
+        "Forwarded message bodies preserve readable timestamp mentions"
+    );
+    const std::string timestampDestination = "https://example.test/event?time=<t:0:t>";
+    const auto timestampInDestination = app::layoutMessage("[event](" + timestampDestination + ")", 900, editMeasure);
+    require(
+        std::ranges::any_of(
+            timestampInDestination.runs,
+            [&](const auto& run) {
+              return run.text == "event" && run.style.link == timestampDestination && !run.style.timestamp;
+            }
+        ),
+        "Timestamp syntax inside a link destination retains the original URL without parser markers"
+    );
+    const auto timestampLinkLabel =
+        app::layoutMessage("[" + timestampToken + "](https://example.test/event)", 900, editMeasure);
+    require(
+        timestampLinkLabel.plainText.contains(timestampText)
+            && !timestampLinkLabel.plainText.contains("<t:")
+            && std::ranges::all_of(
+                timestampLinkLabel.runs, [](const auto& run) { return run.style.link == "https://example.test/event"; }
+            ),
+        "Timestamp link labels use readable display text while preserving the destination"
+    );
     api::Message invitation;
     invitation.content = "https://discord.gg/moon https://discord.gg/moon";
     app::MessageOptions inviteOptions;
@@ -680,7 +830,7 @@ int main(int argc, char** argv) {
             && profileBio.plainText.find("<t:") == std::string::npos
             && std::ranges::any_of(profileBio.runs, [](const auto& run) { return run.style.bold; })
             && std::ranges::any_of(profileBio.runs, [](const auto& run) { return !run.image.empty(); }),
-        "Profile bios format Discord timestamps alongside escaped Markdown and custom emoji"
+        "Profile bios format timestamp mentions alongside escaped Markdown and custom emoji"
     );
     profileBio = app::layoutMessage(
         "`<t:1754172000:t>` <t:invalid:t> <span color='red'>bio</span>", 900, emojiMeasure, 13, {}, profileOptions

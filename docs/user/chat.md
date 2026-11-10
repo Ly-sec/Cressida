@@ -38,6 +38,14 @@ calendar day. Consecutive messages start a new group at local midnight. For
 AM/PM times, enable **Use 12-hour clock** in
 [Appearance settings](appearance.md).
 
+Timestamp mentions such as `<t:1793041200:t>` display a readable time in your
+system timezone. The suffix selects short or long time (`t`, `T`), short or long
+date (`d`, `D`), date and time (`f`, `F`), or relative time (`R`), such as "2
+hours ago". Omitting the suffix shows the date and time. Hover a timestamp
+mention to see its weekday, full date, year and local time, including when the
+message shows a relative time. The hover time follows **Use 12-hour clock**.
+Timestamp syntax inside inline code or code blocks stays literal.
+
 Bot authors show an **APP** chip beside their name and role icon. The chip
 remains visible when role icons are turned off.
 

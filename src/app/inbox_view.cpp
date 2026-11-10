@@ -966,6 +966,7 @@ namespace app {
         for (const auto& run : body.runs) {
           if (run.y + run.height > textHeight || run.style.spoiler)
             continue;
+          messageTimestampHover(*list, run, textX + run.x, by + run.y);
           if (!run.image.empty())
             emojiImage(*list, textX + run.x, by + run.y, run.width, run.image);
           else

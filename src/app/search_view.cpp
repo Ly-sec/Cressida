@@ -47,8 +47,6 @@ namespace app {
         user.name = saved.name;
       saved = std::move(user);
     };
-    for (const auto& user : m_userDirectory.relatedUsers())
-      add(user);
     for (const auto& channel : m_privateChannels)
       if (channel.id == m_channelId)
         for (const auto& user : channel.recipients)
@@ -57,6 +55,9 @@ namespace app {
       add({message.authorId, message.author, message.avatar});
     for (const auto& user : m_members)
       add(user.user);
+    if (!m_dmMode && m_guildId == m_searchMemberGuild)
+      for (const auto& user : m_searchMemberMatches)
+        add(user);
     add(m_account);
     std::vector<api::Account> result;
     for (auto& [_, user] : people)
@@ -136,6 +137,22 @@ namespace app {
     return result;
   }
 
+  void ClientApplication::searchMemberEvent(const api::Event& event) {
+    if (m_searchMemberQuery.empty() || event.resource != m_searchMemberGuild)
+      return;
+    const auto field = m_inputs.find(m_focusedInput);
+    if ((m_focusedInput != "channel-search" && m_focusedInput != "channel-search-panel")
+        || field == m_inputs.end()
+        || !field->second->parent())
+      return;
+    for (const auto& user : event.memberMatches)
+      m_searchMemberMatches.push_back(user);
+    if (m_searchMemberMatches.size() > 100)
+      m_searchMemberMatches.resize(100);
+    m_searchIdentity.clear();
+    m_window.invalidate();
+  }
+
   void ClientApplication::closeSearchMenu(bool dismiss) {
     if (dismiss)
       m_searchDismissed = m_searchIdentity;
@@ -212,6 +229,10 @@ namespace app {
         m_searchReplaceEnd = token.end;
         break;
       }
+    if (key != "from" && key != "mentions" && !m_searchMemberQuery.empty()) {
+      m_searchMemberQuery.clear();
+      m_searchMemberMatches.clear();
+    }
     const auto add = [&](std::string title, std::string detail, std::string insert, std::string glyph,
                          std::string avatar = "", bool history = false, bool moreFilters = false) {
       if (m_searchSuggestions.size() < layout::SearchMenu::maximumSuggestions)
@@ -223,6 +244,15 @@ namespace app {
     if (key == "from" || key == "mentions") {
       if (!query.empty() && query.front() == '@')
         query.erase(query.begin());
+      if (!m_dmMode
+          && !m_demo
+          && !query.empty()
+          && !api::validSnowflake(query)
+          && (query != m_searchMemberQuery || m_searchMemberGuild != m_guildId)) {
+        m_searchMemberQuery = query;
+        m_searchMemberGuild = m_guildId;
+        m_client.searchMembers(m_guildId, query, "complete-search-" + std::to_string(++m_searchMemberSerial));
+      }
       for (const auto& user : searchPeople()) {
         const auto name = userName(user.id, user.name);
         if (query.empty()
@@ -589,6 +619,25 @@ namespace app {
       choose("from:");
       require(m_channelSearchText == "from:", "Clicking a filter inserts its prefix without searching");
     } else if (step == 1) {
+      require(
+          std::ranges::none_of(m_searchSuggestions, [](const auto& item) { return item.insert == "from:777"; }),
+          "People outside the current server or conversation are never suggested as search people"
+      );
+      m_searchMemberGuild = m_guildId;
+      m_searchMemberQuery = "7";
+      api::Event match;
+      match.resource = m_guildId;
+      match.nonce = "complete-search-replay";
+      match.memberMatches = {{"778", "Offline Otto", {}, "otto"}};
+      searchMemberEvent(match);
+      updateSearchMenu();
+      require(
+          std::ranges::any_of(m_searchSuggestions, [](const auto& item) { return item.insert == "from:778"; }),
+          "Offline members returned by member search join the people suggestions"
+      );
+      m_searchMemberMatches.clear();
+      m_searchMemberQuery.clear();
+      m_searchMemberGuild.clear();
       choose("from:11");
       require(
           m_inputs.at(input)->displayValue().find("Maya") != std::string::npos && m_channelSearchText == "from:11 ",

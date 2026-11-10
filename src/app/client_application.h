@@ -713,6 +713,7 @@ namespace app {
     api::MessageSearch resolvedMessageSearch() const;
     std::vector<TextReplacement> searchReplacements(std::string_view value) const;
     void updateSearchMenu();
+    void searchMemberEvent(const api::Event& event);
     void drawSearchMenu(Node& root, float width, float height);
     void closeSearchMenu(bool dismiss = false);
     bool searchMenuClick(float x, float y);
@@ -1728,6 +1729,9 @@ namespace app {
     bool m_searchMore = false;
     Hit m_searchBounds{};
     float m_searchScroll = 0, m_searchViewport = 0;
+    std::vector<api::Account> m_searchMemberMatches;
+    std::string m_searchMemberGuild, m_searchMemberQuery;
+    std::uint64_t m_searchMemberSerial = 0;
 
     struct InboxTab {
       api::InboxPage page;

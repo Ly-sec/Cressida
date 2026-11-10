@@ -33,19 +33,19 @@ TextMetrics ScaledRenderer::measureFont(float fontSize, FontWeight fontWeight) {
 
 void ScaledRenderer::measureTextCursorStops(
     std::string_view text, float fontSize, const std::vector<std::size_t>& byteOffsets, std::vector<float>& outStops,
-    FontWeight fontWeight
+    FontWeight fontWeight, bool useMarkup
 ) {
   assert(m_context != nullptr && "ScaledRenderer cursor stops without a bound RenderContext");
-  m_context->measureTextCursorStopsScaled(currentScale(), text, fontSize, byteOffsets, outStops, fontWeight);
+  m_context->measureTextCursorStopsScaled(currentScale(), text, fontSize, byteOffsets, outStops, fontWeight, useMarkup);
 }
 
 void ScaledRenderer::measureTextCursorStopsWrapped(
     std::string_view text, float fontSize, const std::vector<std::size_t>& byteOffsets, float maxWidth,
-    std::vector<TextCursorStop>& outStops, FontWeight fontWeight
+    std::vector<TextCursorStop>& outStops, FontWeight fontWeight, bool useMarkup
 ) {
   assert(m_context != nullptr && "ScaledRenderer wrapped cursor stops without a bound RenderContext");
   m_context->measureTextCursorStopsWrappedScaled(
-      currentScale(), text, fontSize, byteOffsets, maxWidth, outStops, fontWeight
+      currentScale(), text, fontSize, byteOffsets, maxWidth, outStops, fontWeight, useMarkup
   );
 }
 

@@ -1,5 +1,7 @@
 #include "app/brand_logo.h"
+#include "app/controls/chat_input.h"
 #include "app/member_list_layout.h"
+#include "app/theme.h"
 #include "core/deferred_call.h"
 #include "core/files/resource_paths.h"
 #include "core/input/key_modifiers.h"
@@ -65,15 +67,15 @@ namespace {
     }
     void measureTextCursorStops(
         std::string_view text, float size, const std::vector<std::size_t>& offsets, std::vector<float>& stops,
-        FontWeight weight
+        FontWeight weight, bool markup = false
     ) override {
-      m_text.measureCursorStops(m_scale, text, size, offsets, stops, weight);
+      m_text.measureCursorStops(m_scale, text, size, offsets, stops, weight, markup);
     }
     void measureTextCursorStopsWrapped(
         std::string_view text, float size, const std::vector<std::size_t>& offsets, float width,
-        std::vector<TextCursorStop>& stops, FontWeight weight
+        std::vector<TextCursorStop>& stops, FontWeight weight, bool markup = false
     ) override {
-      m_text.measureCursorStopsWrapped(m_scale, text, size, offsets, width, stops, weight);
+      m_text.measureCursorStopsWrapped(m_scale, text, size, offsets, width, stops, weight, markup);
     }
     TextMetrics measureGlyph(char32_t, float size) override { return {.width = size, .right = size, .top = -size}; }
     TextureManager& textureManager() override { throw std::runtime_error("Input layout must not allocate textures"); }
@@ -210,6 +212,55 @@ int main() {
   };
   try {
     inputVerticalScrollCases();
+    for (const float scale : {1.0F, 1.25F, 2.0F}) {
+      app::theme::select("dark");
+      MetricsRenderer renderer("sans-serif", scale);
+      app::ChatInput chat;
+      chat.setMultiline(true);
+      chat.setFrameSize(Style::controlHeightLg * 6, Style::controlHeightLg * 4);
+      chat.setValue("> **Wide bold draft** with _italic_ and `code` 👋");
+      chat.inputArea()->dispatchFocusGain();
+      requireStableInputLayout(chat, renderer, "Styled drafts retain stable wrapping and cursor geometry");
+      const auto* text = findTextNode(chat);
+      require(text && text->useMarkup(), "Chat fields paint the styled layout");
+      const auto plain = chat.displayValue();
+      std::vector<TextCursorStop> stops;
+      renderer.measureTextCursorStopsWrapped(
+          text->text(), text->fontSize(), {plain.size()}, text->maxWidth(), stops, text->fontWeight(), true
+      );
+      float x = 0, y = 0;
+      Node::absolutePosition(text, x, y);
+      require(
+          chat.textInputState().cursorRectX == std::round(x + stops.back().x),
+          "The native caret uses the same styled shaping and wrap as the painted text"
+      );
+      const auto source = chat.value();
+      chat.selectAll();
+      Clipboard copied;
+      Input::setTextClipboard(&copied);
+      require(
+          chat.edit(Input::EditCommand::Copy) && copied.text == source,
+          "Copying a styled quote retains the source marker and formatting"
+      );
+      Input::setTextClipboard(nullptr);
+      chat.textInputApplyEdit({.preeditText = "仮", .hasPreedit = true});
+      require(
+          chat.value() == source && chat.displayValue() == "仮", "Styled preedit keeps the committed draft separate"
+      );
+      chat.textInputResetPreedit();
+      require(chat.value() == source && chat.displayValue() == plain, "Cancelling composition restores styled quotes");
+      require(
+          chat.applyEdit("**replacement**", 15, 15) && chat.edit(Input::EditCommand::Undo) && chat.value() == source,
+          "Styling leaves the native undo snapshot intact"
+      );
+      chat.setMultiline(false);
+      chat.setFrameSize(Style::controlHeightLg * 2, Style::controlHeight);
+      chat.setValue("**Long bold content** and `monospace` that scroll beyond the visible single-line field");
+      requireStableInputLayout(chat, renderer, "Styled slices retain stable single-line scrolling");
+      chat.setPasswordMode(true);
+      chat.layout(renderer);
+      require(!findTextNode(chat)->useMarkup(), "Password fields cannot retain draft markup");
+    }
     {
       const auto saved = palette;
       auto colors = saved;

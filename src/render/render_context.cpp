@@ -273,16 +273,18 @@ TextMetrics RenderContext::measureFontScaled(float scale, float fontSize, FontWe
 
 void RenderContext::measureTextCursorStopsScaled(
     float scale, std::string_view text, float fontSize, const std::vector<std::size_t>& byteOffsets,
-    std::vector<float>& outStops, FontWeight fontWeight
+    std::vector<float>& outStops, FontWeight fontWeight, bool useMarkup
 ) {
-  m_textRenderer.measureCursorStops(scale, text, fontSize, byteOffsets, outStops, fontWeight);
+  m_textRenderer.measureCursorStops(scale, text, fontSize, byteOffsets, outStops, fontWeight, useMarkup);
 }
 
 void RenderContext::measureTextCursorStopsWrappedScaled(
     float scale, std::string_view text, float fontSize, const std::vector<std::size_t>& byteOffsets, float maxWidth,
-    std::vector<TextCursorStop>& outStops, FontWeight fontWeight
+    std::vector<TextCursorStop>& outStops, FontWeight fontWeight, bool useMarkup
 ) {
-  m_textRenderer.measureCursorStopsWrapped(scale, text, fontSize, byteOffsets, maxWidth, outStops, fontWeight);
+  m_textRenderer.measureCursorStopsWrapped(
+      scale, text, fontSize, byteOffsets, maxWidth, outStops, fontWeight, useMarkup
+  );
 }
 
 TextMetrics RenderContext::measureGlyphScaled(float scale, char32_t codepoint, float fontSize) {

@@ -6,6 +6,7 @@
 #include "render/programs/glyph_program.h"
 #include "render/render_target.h"
 #include "render/text/cairo_text_renderer.h"
+#include "ui/style.h"
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -90,6 +91,13 @@ namespace {
     void drawRect(float, float, float, float, const RoundedRectStyle&, const Mat3&) override {}
     void drawImage(const RenderImageDraw&) override {}
     void drawGlyph(const RenderGlyphDraw& draw) override {
+      if (!draw.tinted) {
+        m_program.draw(
+            draw.texture, draw.surfaceWidth, draw.surfaceHeight, draw.width, draw.height, draw.u0, draw.v0, draw.u1,
+            draw.v1, draw.opacity, draw.transform
+        );
+        return;
+      }
       m_program.drawTinted(
           draw.texture, draw.surfaceWidth, draw.surfaceHeight, draw.width, draw.height, draw.u0, draw.v0, draw.u1,
           draw.v1, draw.opacity, draw.tint, draw.transform
@@ -273,6 +281,44 @@ namespace {
       throw std::runtime_error("Scrolled text coverage rendering leaves a GL error");
   }
 
+  void verifyMarkup(Graphics& graphics, GlyphProgram& program) {
+    constexpr int width = 768, height = 256;
+    glBindTexture(GL_TEXTURE_2D, graphics.output);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, graphics.output, 0);
+    glViewport(0, 0, width, height);
+    GlyphBackend backend(program);
+    CairoTextRenderer renderer;
+    renderer.initialize(&backend, &backend.textureManager());
+    for (const float scale : {1.0F, 1.25F, 2.0F}) {
+      const auto draw = [&](std::string_view markup) {
+        glClearColor(0, 0, 0, 0);
+        glClear(GL_COLOR_BUFFER_BIT);
+        renderer.draw(
+            scale, width / scale, height / scale, 0, 0, markup, Style::fontSizeBody, rgba(1, 1, 1, 1),
+            Mat3::translation(Style::spaceXl, Style::controlHeightLg), FontWeight::Normal, Style::controlHeightLg * 4,
+            0, TextAlign::Start, {}, TextEllipsize::End, true
+        );
+        std::vector<unsigned char> pixels(width * height * 4);
+        glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        return pixels;
+      };
+      const auto plain = draw("Formatting sample");
+      for (const auto* attribute :
+           {"weight=\"bold\"", "style=\"italic\"", "underline=\"single\"", "strikethrough=\"true\"",
+            "font_family=\"monospace\""})
+        if (draw(std::string("<span ") + attribute + ">Formatting sample</span>") == plain)
+          throw std::runtime_error("Constrained markup must change the actual rendered glyphs for each text style");
+      const auto colored = draw("<span foreground=\"#00FF00\" background=\"#FF0000\">Colored code</span>");
+      bool foreground = false, background = false;
+      for (std::size_t at = 0; at < colored.size(); at += 4) {
+        foreground |= colored[at] == 0 && colored[at + 1] > 0 && colored[at + 2] == 0;
+        background |= colored[at] > 0 && colored[at + 1] == 0 && colored[at + 2] == 0;
+      }
+      if (!foreground || !background)
+        throw std::runtime_error("Markup foreground and background colors must survive rasterization without emoji");
+    }
+  }
 } // namespace
 
 int main() {
@@ -291,6 +337,7 @@ int main() {
       }
     }
     verifyStaticPhase(graphics, program);
+    verifyMarkup(graphics, program);
     program.destroy();
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

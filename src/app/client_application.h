@@ -88,7 +88,7 @@ namespace app {
     static constexpr int dmProfileReplayFrames = 13;
     static constexpr int cosmeticsReplayFrames = 13;
     static constexpr int composerReplyReplayFrames = 10;
-    static constexpr int composerEditReplayFrames = 23;
+    static constexpr int composerEditReplayFrames = 31;
     static constexpr int embedReplayFrames = 23;
     static constexpr int botMessagesReplayFrames = 8;
     static constexpr int timestampReplayFrames = 40;

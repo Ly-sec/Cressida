@@ -172,6 +172,31 @@ int main() {
   CairoTextRenderer renderer;
   renderer.initialize(nullptr, nullptr);
 
+  // A width constraint must retain markup instead of replacing its attributes
+  // when wrapping disables automatic hyphens.
+  for (const float scale : {1.0F, 1.25F, 2.0F}) {
+    constexpr std::string_view word = "Wide bold words";
+    constexpr std::string_view markup = "<b>Wide bold words</b>";
+    constexpr float width = 400;
+    const auto expected = renderer.measure(scale, word, 14, FontWeight::Bold, width);
+    const auto actual = renderer.measure(
+        scale, markup, 14, FontWeight::Normal, width, 0, TextAlign::Start, {}, TextEllipsize::End, true
+    );
+    if (!sameMetrics(expected, actual)) {
+      std::println(stderr, "Constrained markup lost its bold font attributes");
+      return 1;
+    }
+    std::vector<TextCursorStop> expectedStops, actualStops;
+    renderer.measureCursorStopsWrapped(scale, word, 14, {0, word.size()}, width, expectedStops, FontWeight::Bold);
+    renderer.measureCursorStopsWrapped(
+        scale, markup, 14, {0, word.size()}, width, actualStops, FontWeight::Normal, true
+    );
+    if (std::abs(expectedStops.back().x - actualStops.back().x) > 0.01F) {
+      std::println(stderr, "Markup cursor geometry lost its bold font attributes");
+      return 1;
+    }
+  }
+
   if (const int rc = fallbackBoundsCase(renderer); rc != 0) {
     return rc;
   }

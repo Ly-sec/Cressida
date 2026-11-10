@@ -39,15 +39,15 @@ namespace {
     }
     void measureTextCursorStops(
         std::string_view text, float size, const std::vector<std::size_t>& offsets, std::vector<float>& stops,
-        FontWeight weight
+        FontWeight weight, bool markup = false
     ) override {
-      m_text.measureCursorStops(1, text, size, offsets, stops, weight);
+      m_text.measureCursorStops(1, text, size, offsets, stops, weight, markup);
     }
     void measureTextCursorStopsWrapped(
         std::string_view text, float size, const std::vector<std::size_t>& offsets, float width,
-        std::vector<TextCursorStop>& stops, FontWeight weight
+        std::vector<TextCursorStop>& stops, FontWeight weight, bool markup = false
     ) override {
-      m_text.measureCursorStopsWrapped(1, text, size, offsets, width, stops, weight);
+      m_text.measureCursorStopsWrapped(1, text, size, offsets, width, stops, weight, markup);
     }
     TextMetrics measureGlyph(char32_t, float size) override { return {.width = size, .right = size, .top = -size}; }
     TextureManager& textureManager() override { throw std::runtime_error("CPU menu tests must not allocate textures"); }

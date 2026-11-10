@@ -1,5 +1,6 @@
 #include "app/client_application.h"
 #include "app/composer_tokens.h"
+#include "app/controls/chat_input.h"
 #include "app/theme.h"
 #include "ui/controls/scrollbar.h"
 
@@ -11,7 +12,7 @@
 
 namespace app {
   std::vector<TextReplacement> ClientApplication::composerReplacements(std::string_view value) {
-    std::vector<TextReplacement> result;
+    auto result = composerQuoteReplacements(value);
     const auto tokens = composerTokens(value);
     std::map<std::string, std::string> names;
     if (std::ranges::any_of(tokens, [](const auto& token) { return token.kind == ComposerToken::User; })) {

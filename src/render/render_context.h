@@ -69,11 +69,11 @@ private:
   [[nodiscard]] TextMetrics measureFontScaled(float scale, float fontSize, FontWeight fontWeight);
   void measureTextCursorStopsScaled(
       float scale, std::string_view text, float fontSize, const std::vector<std::size_t>& byteOffsets,
-      std::vector<float>& outStops, FontWeight fontWeight
+      std::vector<float>& outStops, FontWeight fontWeight, bool useMarkup = false
   );
   void measureTextCursorStopsWrappedScaled(
       float scale, std::string_view text, float fontSize, const std::vector<std::size_t>& byteOffsets, float maxWidth,
-      std::vector<TextCursorStop>& outStops, FontWeight fontWeight
+      std::vector<TextCursorStop>& outStops, FontWeight fontWeight, bool useMarkup = false
   );
   [[nodiscard]] TextMetrics measureGlyphScaled(float scale, char32_t codepoint, float fontSize);
 

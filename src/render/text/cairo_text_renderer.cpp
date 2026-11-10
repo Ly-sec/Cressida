@@ -394,7 +394,8 @@ PangoLayout* CairoTextRenderer::buildLayout(
   constexpr int kHardMaxLines = 500;
   if (maxWidthPxScaled > 0.0F) {
     // Avoid Pango inserting hyphens at intra-word line breaks (looks like stray "-" in wrapped UI text).
-    PangoAttrList* attrs = pango_attr_list_new();
+    auto* markupAttributes = pango_layout_get_attributes(layout);
+    PangoAttrList* attrs = markupAttributes ? pango_attr_list_copy(markupAttributes) : pango_attr_list_new();
     PangoAttribute* hyphens = pango_attr_insert_hyphens_new(FALSE);
     hyphens->start_index = 0;
     hyphens->end_index = PANGO_ATTR_INDEX_TO_TEXT_END;
@@ -575,7 +576,7 @@ CairoTextRenderer::measureFont(float contentScale, float fontSize, FontWeight fo
 
 void CairoTextRenderer::measureCursorStops(
     float contentScale, std::string_view text, float fontSize, const std::vector<std::size_t>& byteOffsets,
-    std::vector<float>& outStops, FontWeight fontWeight
+    std::vector<float>& outStops, FontWeight fontWeight, bool useMarkup
 ) {
   maybeSyncFontConfig();
   outStops.clear();
@@ -589,11 +590,14 @@ void CairoTextRenderer::measureCursorStops(
     return;
   }
 
-  PangoLayout* layout = buildLayout(contentScale, text, fontSize, fontWeight, 0.0F, 0, TextAlign::Start);
+  PangoLayout* layout = buildLayout(
+      contentScale, text, fontSize, fontWeight, 0.0F, 0, TextAlign::Start, {}, TextEllipsize::End, useMarkup
+  );
   const float invScale = 1.0F / contentScale;
   const float pscale = 1.0F / static_cast<float>(PANGO_SCALE);
+  const auto plainTextSize = std::char_traits<char>::length(pango_layout_get_text(layout));
   for (const std::size_t offset : byteOffsets) {
-    const std::size_t clampedOffset = std::min(offset, text.size());
+    const std::size_t clampedOffset = std::min(offset, plainTextSize);
     const int index = clampedOffset > static_cast<std::size_t>(std::numeric_limits<int>::max())
         ? std::numeric_limits<int>::max()
         : static_cast<int>(clampedOffset);
@@ -608,7 +612,7 @@ void CairoTextRenderer::measureCursorStops(
 
 void CairoTextRenderer::measureCursorStopsWrapped(
     float contentScale, std::string_view text, float fontSize, const std::vector<std::size_t>& byteOffsets,
-    float maxWidth, std::vector<TextCursorStop>& outStops, FontWeight fontWeight
+    float maxWidth, std::vector<TextCursorStop>& outStops, FontWeight fontWeight, bool useMarkup
 ) {
   maybeSyncFontConfig();
   outStops.clear();
@@ -625,12 +629,15 @@ void CairoTextRenderer::measureCursorStopsWrapped(
 
   // Same layout parameters as the draw path for a wrapping maxLines=0 text
   // node, so caret geometry matches rendered pixels.
-  PangoLayout* layout =
-      buildLayout(contentScale, text, fontSize, fontWeight, maxWidth * contentScale, 0, TextAlign::Start);
+  PangoLayout* layout = buildLayout(
+      contentScale, text, fontSize, fontWeight, maxWidth * contentScale, 0, TextAlign::Start, {}, TextEllipsize::End,
+      useMarkup
+  );
   const float invScale = 1.0F / contentScale;
   const float pscale = 1.0F / static_cast<float>(PANGO_SCALE);
+  const auto plainTextSize = std::char_traits<char>::length(pango_layout_get_text(layout));
   for (const std::size_t offset : byteOffsets) {
-    const std::size_t clampedOffset = std::min(offset, text.size());
+    const std::size_t clampedOffset = std::min(offset, plainTextSize);
     const int index = clampedOffset > static_cast<std::size_t>(std::numeric_limits<int>::max())
         ? std::numeric_limits<int>::max()
         : static_cast<int>(clampedOffset);
@@ -912,7 +919,8 @@ CairoTextRenderer::CacheEntry* CairoTextRenderer::lookupOrRasterize(
   // surface, so rgb must be part of the key. Alpha is normalized to 1.0 in
   // the key AND in the rasterized source so opacity animations on mixed
   // strings still reuse one entry.
-  const bool tinted = !containsColorGlyph(text);
+  // Markup can carry foreground and background colors even without color glyphs.
+  const bool tinted = !useMarkup && !containsColorGlyph(text);
 
   CacheKey key;
   key.text.assign(text);

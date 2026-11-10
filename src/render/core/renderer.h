@@ -78,16 +78,17 @@ public:
     const TextMetrics m = measureFont(fontSize, fontWeight);
     return std::round(m.bottom - m.top);
   }
+  // With markup, offsets still address the parsed UTF-8 text, matching painting.
   virtual void measureTextCursorStops(
       std::string_view text, float fontSize, const std::vector<std::size_t>& byteOffsets, std::vector<float>& outStops,
-      FontWeight fontWeight = FontWeight::Normal
+      FontWeight fontWeight = FontWeight::Normal, bool useMarkup = false
   ) = 0;
   // Like measureTextCursorStops, but lays the text out wrapped at maxWidth
   // (word-char wrap, '\n' honored — the same layout the draw path uses for a
   // maxLines=0 text node) and reports full caret rects instead of x only.
   virtual void measureTextCursorStopsWrapped(
       std::string_view text, float fontSize, const std::vector<std::size_t>& byteOffsets, float maxWidth,
-      std::vector<TextCursorStop>& outStops, FontWeight fontWeight = FontWeight::Normal
+      std::vector<TextCursorStop>& outStops, FontWeight fontWeight = FontWeight::Normal, bool useMarkup = false
   ) = 0;
   [[nodiscard]] virtual TextMetrics measureGlyph(char32_t codepoint, float fontSize) = 0;
   [[nodiscard]] virtual TextureManager& textureManager() = 0;

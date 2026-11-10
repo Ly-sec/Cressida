@@ -1,4 +1,5 @@
 #include "app/client_application.h"
+#include "app/controls/chat_input.h"
 #include "app/font_catalog.h"
 #include "app/stream_popout.h"
 #include "app/theme.h"
@@ -591,7 +592,8 @@ namespace app {
       node = std::move(stored->second);
       m_detachedInputs.erase(stored);
     } else {
-      auto field = std::make_unique<Input>();
+      const bool markdown = id == "composer" || id == "message-edit" || id == "forum-body" || id == "forward:comment";
+      std::unique_ptr<Input> field = markdown ? std::make_unique<ChatInput>() : std::make_unique<Input>();
       if (id == "channel-search" || id == "channel-search-panel")
         field->setTextPresenter([this](std::string_view text) { return searchReplacements(text); });
       if (id == "composer" || id == "message-edit")
@@ -868,7 +870,12 @@ namespace app {
     );
     if (input.value() != value)
       input.setValue(value);
-    if (id == "composer" || id == "message-edit" || id == "channel-search" || id == "channel-search-panel")
+    if (id == "composer"
+        || id == "message-edit"
+        || id == "forum-body"
+        || id == "forward:comment"
+        || id == "channel-search"
+        || id == "channel-search-panel")
       input.refreshTextPresentation();
     input.setPlaceholder(placeholder);
     input.setFrameVisible(id != "composer");
@@ -898,6 +905,7 @@ namespace app {
                     || m_demoOverlay.starts_with("ime-cycle")
                     || m_demoOverlay.starts_with("reply-cycle")
                     || m_demoOverlay.starts_with("composer-edit-cycle")
+                    || m_demoOverlay.starts_with("composer-preview")
                     || m_demoOverlay.starts_with("chat-links-cycle")
                     || m_demoOverlay.starts_with("autocomplete")
                     || m_demoOverlay.starts_with("permissions-cycle")

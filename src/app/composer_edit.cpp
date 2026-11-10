@@ -1,5 +1,6 @@
 #include "app/client_application.h"
 #include "app/composer_format.h"
+#include "app/controls/chat_input.h"
 #include "app/theme.h"
 #include "render/scene/input_area.h"
 #include "ui/controls/button.h"
@@ -515,6 +516,9 @@ namespace app {
       );
     };
     const auto original = std::string("héllo <#102> 👋");
+    const std::string preview = "__under__ **bold** _italic_ ~~strike~~ ||spoiler|| `code` <#102> 👋";
+    const std::string quotedPreview =
+        "> **quoted** with `code`\n> a second line that can wrap naturally in a narrow composer";
     switch (m_demoInteractionStep++) {
     case 0:
       focusControl("composer");
@@ -697,7 +701,76 @@ namespace app {
           !m_composerLink && !m_contextOpen && m_drafts.at(m_channelId) == "A changed draft",
           "All editing controls retain the latest unsent content"
       );
-      std::clog << "Offline composer menu, formatting, links, undo, clipboard fencing and composition replay passed\n";
+      focusControl("composer");
+      m_inputs.at("composer")->selectAll();
+      pasteControl("composer", preview);
+      break;
+    case 23: {
+      const auto* input = m_inputs.at("composer");
+      require(
+          input->value() == preview && input->displayValue().contains("#"),
+          "Markdown preview preserves the source alongside readable mention tokens"
+      );
+      const TextPresentation presentation(preview, composerReplacements(preview));
+      const auto markup = composerPreviewMarkup(preview, presentation);
+      require(
+          markup.contains("weight=\"bold\"")
+              && markup.contains("font_family=\"monospace\"")
+              && markup.contains("underline=\"single\"")
+              && markup.contains("background="),
+          "Typed formatting uses native font styles and highlighted code and spoilers"
+      );
+      m_inputs.at("composer")->selectAll();
+      pasteControl("composer", quotedPreview);
+      break;
+    }
+    case 24:
+      require(
+          m_inputs.at("composer")->displayValue().starts_with("▎ **quoted**")
+              && m_drafts.at(m_channelId) == quotedPreview,
+          "Quoted drafts show vertical bars while retaining the sendable source"
+      );
+      m_inputs.at("composer")->selectAll();
+      m_inputs.at("composer")->textInputApplyEdit({.preeditText = "仮", .hasPreedit = true});
+      break;
+    case 25:
+      require(
+          m_inputs.at("composer")->hasPreedit() && m_drafts.at(m_channelId) == quotedPreview,
+          "Composition over styled quotes preserves the committed draft"
+      );
+      m_inputs.at("composer")->textInputResetPreedit();
+      m_inputs.at("composer")->applyEdit(quotedPreview, 1, 1);
+      onKey({.symbol = XKB_KEY_BackSpace});
+      break;
+    case 26:
+      require(m_drafts.at(m_channelId) == quotedPreview.substr(1), "Backspace can remove a presented quote marker");
+      onKey({.symbol = XKB_KEY_z, .control = true});
+      break;
+    case 27:
+      require(
+          m_drafts.at(m_channelId) == quotedPreview && m_inputs.at("composer")->displayValue().starts_with("▎ "),
+          "Undo restores quote presentation and source together"
+      );
+      require(beginMessageEdit("9701"), "The styled fixture opens an editable own message");
+      break;
+    case 28:
+      focusControl("message-edit");
+      m_inputs.at("message-edit")->selectAll();
+      pasteControl("message-edit", preview);
+      break;
+    case 29:
+      require(
+          m_messageEdit && m_messageEdit->text == preview && dynamic_cast<ChatInput*>(m_inputs.at("message-edit")),
+          "Inline message edits use the same Markdown preview without sending"
+      );
+      cancelMessageEdit();
+      break;
+    case 30:
+      require(
+          m_drafts.at(m_channelId) == quotedPreview && !m_messageEdit,
+          "Closing the styled editor preserves the separate quoted draft"
+      );
+      std::clog << "Offline composer formatting, preview, quotes, undo, clipboard and composition replay passed\n";
       break;
     }
     m_window.invalidate();

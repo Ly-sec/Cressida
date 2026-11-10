@@ -75,11 +75,12 @@ public:
   [[nodiscard]] TextMetrics measureFont(float contentScale, float fontSize, FontWeight fontWeight) const;
   void measureCursorStops(
       float contentScale, std::string_view text, float fontSize, const std::vector<std::size_t>& byteOffsets,
-      std::vector<float>& outStops, FontWeight fontWeight = FontWeight::Normal
+      std::vector<float>& outStops, FontWeight fontWeight = FontWeight::Normal, bool useMarkup = false
   );
   void measureCursorStopsWrapped(
       float contentScale, std::string_view text, float fontSize, const std::vector<std::size_t>& byteOffsets,
-      float maxWidth, std::vector<TextCursorStop>& outStops, FontWeight fontWeight = FontWeight::Normal
+      float maxWidth, std::vector<TextCursorStop>& outStops, FontWeight fontWeight = FontWeight::Normal,
+      bool useMarkup = false
   );
 
   void draw(

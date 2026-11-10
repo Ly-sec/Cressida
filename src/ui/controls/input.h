@@ -38,6 +38,10 @@ public:
   void setValue(std::string_view value);
   using TextPresenter = std::function<std::vector<TextReplacement>(std::string_view)>;
   void setTextPresenter(TextPresenter presenter);
+  // Optional styling over the displayed UTF-8 range, retaining all editable text.
+  using MarkupPresenter =
+      std::function<std::string(std::string_view, const TextPresentation&, std::size_t, std::size_t)>;
+  void setMarkupPresenter(MarkupPresenter presenter);
   void refreshTextPresentation();
   const std::string& displayValue() const noexcept { return m_presentation.text(); }
   void setPlaceholder(std::string_view placeholder);
@@ -212,6 +216,8 @@ private:
 
   std::string m_value;
   TextPresenter m_textPresenter;
+  MarkupPresenter m_markupPresenter;
+  std::string m_displayMarkup;
   TextPresentation m_presentation;
   std::vector<ImageNode*> m_inlineImages;
   std::string m_placeholder;

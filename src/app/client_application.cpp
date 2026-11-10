@@ -3,6 +3,7 @@
 #include "api/uploads.h"
 #include "app/automod_message.h"
 #include "app/composer_format.h"
+#include "app/controls/chat_input.h"
 #include "app/member_list_layout.h"
 #include "app/message_group.h"
 #include "app/message_layout.h"
@@ -1912,7 +1913,8 @@ namespace app {
         for (auto& byte : displayOffsets)
           byte = draftPresentation.displayOffset(byte);
         m_window.target().renderer().measureTextCursorStopsWrapped(
-            draftPresentation.text(), Style::fontSizeBody, displayOffsets, m_draftWidth, m_draftStops
+            composerPreviewMarkup(draft, draftPresentation), Style::fontSizeBody, displayOffsets, m_draftWidth,
+            m_draftStops, FontWeight::Normal, true
         );
         float fullDraftHeight = m_draftStops.empty()
             ? layout::Composer::minimumTextHeight

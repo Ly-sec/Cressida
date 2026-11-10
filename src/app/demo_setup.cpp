@@ -94,6 +94,15 @@ namespace app {
             m_window.setUiScale(1.5F);
           prepareBotMessagesDemo();
         }
+        if (view.starts_with("composer-preview")) {
+          m_demoOverlay = view;
+          if (view.ends_with("light"))
+            m_preferences.theme = "light";
+          if (view.ends_with("narrow"))
+            m_window.setUiScale(1.5F);
+          m_drafts[m_channelId] =
+              "__underlined__ **bold** _italic_ ~~struck~~ ||spoiler|| `code`\n> **A quoted draft** with _formatting_";
+        }
         if (view.starts_with("composer-edit-cycle")) {
           m_demoOverlay = view;
           if (view.ends_with("light"))

@@ -118,6 +118,17 @@ code or spoilers. These actions add or remove Markdown while keeping the content
 selected. Quotes affect complete selected lines, and multiline code uses a code
 block. Each formatting action is one undoable edit.
 
+Formatting previews appear as you type in the composer, inline message editor,
+forward comments and forum post body. Bold, italic, underline and strikethrough
+use their text styles. Code uses a monospace font, and code and spoilers have a
+background highlight. Spoiler text stays readable while you edit it. Formatting
+markers remain visible so you can change them directly.
+
+Quotes show a vertical bar in place of the leading `>` marker. Start a line with
+`> ` for a quote, or use `>>> ` to quote the rest of the draft. The original
+syntax is preserved for copying and sending. Selection, undo and input-method
+composition continue to work with the editable draft.
+
 Choose **Insert Link** from the toolbar or input menu, or press **Ctrl+K**. Its
 window has separate **Text** and **Link** fields, with selected text already
 filled in. Without a selection, it inserts at the caret. **Cancel** keeps the

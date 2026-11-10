@@ -1,4 +1,5 @@
 #include "app/client_application.h"
+#include "app/controls/chat_input.h"
 #include "app/message_preferences.h"
 #include "app/theme.h"
 
@@ -132,8 +133,9 @@ namespace app {
       return 0;
     const TextPresentation presentation(m_messageEdit->text, composerReplacements(m_messageEdit->text));
     const auto measured = m_window.target().renderer().measureText(
-        presentation.text().empty() ? " " : presentation.text(), m_preferences.messageSize, FontWeight::Normal,
-        std::max(1.0F, width - 24), 0
+        presentation.text().empty() ? " " : composerPreviewMarkup(m_messageEdit->text, presentation),
+        m_preferences.messageSize, FontWeight::Normal, std::max(1.0F, width - 24), 0, TextAlign::Start, {},
+        TextEllipsize::End, true
     );
     const float field = std::clamp(measured.bottom - measured.top + Style::spaceXl, 44.0F, 180.0F);
     return field + 30 + (m_messageEdit->error.empty() ? 0 : 34);

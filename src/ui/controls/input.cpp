@@ -427,11 +427,23 @@ void Input::setTextPresenter(TextPresenter presenter) {
   refreshTextPresentation();
 }
 
+void Input::setMarkupPresenter(MarkupPresenter presenter) {
+  m_markupPresenter = std::move(presenter);
+  refreshTextPresentation();
+}
+
 bool Input::updateTextPresentation() {
   auto replacements = m_textPresenter && !m_passwordMode ? m_textPresenter(m_value) : std::vector<TextReplacement>{};
-  if (m_presentation.matches(m_value, replacements))
+  bool changed = !m_presentation.matches(m_value, replacements);
+  if (changed)
+    m_presentation = TextPresentation(m_value, std::move(replacements));
+  auto markup = m_markupPresenter && !m_passwordMode && !m_value.empty()
+      ? m_markupPresenter(m_value, m_presentation, 0, m_presentation.text().size())
+      : std::string{};
+  changed |= markup != m_displayMarkup;
+  m_displayMarkup = std::move(markup);
+  if (!changed)
     return false;
-  m_presentation = TextPresentation(m_value, std::move(replacements));
   m_graphemeText.clear();
   m_graphemeStops.clear();
   return true;
@@ -959,7 +971,8 @@ void Input::rebuildCursorStopsFull(Renderer& renderer) {
     for (auto& byte : displayStops)
       byte = m_presentation.displayOffset(byte);
     renderer.measureTextCursorStopsWrapped(
-        m_presentation.text(), m_fontSize, displayStops, m_stopsBuiltForWidth, m_stopRect, m_label->fontWeight()
+        m_displayMarkup.empty() ? m_presentation.text() : m_displayMarkup, m_fontSize, displayStops,
+        m_stopsBuiltForWidth, m_stopRect, m_label->fontWeight(), !m_displayMarkup.empty()
     );
     if (m_stopRect.size() != m_stopByte.size()) {
       m_stopRect.assign(m_stopByte.size(), TextCursorStop{0.0F, 0.0F, m_fontSize});
@@ -972,7 +985,10 @@ void Input::rebuildCursorStopsFull(Renderer& renderer) {
     auto displayStops = m_stopByte;
     for (auto& byte : displayStops)
       byte = m_presentation.displayOffset(byte);
-    renderer.measureTextCursorStops(m_presentation.text(), m_fontSize, displayStops, m_stopX, m_label->fontWeight());
+    renderer.measureTextCursorStops(
+        m_displayMarkup.empty() ? m_presentation.text() : m_displayMarkup, m_fontSize, displayStops, m_stopX,
+        m_label->fontWeight(), !m_displayMarkup.empty()
+    );
     if (m_stopX.size() != m_stopByte.size()) {
       m_stopX.assign(m_stopByte.size(), 0.0F);
     }
@@ -1065,8 +1081,9 @@ void Input::updateLabelVisibleSlice(Renderer& renderer) {
   }
 
   const auto displayStart = m_presentation.displayOffset(sliceStart);
-  const std::string slice =
-      m_presentation.text().substr(displayStart, m_presentation.displayOffset(sliceEnd) - displayStart);
+  const std::string slice = !m_displayMarkup.empty()
+      ? m_markupPresenter(m_value, m_presentation, displayStart, m_presentation.displayOffset(sliceEnd))
+      : m_presentation.text().substr(displayStart, m_presentation.displayOffset(sliceEnd) - displayStart);
   m_labelSliceOriginX = Style::rtl() ? 0.0F : stopXForByte(sliceStart);
   m_labelVisibleStartByte = sliceStart;
   if (slice != m_labelVisibleSlice) {
@@ -1810,6 +1827,7 @@ void Input::updateInlineImages() {
 
 void Input::updateDisplayText() {
   updateTextPresentation();
+  m_label->setUseMarkup(!m_displayMarkup.empty());
   if (m_value.empty() && !m_placeholder.empty()) {
     m_labelVisibleSlice.clear();
     m_label->setText(m_placeholder);
@@ -1818,7 +1836,7 @@ void Input::updateDisplayText() {
     m_label->setText(std::string{});
   } else {
     m_labelVisibleSlice.clear();
-    m_label->setText(m_presentation.text());
+    m_label->setText(m_displayMarkup.empty() ? m_presentation.text() : m_displayMarkup);
   }
 }
 

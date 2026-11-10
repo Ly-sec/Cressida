@@ -5436,6 +5436,7 @@ namespace app {
       } else if (event.operation == api::Operation::MemberSearch) {
         slashCommandEvent(event);
         completionEvent(event);
+        searchMemberEvent(event);
       } else if (event.operation == api::Operation::MessageUpdate) {
         updateMessage(event.resource, event.messageId, event.patch);
       } else if (event.operation == api::Operation::MessageDelete) {

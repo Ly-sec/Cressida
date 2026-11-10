@@ -18,6 +18,7 @@ namespace api::gateway_pacing {
   inline constexpr auto applicationWindow = 60s;
   inline constexpr auto subscriptionSpacing = 500ms;
   inline constexpr auto memberSpacing = 1s;
+  inline constexpr auto memberSearchSpacing = 300ms;
   inline constexpr auto memberSearchLifetime = 5s;
   inline constexpr auto presenceWindow = 20s;
   inline constexpr std::size_t presenceLimit = 5;

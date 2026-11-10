@@ -177,6 +177,9 @@ namespace app {
           m_messages.front().mentions = {{"11", "Maya"}};
           m_messages.front().authorTag = api::GuildTag{m_guildId, "NOCT", {}};
           m_messages.front().memberRoles = std::vector<std::string>{"503"};
+          api::UserUpdates users;
+          users.users["777"].relationship = 1;
+          m_userDirectory.apply(users);
           m_channels.push_back({.id = "202", .name = "design", .type = 0, .parentId = "203"});
           m_channels.push_back({.id = "203", .name = "Design", .type = 4});
           m_guildChannels[m_guildId] = m_channels;

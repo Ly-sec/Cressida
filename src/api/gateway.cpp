@@ -702,7 +702,7 @@ namespace api {
                     },
                     connection
                 );
-                memberRequestAt = now + gateway_pacing::memberSpacing;
+                memberRequestAt = now + gateway_pacing::memberSearchSpacing;
               } else if (!users.empty()) {
                 send(
                     curl.get(),

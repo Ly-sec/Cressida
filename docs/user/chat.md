@@ -215,10 +215,11 @@ Filters also work on their own, such as `has:image`. Dates use `YYYY-MM-DD` in
 UTC. **More filters** offers date and author options. Use `has:-image` to
 exclude images, or another supported content type after the minus sign.
 
-Suggestions use people and channels currently loaded in the client. You can also
-enter an ID, or type an exact name. Put names containing spaces in double
-quotes, such as `from:"Alex Smith"`. If a name is ambiguous, choose a suggestion
-or use its ID. Search stays within the current server or DM.
+People suggestions cover everyone in the current server or DM, online or
+offline. Channel suggestions use channels currently loaded in the client. You
+can also enter an ID, or type an exact name. Put names containing spaces in
+double quotes, such as `from:"Alex Smith"`. If a name is ambiguous, choose a
+suggestion or use its ID. Search stays within the current server or DM.
 
 Use **Up** and **Down** to highlight a suggestion and **Enter** or **Tab** to
 accept it. Press **Enter** without a highlighted suggestion to search.

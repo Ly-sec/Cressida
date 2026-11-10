@@ -3556,8 +3556,8 @@ namespace app {
               iconButton(root, {frame.x, frame.y, frame.width, frame.height, action, {}}, icon, caption, selected);
             };
             composerAction(Action::ToggleEmoji, "mood-smile", "Emoji", m_emojiMenu && !m_stickerTab);
-            composerAction(Action::ToggleGif, "gif", "GIFs", m_gifMenu);
             composerAction(Action::ToggleStickers, "sticker", "Stickers", m_emojiMenu && m_stickerTab);
+            composerAction(Action::ToggleGif, "gif", "GIFs", m_gifMenu);
             if (canRecordVoiceMessage())
               composerAction(Action::RecordVoiceMessage, "microphone", "Record voice message");
           }

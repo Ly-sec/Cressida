@@ -6,7 +6,7 @@ description:
 
 ## Record a message
 
-Click the **microphone** icon before the sticker, GIF and emoji icons on the
+Click the **microphone** icon before the GIF, sticker and emoji icons on the
 right side of the chat bar. Recording starts inline in the composer, with an
 elapsed time, trash, stop and send controls. Click **Stop recording** when you
 are finished, then **Send recording** to post it, or **Discard recording** to

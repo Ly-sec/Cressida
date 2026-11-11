@@ -55,9 +55,10 @@ namespace voice::protocol {
     bool due(Clock::time_point now) const;
     bool missed(Clock::time_point now) const;
     std::uint64_t sent(Clock::time_point now);
-    void acknowledge(const nlohmann::json& value);
+    bool acknowledge(const nlohmann::json& value);
     Clock::time_point deadline() const { return m_next; }
     bool initialized() const { return m_initialized; }
+    bool pending() const { return m_pending; }
 
   private:
     std::chrono::milliseconds m_interval{};

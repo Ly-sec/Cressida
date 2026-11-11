@@ -127,9 +127,12 @@ int main() {
     require(
         !heartbeat.due(now + 999ms) && heartbeat.missed(now + 1s), "Missing ACKs fail at the next negotiated heartbeat"
     );
-    heartbeat.acknowledge({{"t", nonce + 1}});
+    require(heartbeat.pending() && !heartbeat.acknowledge({{"t", nonce + 1}}), "Unrelated ACKs are not counted");
     require(heartbeat.missed(now + 1s), "Unrelated heartbeat ACKs cannot extend connection lifetime");
-    heartbeat.acknowledge({{"t", nonce}});
+    require(
+        heartbeat.acknowledge({{"t", nonce}}) && !heartbeat.pending(), "Matching ACKs settle the pending heartbeat"
+    );
+    require(!heartbeat.acknowledge({{"t", nonce}}), "Repeated ACKs are not counted twice");
     require(!heartbeat.missed(now + 1s), "Only the matching heartbeat ACK clears the deadline");
     require(
         !heartbeat.hello({{"heartbeat_interval", 1000}}, now), "Repeated hello messages cannot reset heartbeat state"

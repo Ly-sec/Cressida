@@ -210,6 +210,13 @@ entries include a local request reference, an action, an anonymized route,
 status codes, timing and retry information. They omit message contents,
 credentials, request bodies and raw headers.
 
+Voice disconnect records include a local connection number, numeric close and
+transport error codes, elapsed time, mute state, heartbeat acknowledgements and
+UDP keepalive counters. Voice calls and stream connections have separate
+records. These details help distinguish a server close from a network failure;
+they do not establish an inactivity timeout. Raw server close reasons are
+omitted.
+
 Review logs and terminal captures before sharing them. Terminal startup errors
 can contain additional error details. Include only the relevant period and
 remove any personal information. Logging does not establish the cause of an

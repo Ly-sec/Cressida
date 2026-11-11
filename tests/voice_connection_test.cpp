@@ -1,3 +1,4 @@
+#include "core/log.h"
 #include "voice/connection.h"
 #include "voice/encryption.h"
 #include "voice/protocol.h"
@@ -256,9 +257,12 @@ int main(int argc, char** argv) {
   using namespace std::chrono_literals;
   try {
     require(argc == 3, "The offline fixture supplies a loopback origin and scenario");
+    setLogLevel(LogLevel::Debug);
+    initLogFile();
     require(curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK, "Network initialization succeeds");
     const bool cancel = std::string_view(argv[2]) == "cancel";
     const bool media = std::string_view(argv[2]).starts_with("media");
+    const bool keepalive = std::string_view(argv[2]) == "media-keepalive";
     auto audio = std::make_shared<Audio>(media);
     std::mutex mutex;
     std::condition_variable ready;
@@ -337,6 +341,19 @@ int main(int argc, char** argv) {
           lock.lock();
           require(!remoteSpeaking(), "DAVE-encrypted silence clears the remote indicator immediately");
         }
+        if (keepalive) {
+          voice::AudioSettings muted;
+          muted.muted = true;
+          connection.configure(muted);
+          std::cout << Json{{"observe", true}}.dump() << std::endl;
+          require(
+              ready.wait_for(lock, 8s, [&] { return !states.empty() && states.back().phase == voice::Phase::Failed; }),
+              "The private peer closes after observing muted keepalives"
+          );
+          require(
+              states.back().error == "The voice server closed the connection", "Close details remain diagnostic only"
+          );
+        }
       } else {
         std::unique_lock lock(mutex);
         require(
@@ -378,7 +395,7 @@ int main(int argc, char** argv) {
       connection.configure(settings);
       const auto stopped = std::chrono::steady_clock::now();
       connection.disconnect();
-      if (cancel || media) {
+      if (cancel || (media && !keepalive)) {
         std::unique_lock lock(mutex);
         require(
             ready.wait_for(
@@ -396,8 +413,10 @@ int main(int argc, char** argv) {
         "Capture starts only after an explicit join completes transport setup, with no unencrypted playback"
     );
     curl_global_cleanup();
+    closeLogFile();
     std::cout << "Offline voice setup, encryption gating and cancellation passed\n";
   } catch (const std::exception& error) {
+    closeLogFile();
     std::cerr << error.what() << '\n';
     return 1;
   }

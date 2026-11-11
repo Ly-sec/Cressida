@@ -52,6 +52,7 @@ namespace voice {
     constexpr auto sendTimeout = 5s;
     constexpr auto mediaTick = 20ms;
     constexpr auto udpKeepaliveInterval = 5s;
+    constexpr std::size_t maximumPendingKeepalives = 16;
     constexpr std::size_t maximumReceiveBatch = 64;
     constexpr std::size_t maximumDiagnosticOpcodes = 32;
     constexpr std::size_t diagnosticHistory = 8;
@@ -64,6 +65,7 @@ namespace voice {
     };
     constexpr std::uint32_t rtcpClockRate = 65536;
     const Logger voiceLog("voice");
+    std::atomic<std::uint64_t> nextConnectionId{0};
     const char* phaseName(Phase phase) {
       switch (phase) {
       case Phase::Disconnected:
@@ -83,6 +85,27 @@ namespace voice {
     }
     struct Failure : std::runtime_error {
       using std::runtime_error::runtime_error;
+      Failure(
+          std::string message, const char* kind, CURLcode transport = CURLE_OK, int networkError = 0,
+          unsigned closeCode = 0
+      )
+          : std::runtime_error(std::move(message)), kind(kind), transport(transport), networkError(networkError),
+            closeCode(closeCode) {}
+      const char* kind = "local";
+      CURLcode transport = CURLE_OK;
+      int networkError = 0;
+      unsigned closeCode = 0;
+    };
+    struct ConnectionDiagnostics {
+      Clock::time_point started = Clock::now();
+      std::optional<Clock::time_point> heartbeatAck, keepaliveAck;
+      std::uint64_t heartbeatsSent = 0, heartbeatsAcknowledged = 0;
+      std::uint64_t keepalivesSent = 0, keepalivesAcknowledged = 0, keepaliveSendFailures = 0;
+      int keepaliveError = 0;
+      std::deque<std::uint64_t> pendingKeepalives;
+      static std::int64_t age(std::optional<Clock::time_point> time, Clock::time_point now) {
+        return time ? std::chrono::duration_cast<std::chrono::milliseconds>(now - *time).count() : -1;
+      }
     };
     struct Socket {
       int fd = -1;
@@ -125,7 +148,7 @@ namespace voice {
         if (context.cancelled())
           throw Failure("Voice connection cancelled");
         if (Clock::now() >= deadline)
-          throw Failure("Voice signaling timed out");
+          throw Failure("Voice signaling timed out", "signaling-timeout");
         std::size_t written = 0;
         const auto status = curl_ws_send(
             curl, data.data() + offset, data.size() - offset, &written, 0, binary ? CURLWS_BINARY : CURLWS_TEXT
@@ -134,7 +157,7 @@ namespace voice {
         if (status == CURLE_AGAIN)
           wait(curl, -1, POLLOUT, context, deadline);
         else if (status != CURLE_OK)
-          throw Failure("Voice signaling was interrupted");
+          throw Failure("Voice signaling was interrupted", "signaling-send", status);
       }
     }
     void send(CURL* curl, const Json& value, const Context& context) {
@@ -193,10 +216,13 @@ namespace voice {
       std::unique_ptr<addrinfo, decltype(&freeaddrinfo)> address(resolved, freeaddrinfo);
       socket.reset(::socket(address->ai_family, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0));
       if (socket.fd < 0 || ::connect(socket.fd, address->ai_addr, address->ai_addrlen) != 0)
-        throw Failure("Could not open the voice network connection");
+        throw Failure("Could not open the voice network connection", "udp-open", CURLE_OK, errno);
       const auto request = protocol::discoveryRequest(ready.ssrc);
-      if (::send(socket.fd, request.data(), request.size(), 0) != static_cast<ssize_t>(request.size()))
-        throw Failure("Could not discover the voice network address");
+      const auto sent = ::send(socket.fd, request.data(), request.size(), 0);
+      if (sent != static_cast<ssize_t>(request.size()))
+        throw Failure(
+            "Could not discover the voice network address", "udp-discovery-send", CURLE_OK, sent < 0 ? errno : 0
+        );
     }
     struct EarlySignal {
       int opcode;
@@ -317,13 +343,17 @@ namespace voice {
       state.muted = settings.muted;
       state.deafened = settings.deafened;
       if (diagnosticPhase != state.phase) {
-        voiceLog.info("Connection phase={}", phaseName(state.phase));
+        voiceLog.info("Connection phase={} connection={}", phaseName(state.phase), diagnosticConnectionId);
         diagnosticPhase = state.phase;
       }
       if (changed)
         changed(state);
     }
     void session(ConnectionInfo info, const Context& context) {
+      diagnosticConnectionId = ++nextConnectionId;
+      ConnectionDiagnostics diagnostics;
+      protocol::Heartbeat heartbeat;
+      ReceiveSummary receiveSummary;
       State state;
       state.phase = Phase::Connecting;
       state.generation = info.generation;
@@ -351,9 +381,9 @@ namespace voice {
           recentOpcodes.pop_front();
         recentOpcodes.push_back(opcode);
         if (diagnosticCount < maximumDiagnosticOpcodes)
-          voiceLog.debug("Signal opcode={}", opcode);
+          voiceLog.debug("Signal opcode={} connection={}", opcode, diagnosticConnectionId);
         if (++diagnosticCount == maximumDiagnosticOpcodes)
-          voiceLog.debug("Signal opcode logging reached its session limit");
+          voiceLog.debug("Signal opcode logging reached its session limit connection={}", diagnosticConnectionId);
       };
       try {
         std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curl(curl_easy_init(), curl_easy_cleanup);
@@ -380,14 +410,14 @@ namespace voice {
         curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 0L);
         curl_easy_setopt(curl.get(), CURLOPT_XFERINFOFUNCTION, progress);
         curl_easy_setopt(curl.get(), CURLOPT_XFERINFODATA, &context);
-        if (curl_easy_perform(curl.get()) != CURLE_OK)
-          throw Failure("Could not connect to the voice server");
+        const auto connected = curl_easy_perform(curl.get());
+        if (connected != CURLE_OK)
+          throw Failure("Could not connect to the voice server", "connect", connected);
         const auto setupDeadline = Clock::now() + setupTimeout;
         auto securityDeadline = Clock::time_point::max();
         auto discoveryDeadline = Clock::time_point::max();
         auto keepaliveAt = Clock::time_point::max();
         std::uint64_t keepaliveCounter = 0;
-        protocol::Heartbeat heartbeat;
         protocol::RtpCipher cipher;
         auto videoQueue = std::make_shared<VideoQueue>();
         std::map<std::string, VideoRoute> offered;
@@ -455,7 +485,7 @@ namespace voice {
         bool announced = false, wasPaused = false;
         int requestedHeight = -1, requestedRate = -1;
         std::uint32_t requestedAudio = 0;
-        ReceiveSummary receiveSummary, loggedReceiveSummary;
+        ReceiveSummary loggedReceiveSummary;
         auto receiveSummaryAt = Clock::now() + receiveSummaryInterval;
         auto nextKeyframeRequest = Clock::time_point{};
         auto nextVideoReport = Clock::time_point{};
@@ -505,6 +535,7 @@ namespace voice {
         std::deque<EarlySignal> early;
         std::size_t earlyBytes = 0;
         std::vector<std::uint8_t> signal;
+        std::array<std::uint8_t, sizeof(std::uint16_t)> closeCodeBytes{};
         bool binary = false;
         auto updateParticipants = [&] {
           state.participants.clear();
@@ -576,7 +607,7 @@ namespace voice {
             throw Failure("Voice transport encryption failed");
           const auto sent = ::send(udp.fd, packet.data(), packet.size(), 0);
           if (sent < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
-            throw Failure("The voice network connection was interrupted");
+            throw Failure("The voice network connection was interrupted", "udp-send", CURLE_OK, errno);
           if (sent == static_cast<ssize_t>(packet.size())) {
             ++audioPacketCount;
             audioOctetCount += octets;
@@ -591,7 +622,7 @@ namespace voice {
             return false;
           const auto written = ::send(udp.fd, packet.data(), packet.size(), 0);
           if (written < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
-            throw Failure("The stream network connection was interrupted");
+            throw Failure("The stream network connection was interrupted", "udp-send", CURLE_OK, errno);
           return written == static_cast<ssize_t>(packet.size());
         };
         auto announceVideo = [&](bool active) {
@@ -635,9 +666,9 @@ namespace voice {
             if (receiveSummary != loggedReceiveSummary) {
               voiceLog.debug(
                   "Receive datagrams={} transport-rejected={} unmapped-ssrc={} e2ee-rejected={} delivered={} "
-                  "e2ee-ready={}",
+                  "e2ee-ready={} connection={}",
                   receiveSummary.datagrams, receiveSummary.transportRejected, receiveSummary.unmapped,
-                  receiveSummary.e2eeRejected, receiveSummary.delivered, encryption.ready()
+                  receiveSummary.e2eeRejected, receiveSummary.delivered, encryption.ready(), diagnosticConnectionId
               );
               loggedReceiveSummary = receiveSummary;
             }
@@ -645,12 +676,14 @@ namespace voice {
           if (activity.expire(now))
             updateParticipants();
           if (heartbeat.missed(now))
-            throw Failure("The voice server stopped responding");
-          if (heartbeat.due(now))
+            throw Failure("The voice server stopped responding", "heartbeat-timeout");
+          if (heartbeat.due(now)) {
             send(
                 curl.get(), Json{{"op", 3}, {"d", {{"t", heartbeat.sent(now)}, {"seq_ack", acknowledgedSequence}}}},
                 context
             );
+            ++diagnostics.heartbeatsSent;
+          }
           if ((!described && now >= setupDeadline) || now >= securityDeadline)
             throw Failure("Voice connection setup timed out");
           if (!discovered && now >= discoveryDeadline)
@@ -955,7 +988,16 @@ namespace voice {
               byte = static_cast<std::uint8_t>(number);
               number >>= 8;
             }
-            (void)::send(udp.fd, keepalive.data(), keepalive.size(), 0);
+            const auto written = ::send(udp.fd, keepalive.data(), keepalive.size(), 0);
+            if (written == static_cast<ssize_t>(keepalive.size())) {
+              ++diagnostics.keepalivesSent;
+              if (diagnostics.pendingKeepalives.size() == maximumPendingKeepalives)
+                diagnostics.pendingKeepalives.pop_front();
+              diagnostics.pendingKeepalives.push_back(keepaliveCounter - 1);
+            } else {
+              ++diagnostics.keepaliveSendFailures;
+              diagnostics.keepaliveError = written < 0 ? errno : 0;
+            }
             keepaliveAt = now + udpKeepaliveInterval;
           }
           for (std::size_t count = 0; udp.fd >= 0 && count < maximumReceiveBatch; ++count) {
@@ -963,12 +1005,25 @@ namespace voice {
             const auto received = ::recv(udp.fd, bytes.data(), bytes.size(), 0);
             if (received < 0) {
               if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
-                throw Failure("The voice network connection was interrupted");
+                throw Failure("The voice network connection was interrupted", "udp-receive", CURLE_OK, errno);
               break;
             }
             if (received == 0)
               continue;
             const auto packet = std::span{bytes}.first(received);
+            if (discovered && packet.size() == sizeof(std::uint64_t)) {
+              std::uint64_t counter = 0;
+              for (std::size_t index = 0; index < packet.size(); ++index)
+                counter |= static_cast<std::uint64_t>(packet[index])
+                    << (index * std::numeric_limits<std::uint8_t>::digits);
+              const auto pending = std::ranges::find(diagnostics.pendingKeepalives, counter);
+              if (pending != diagnostics.pendingKeepalives.end()) {
+                diagnostics.pendingKeepalives.erase(pending);
+                ++diagnostics.keepalivesAcknowledged;
+                diagnostics.keepaliveAck = now;
+              }
+              continue;
+            }
             if (!discovered) {
               if (const auto address = protocol::discoveryResponse(packet, remote->ssrc)) {
                 Json selection{
@@ -1123,8 +1178,19 @@ namespace voice {
             const auto status = curl_ws_recv(curl.get(), bytes.data(), bytes.size(), &received, &metadata);
             if (status == CURLE_AGAIN)
               break;
-            if (status != CURLE_OK || !metadata || (metadata->flags & CURLWS_CLOSE))
-              throw Failure("The voice server closed the connection");
+            if (status != CURLE_OK || !metadata)
+              throw Failure("The voice server closed the connection", "signaling-receive", status);
+            if (metadata->flags & CURLWS_CLOSE) {
+              for (std::size_t index = 0; index < received && metadata->offset + index < closeCodeBytes.size(); ++index)
+                closeCodeBytes[metadata->offset + index] = bytes[index];
+              const bool completeCode = metadata->offset + received >= closeCodeBytes.size();
+              if (completeCode || !metadata->bytesleft)
+                throw Failure(
+                    "The voice server closed the connection", "peer-close", CURLE_OK, 0,
+                    completeCode ? protocol::read16(closeCodeBytes, 0) : 0
+                );
+              continue;
+            }
             if (metadata->flags & (CURLWS_PING | CURLWS_PONG))
               continue;
             if (metadata->offset == 0 && signal.empty())
@@ -1179,9 +1245,12 @@ namespace voice {
                     },
                     context
                 );
-              } else if (opcode == 6)
-                heartbeat.acknowledge(data);
-              else if (opcode == 2) {
+              } else if (opcode == 6) {
+                if (heartbeat.acknowledge(data)) {
+                  ++diagnostics.heartbeatsAcknowledged;
+                  diagnostics.heartbeatAck = now;
+                }
+              } else if (opcode == 2) {
                 if (!heartbeat.initialized() || remote || !(remote = protocol::ready(data)))
                   throw Failure("The voice server does not support the required audio transport");
                 if (video && info.publishing) {
@@ -1214,7 +1283,7 @@ namespace voice {
                 if (!accepted)
                   throw Failure("Encrypted voice setup failed");
                 described = true;
-                voiceLog.info("Connection phase=transport-ready");
+                voiceLog.info("Connection phase=transport-ready connection={}", diagnosticConnectionId);
                 // Registers this SSRC with the media server even if nobody here speaks or listens first.
                 if (!info.stream)
                   send(
@@ -1339,6 +1408,25 @@ namespace voice {
         }
       } catch (const std::exception& error) {
         if (!context.cancelled()) {
+          const auto* failure = dynamic_cast<const Failure*>(&error);
+          const auto now = Clock::now();
+          voiceLog.warn(
+              "Connection failed connection={} kind={} close_code={} transport_code={} udp_errno={} phase={} "
+              "stream={} publishing={} elapsed_ms={} muted={} deafened={} heartbeat_sent={} heartbeat_acks={} "
+              "heartbeat_pending={} heartbeat_ack_age_ms={} udp_keepalive_sent={} udp_keepalive_acks={} "
+              "udp_keepalive_send_failures={} udp_keepalive_errno={} udp_keepalive_ack_age_ms={} "
+              "receive_datagrams={} transport_rejected={} unmapped_ssrc={} e2ee_rejected={} delivered={}",
+              diagnosticConnectionId, failure ? failure->kind : "local", failure ? failure->closeCode : 0,
+              failure ? static_cast<int>(failure->transport) : 0, failure ? failure->networkError : 0,
+              phaseName(state.phase), info.stream, info.publishing,
+              ConnectionDiagnostics::age(diagnostics.started, now), activeSettings.muted, activeSettings.deafened,
+              diagnostics.heartbeatsSent, diagnostics.heartbeatsAcknowledged, heartbeat.pending(),
+              ConnectionDiagnostics::age(diagnostics.heartbeatAck, now), diagnostics.keepalivesSent,
+              diagnostics.keepalivesAcknowledged, diagnostics.keepaliveSendFailures, diagnostics.keepaliveError,
+              ConnectionDiagnostics::age(diagnostics.keepaliveAck, now), receiveSummary.datagrams,
+              receiveSummary.transportRejected, receiveSummary.unmapped, receiveSummary.e2eeRejected,
+              receiveSummary.delivered
+          );
           state.phase = Phase::Failed;
           state.error = error.what();
           state.encrypted = false;
@@ -1346,7 +1434,7 @@ namespace voice {
             participant.speaking = false;
           publish(state, activeSettings, context);
           for (const auto opcode : recentOpcodes)
-            voiceLog.debug("Recent signal opcode={}", opcode);
+            voiceLog.debug("Recent signal opcode={} connection={}", opcode, diagnosticConnectionId);
         }
       }
       if (video) {
@@ -1360,7 +1448,7 @@ namespace voice {
         state.encrypted = false;
         state.participants.clear();
         diagnosticPhase = state.phase;
-        voiceLog.info("Connection phase=disconnected");
+        voiceLog.info("Connection phase=disconnected connection={}", diagnosticConnectionId);
         if (changed)
           changed(std::move(state));
       }
@@ -1389,6 +1477,7 @@ namespace voice {
     std::shared_ptr<VideoPipeline> video;
     Changed changed;
     Phase diagnosticPhase = Phase::Disconnected;
+    std::uint64_t diagnosticConnectionId = 0;
     std::string endpointOverride;
     std::mutex mutex;
     std::condition_variable_any ready;

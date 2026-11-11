@@ -171,11 +171,15 @@ namespace voice::protocol {
     m_pending = true;
     return ++m_nonce;
   }
-  void Heartbeat::acknowledge(const nlohmann::json& value) {
-    if (value.is_object()
+  bool Heartbeat::acknowledge(const nlohmann::json& value) {
+    if (m_pending
+        && value.is_object()
         && value.contains("t")
-        && integer(value["t"], std::numeric_limits<std::uint64_t>::max()) == m_nonce)
+        && integer(value["t"], std::numeric_limits<std::uint64_t>::max()) == m_nonce) {
       m_pending = false;
+      return true;
+    }
+    return false;
   }
   RtpCipher::RtpCipher() {
     if (sodium_init() < 0)

@@ -4,10 +4,16 @@
 import base64
 import hashlib
 import json
+import os
+import re
+import select
 import socket
 import struct
 import subprocess
 import sys
+import tempfile
+import time
+from pathlib import Path
 
 
 def exact(peer, count):
@@ -64,15 +70,27 @@ def expected(peer, opcode):
         return value
 
 
+def close(peer, code=None, split=False):
+    payload = struct.pack("!H", code) + b"private-close-reason" if code is not None else b""
+    frame = bytes([0x88, len(payload)]) + payload
+    if split:
+        peer.sendall(frame[:3])
+        time.sleep(0.05)
+        peer.sendall(frame[3:])
+    else:
+        peer.sendall(frame)
+
+
 def scenario(binary, mode):
-    with socket.socket() as listener, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+    with tempfile.TemporaryDirectory(prefix="cressida-voice-logs-") as cache, socket.socket() as listener, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
         listener.bind(("127.0.0.1", 0))
         listener.listen(1)
         listener.settimeout(8)
         udp.bind(("127.0.0.1", 0))
         udp.settimeout(4)
         origin = f"ws://127.0.0.1:{listener.getsockname()[1]}/"
-        process = subprocess.Popen([binary, origin, mode], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        process = subprocess.Popen([binary, origin, mode], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                   env={**os.environ, "XDG_CACHE_HOME": cache})
         try:
             peer, _ = listener.accept()
             with peer:
@@ -100,7 +118,12 @@ def scenario(binary, mode):
                     send(peer, struct.pack("!HB", 1, 25) + bytes.fromhex(external["external"]), binary=True)
                     if mode != "media-hints":
                         send(peer, {"op": 11, "seq": 2, "d": {"user_ids": ["4"]}})
-                if mode == "oversized":
+                if mode.startswith("close-"):
+                    code = None if mode == "close-empty" else 4009 if mode == "close-split" else int(mode.removeprefix("close-"))
+                    close(peer, code, mode == "close-split")
+                elif mode == "transport-eof":
+                    peer.shutdown(socket.SHUT_RDWR)
+                elif mode == "oversized":
                     try:
                         send(peer, bytes(1024 * 1024 + 1), binary=True)
                     except (BrokenPipeError, ConnectionResetError):
@@ -200,14 +223,67 @@ def scenario(binary, mode):
                         if mode == "media-activity":
                             assert json.loads(process.stdout.readline())["voiced"]
                             udp.sendto(bytes.fromhex(negotiated["silence"]), address)
+                        if mode == "media-keepalive":
+                            assert json.loads(process.stdout.readline())["observe"]
+                            deadline = time.monotonic() + 7
+                            while True:
+                                assert time.monotonic() < deadline, "Muted capture does not stop UDP keepalives"
+                                readable, _, _ = select.select([peer, udp], [], [], 0.1)
+                                if peer in readable:
+                                    value = receive(peer)
+                                    assert value["op"] in (3, 5)
+                                    if value["op"] == 3:
+                                        send(peer, {"op": 6, "d": {"t": value["d"]["t"]}})
+                                if udp in readable:
+                                    keepalive, source = udp.recvfrom(8192)
+                                    assert source == address and len(keepalive) == 8
+                                    udp.sendto(keepalive, address)
+                                    udp.sendto(keepalive, address)
+                                    udp.sendto((int.from_bytes(keepalive, "little") + 1).to_bytes(8, "little"), address)
+                                    break
+                            while True:
+                                heartbeat = receive(peer)
+                                if heartbeat["op"] == 3:
+                                    send(peer, {"op": 6, "d": {"t": heartbeat["d"]["t"] + 1}})
+                                    send(peer, {"op": 6, "d": {"t": heartbeat["d"]["t"]}})
+                                    send(peer, {"op": 6, "d": {"t": heartbeat["d"]["t"]}})
+                                    break
+                                assert heartbeat["op"] == 5
+                            close(peer, 4009)
                     if mode == "heartbeat":
                         heartbeat = receive(peer)
                         assert heartbeat["op"] == 3 and "seq_ack" in heartbeat["d"]
                 output, error = process.communicate(timeout=8)
                 assert process.returncode == 0, f"{mode}: {output}\n{error}"
                 assert "passed" in output
-                for secret in ("synthetic-token", "synthetic-session", "voice-test.discord.media"):
-                    assert secret not in output and secret not in error, "Voice diagnostics contain only fixed labels and numeric opcodes"
+                diagnostic = (Path(cache) / "cressida/logs/cressida.log").read_text()
+                for secret in ("synthetic-token", "synthetic-session", "voice-test.discord.media", "private-close-reason"):
+                    assert secret not in output and secret not in error and secret not in diagnostic, "Voice diagnostics omit private signaling and close reasons"
+                failures = [line for line in diagnostic.splitlines() if "Connection failed " in line]
+                if mode == "cancel" or (media and mode != "media-keepalive"):
+                    assert not failures, "Explicit cancellation emits no failure summary"
+                else:
+                    assert len(failures) == 1, "Each failed connection emits one bounded diagnostic summary"
+                    fields = dict(re.findall(r"([a-z][a-z0-9_]+)=([a-z0-9-]+)", failures[0]))
+                    assert int(fields["connection"]) > 0 and int(fields["elapsed_ms"]) >= 0
+                    assert fields["stream"] == fields["publishing"] == "false"
+                    if mode.startswith("close-") or mode == "media-keepalive":
+                        assert fields["kind"] == "peer-close" and fields["transport_code"] == "0"
+                        assert fields["close_code"] == str(4009 if mode in ("close-split", "media-keepalive") else code or 0)
+                    elif mode == "transport-eof":
+                        assert fields["kind"] == "signaling-receive" and int(fields["transport_code"]) != 0
+                        assert fields["close_code"] == "0"
+                    elif mode == "heartbeat":
+                        assert fields["kind"] == "heartbeat-timeout" and fields["heartbeat_pending"] == "true"
+                        assert int(fields["heartbeat_sent"]) == int(fields["heartbeat_acks"]) + 1
+                        assert int(fields["heartbeat_ack_age_ms"]) >= 0 if int(fields["heartbeat_acks"]) else fields["heartbeat_ack_age_ms"] == "-1"
+                    if mode == "media-keepalive":
+                        assert fields["muted"] == "true" and fields["udp_keepalive_sent"] == fields["udp_keepalive_acks"] == "1"
+                        assert fields["udp_keepalive_send_failures"] == fields["udp_keepalive_errno"] == "0"
+                        assert int(fields["udp_keepalive_ack_age_ms"]) >= 0
+                        assert fields["transport_rejected"] == "0", "UDP keepalive replies are not rejected media"
+                        assert fields["heartbeat_pending"] == "false"
+                        assert fields["heartbeat_sent"] == fields["heartbeat_acks"], "Stale and repeated ACKs do not inflate counts"
         finally:
             if process.poll() is None:
                 process.kill()
@@ -215,6 +291,7 @@ def scenario(binary, mode):
 
 
 if __name__ == "__main__":
-    for selected_mode in ("cancel", "downgrade", "heartbeat", "oversized", "media", "media-transition", "media-hints", "media-creator", "media-activity"):
+    for selected_mode in ("cancel", "downgrade", "heartbeat", "oversized", "media", "media-transition", "media-hints", "media-creator", "media-activity",
+                          "close-4006", "close-4009", "close-4014", "close-4015", "close-empty", "close-split", "transport-eof", "media-keepalive"):
         scenario(sys.argv[1], selected_mode)
     print("Private voice WebSocket and UDP setup scenarios passed")

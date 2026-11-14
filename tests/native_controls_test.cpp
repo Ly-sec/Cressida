@@ -223,7 +223,10 @@ int main() {
       chat.inputArea()->dispatchKey(XKB_KEY_colon, ':', KeyMod::Shift, true);
       const std::string expected = "Cressida\u2122\uFE0E";
       require(chat.value() == expected, "Typing the closing colon converts a trademark directly after a word");
-      require(chat.textInputState().cursor == expected.size(), "Trademark conversion retains the native caret");
+      require(
+          chat.textInputState().cursor == static_cast<std::int32_t>(expected.size()),
+          "Trademark conversion retains the native caret"
+      );
       require(chat.edit(Input::EditCommand::Undo) && chat.value() == "Cressida:tm", "Trademark conversion is undoable");
       require(
           chat.edit(Input::EditCommand::Redo) && chat.value() == expected, "Redo restores the text-style trademark"
@@ -238,7 +241,7 @@ int main() {
       chat.setSubmitOnEnter(true);
       chat.clearSelection();
       chat.setOnSubmit([&](const std::string& text) { sent = text; });
-      chat.inputArea()->dispatchKey(XKB_KEY_Return, 0, 0, true);
+      chat.textInputApplyEdit({.submit = true});
       require(sent == expected, "Submitting uses the same converted text as the draft");
       chat.setValue("prefix  suffix");
       chat.applyEdit(chat.value(), 7, 7);

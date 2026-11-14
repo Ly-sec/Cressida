@@ -3280,6 +3280,24 @@ namespace app {
               Style::fontSizeBody, muted, FontWeight::Normal, 2
           );
         }
+        if (timeline.empty()
+            && m_messages.empty()
+            && !m_sending
+            && !loadingConversation
+            && m_dmMode
+            && !m_channelId.empty()
+            && m_pendingWaveChannel.empty()
+            && selectedChannelWriteAccess() == api::MessageWriteAccess::Allowed)
+          button(
+              *content,
+              {layout::WaveGreeting::left,
+               layout::WaveGreeting::top,
+               std::min(textWidth, layout::WaveGreeting::width),
+               layout::WaveGreeting::height,
+               Action::SendWave,
+               {}},
+              "Wave to say hi!", true
+          );
         std::vector<TimelineAnchor::Row> visibleAnchors;
         float rowY = (bottom - totalHeight) + m_messageScroll + timelineTopPadding + introHeight;
         for (std::size_t i = 0; i < timeline.size(); ++i) {
@@ -4353,6 +4371,8 @@ namespace app {
   }
 
   void ClientApplication::selectChannel(std::string id) {
+    if (id != m_channelId)
+      m_pendingWaveChannel.clear();
     if (id != m_channelId)
       clearVoiceMessage();
     m_forumPreviewReads.clear();
@@ -6308,6 +6328,7 @@ namespace app {
     case Action::ToggleStickers:
     case Action::StickerSection:
     case Action::SendSticker:
+    case Action::SendWave:
     case Action::RemoveSticker:
     case Action::StickerInfo:
     case Action::StickerRetry:

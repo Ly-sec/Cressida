@@ -36,6 +36,21 @@ int main() {
   try {
     const auto document = fixture();
     const auto clip = decode(document);
+    auto controller = document;
+    controller["layers"][0]["ef"] = Json::array(
+        {{{"ty", 5},
+          {"nm", "Controller"},
+          {"ef",
+           Json::array(
+               {{{"ty", 6}, {"nm", "Icon"}, {"v", 0}},
+                {{"ty", 2}, {"nm", "Color"}, {"v", {{"a", 0}, {"k", Json::array({1, 0, 0, 1})}}}}}
+           )}}}
+    );
+    const auto controlled = decode(controller);
+    require(
+        controlled && clip && controlled->frames.size() == clip->frames.size(),
+        "Vector stickers accept controller effect types without treating them as image or text layers"
+    );
     require(
         clip && clip->width == 32 && clip->height == 24 && clip->frames.size() == 6,
         "Render all vector Lottie frames natively at their canvas size"

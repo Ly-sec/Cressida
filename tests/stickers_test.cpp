@@ -34,6 +34,15 @@ int main() {
     list.push_back(list.front());
     list.push_back({{"id", "105"}, {"name", nullptr}});
     const auto stickers = api::parseStickers(list, "1");
+    auto wave = stickers.back();
+    wave.type = 1;
+    wave.name = "Wave";
+    require(api::isWaveSticker(wave), "Standard wave stickers are greeting candidates");
+    wave.type = 2;
+    require(!api::isWaveSticker(wave), "Server stickers cannot enter random standard greetings");
+    wave.type = 1;
+    wave.available = false;
+    require(!api::isWaveSticker(wave), "Unavailable wave stickers cannot be chosen");
     require(
         stickers.size() == 4 && stickers.front().guild == "1",
         "Sticker catalogs validate identities and deduplicate IDs"

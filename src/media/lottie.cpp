@@ -77,11 +77,7 @@ namespace media {
         }
         const auto type = node.find("ty");
         if (type != node.end()) {
-          if (type->is_number_integer()) {
-            const auto kind = type->get<int>();
-            if (kind != 0 && kind != 1 && kind != 3 && kind != 4)
-              throw std::runtime_error("Only vector Lottie layers are supported");
-          } else if (type->is_string()) {
+          if (type->is_string()) {
             const auto& kind = type->get_ref<const std::string&>();
             if (kind == "rp") {
               const auto copies = node.find("c");
@@ -138,6 +134,9 @@ namespace media {
       for (const auto& layer : list) {
         if (!layer.is_object() || !layer.contains("ty") || !layer["ty"].is_number_integer())
           throw std::runtime_error("Invalid Lottie layer");
+        const auto kind = layer["ty"].get<int>();
+        if (kind != 0 && kind != 1 && kind != 3 && kind != 4)
+          throw std::runtime_error("Only vector Lottie layers are supported");
         if (layer.contains("ind")) {
           if (!layer["ind"].is_number_integer())
             throw std::runtime_error("Invalid Lottie layer index");

@@ -14,6 +14,11 @@ composer and no control has focus, pressing a key focuses it and applies that
 key to your draft. Shortcuts, Tab navigation and Escape keep their usual
 actions. Open dialogs, pickers, settings and editors keep their own focus.
 
+In an empty DM, choose **Wave to say hi!** to send a randomly chosen standard
+wave sticker. Cressida loads the available packs after you click and keeps your
+existing composer content. Loading and sending failures require an explicit
+retry. Wave stickers also appear in chat and the sticker picker.
+
 Messages appear in the conversation immediately in a dimmed state, including
 local image previews. They use normal colors once delivery is confirmed. You can
 keep typing and send another message while an earlier one is pending. Pending

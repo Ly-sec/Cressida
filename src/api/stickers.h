@@ -15,6 +15,7 @@ namespace api {
   };
   std::vector<Sticker> parseStickers(const nlohmann::json& value, const std::string& guild = {});
   std::vector<Sticker> parseStickerPacks(const nlohmann::json& value);
+  bool isWaveSticker(const Sticker& sticker);
   std::string stickerAsset(const Sticker& sticker);
   std::string stickerImageLink(const Sticker& sticker);
   std::optional<Sticker> stickerFromImageLink(std::string_view link);

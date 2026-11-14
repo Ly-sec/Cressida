@@ -77,6 +77,12 @@ namespace api {
     }
     return result;
   }
+  bool isWaveSticker(const Sticker& sticker) {
+    return sticker.type == 1
+        && sticker.available
+        && (sticker.name == "Wave" || sticker.name == "wave")
+        && !stickerAsset(sticker).empty();
+  }
   std::string stickerAsset(const Sticker& sticker) {
     if (!validSnowflake(sticker.id))
       return {};

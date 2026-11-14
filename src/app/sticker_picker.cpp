@@ -6,13 +6,16 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <random>
 #include <stdexcept>
+#include <utility>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
 namespace app {
   using namespace theme;
 
   void ClientApplication::clearStickers() {
+    m_pendingWaveChannel.clear();
     m_stickerTab = m_stickerInfo = false;
     m_stickers.clear();
     m_loadedStickerSources.clear();
@@ -75,6 +78,7 @@ namespace app {
       if (!m_guilds.empty()) {
         auto standard = m_stickers[m_guilds.front().id].front();
         standard.type = 1;
+        standard.name = "Wave";
         standard.guild.clear();
         standard.pack = "820000000000000000";
         standard.packName = "Friendly faces";
@@ -135,6 +139,15 @@ namespace app {
       ++m_stickerRevision;
     } else
       m_stickerErrors[source] = event.error;
+    if (source == "packs" && !m_pendingWaveChannel.empty()) {
+      const auto channel = std::exchange(m_pendingWaveChannel, {});
+      if (channel == m_channelId && m_dmMode && m_messages.empty()) {
+        if (event.error.empty())
+          stickerAction({.action = Action::SendWave});
+        else
+          m_status = "Could not load wave stickers. Choose Wave to say hi! to try again.";
+      }
+    }
   }
 
   std::string ClientApplication::stickerRestriction(const api::Sticker& sticker) const {
@@ -147,7 +160,44 @@ namespace app {
   }
 
   void ClientApplication::stickerAction(const Hit& hit) {
-    if (hit.action == Action::ToggleStickers) {
+    if (hit.action == Action::SendWave) {
+      if (!m_dmMode
+          || m_channelId.empty()
+          || !m_messages.empty()
+          || m_loadingMessages
+          || m_sending
+          || !canSendToThread()
+          || !m_pendingWaveChannel.empty())
+        return;
+      if (!m_loadedStickerSources.contains("packs")) {
+        if (m_demo)
+          prepareStickers();
+        else {
+          if (m_loadingStickerSources.contains("packs") || m_client.stickerPacks()) {
+            m_pendingWaveChannel = m_channelId;
+            m_loadingStickerSources.insert("packs");
+          } else
+            m_status = "Could not load wave stickers. Try again when connected.";
+          return;
+        }
+      }
+      std::vector<api::Sticker> candidates;
+      for (const auto& sticker : m_stickers["packs"])
+        if (api::isWaveSticker(sticker) && stickerRestriction(sticker).empty())
+          candidates.push_back(sticker);
+      if (candidates.empty()) {
+        m_status = "No wave stickers are available. Open Stickers to choose another greeting.";
+        return;
+      }
+      static std::mt19937 random(std::random_device{}());
+      const auto& sticker = candidates[std::uniform_int_distribution<std::size_t>(0, candidates.size() - 1)(random)];
+      auto reply = m_replies.extract(m_channelId);
+      const bool queued = queueOutgoing("", {}, {sticker.id}, {sticker}, false);
+      if (!reply.empty())
+        m_replies.insert(std::move(reply));
+      if (!queued && !m_demo)
+        m_status = "Could not send the wave sticker. Try again when connected.";
+    } else if (hit.action == Action::ToggleStickers) {
       const bool wasOpen = m_emojiMenu && m_stickerTab && !m_stickerInfo;
       closeGifPicker();
       closeEmojiPicker();
@@ -580,6 +630,22 @@ namespace app {
       );
       click(Action::ToggleEmoji);
       require(m_emojiMenu && !m_stickerTab, "Emoji tab switches out of the shared sticker picker");
+      auto messages = std::exchange(m_messages, {});
+      const auto dm = std::exchange(m_dmMode, true);
+      const auto loading = std::exchange(m_loadingMessages, false);
+      const auto overlay = std::exchange(m_demoOverlay, "outgoing-cycle");
+      const auto pending = m_pendingSends.size();
+      stickerAction({.action = Action::SendWave});
+      require(
+          m_pendingSends.size() == pending + 1 && m_drafts[m_channelId] == "Keep my draft",
+          "A wave queues one native sticker without consuming the composer draft"
+      );
+      stickerAction({.action = Action::SendWave});
+      require(m_pendingSends.size() == pending + 1, "A pending wave cannot be submitted twice");
+      m_demoOverlay = overlay;
+      m_dmMode = dm;
+      m_loadingMessages = loading;
+      m_messages = std::move(messages);
       std::clog << "Offline sticker replay passed\n";
     }
     m_window.invalidate();

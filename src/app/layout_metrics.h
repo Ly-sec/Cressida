@@ -742,6 +742,12 @@ namespace app::layout {
     static constexpr float height = size + topInset * 2;
     static constexpr float composerReserve = height + Style::spaceLg + Style::spaceXs;
   };
+  struct WaveGreeting {
+    static constexpr float left = Style::spaceLg;
+    static constexpr float top = Style::spaceSection * 3;
+    static constexpr float width = Style::controlHeightLg * 5;
+    static constexpr float height = Style::controlHeight;
+  };
   struct ChannelIntro {
     static constexpr float badgeSize = 58;
     static constexpr float badgeTop = Style::spaceXs;

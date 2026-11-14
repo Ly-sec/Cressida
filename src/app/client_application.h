@@ -184,6 +184,7 @@ namespace app {
       ToggleStickers,
       StickerSection,
       SendSticker,
+      SendWave,
       RemoveSticker,
       StickerInfo,
       EmojiInfo,
@@ -1480,6 +1481,7 @@ namespace app {
     std::map<std::string, api::Sticker> m_stickerTargets;
     std::optional<api::Sticker> m_inspectedSticker;
     std::uint64_t m_stickerRevision = 0;
+    std::string m_pendingWaveChannel;
     bool m_gifMenu = false, m_gifFavoritesTab = false, m_loadingGifs = false, m_loadingGifFavorites = false,
          m_gifFavoritesLoaded = false, m_gifFavoritesDirty = false;
     std::string m_gifQuery, m_gifRequestedQuery, m_gifError, m_gifFavoriteError;

@@ -547,6 +547,13 @@ namespace app {
       );
       onKey({.symbol = XKB_KEY_z, .control = true});
       require(m_drafts[m_channelId] == "prefix :umb tail", "Autocomplete insertion is a single undoable native edit");
+      setDraft("Brand:tm");
+      onKey({.symbol = XKB_KEY_colon, .text = ":"});
+      require(
+          m_drafts[m_channelId] == "Brand\u2122\uFE0E", "Typing a completed trademark updates the real composer draft"
+      );
+      onKey({.symbol = XKB_KEY_z, .control = true});
+      require(m_drafts[m_channelId] == "Brand:tm", "Trademark completion preserves native composer undo");
     } else if (step == 2) {
       setDraft("@moon");
       onKey({XKB_KEY_Tab});

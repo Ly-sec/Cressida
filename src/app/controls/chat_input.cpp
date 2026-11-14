@@ -107,10 +107,10 @@ namespace app {
       }
       return 0;
     }
-    void parse(PreviewParser& state) {
+    void parse(PreviewParser& state, bool indentedCode = false) {
       const MD_PARSER parser{
           .abi_version = 0,
-          .flags = MD_FLAG_NOHTML | MD_FLAG_NOINDENTEDCODEBLOCKS | MD_FLAG_STRIKETHROUGH,
+          .flags = MD_FLAG_NOHTML | MD_FLAG_STRIKETHROUGH | (indentedCode ? 0U : MD_FLAG_NOINDENTEDCODEBLOCKS),
           .enter_block = enterBlock,
           .leave_block = leaveBlock,
           .enter_span = enterSpan,
@@ -119,13 +119,13 @@ namespace app {
       };
       md_parse(state.input.data(), state.input.size(), &parser, &state);
     }
-    PreviewParser plainParser(std::string_view source) {
+    PreviewParser plainParser(std::string_view source, bool indentedCode = false) {
       PreviewParser parser;
       parser.input = source;
       parser.styles.resize(source.size(), ComposerMarker);
       parser.sourceOffsets.resize(source.size() + 1);
       std::iota(parser.sourceOffsets.begin(), parser.sourceOffsets.end(), 0);
-      parse(parser);
+      parse(parser, indentedCode);
       return parser;
     }
     std::string escaped(std::string_view value) {
@@ -282,5 +282,59 @@ namespace app {
       }
       return composerPreviewMarkup(source, presentation, styles, begin, end);
     });
+  }
+
+  bool ChatInput::completeTrademark(std::string_view inserted) {
+    constexpr std::string_view shortcode = ":tm:", symbol = "\u2122\uFE0E";
+    if (hasPreedit() || inserted.empty())
+      return false;
+    const auto state = textInputState();
+    const auto begin = std::min(state.anchor, state.cursor), end = std::max(state.anchor, state.cursor);
+    auto text = value();
+    text.replace(begin, end - begin, inserted);
+    const auto caret = begin + inserted.size();
+    if (caret < shortcode.size()
+        || std::string_view(text).substr(caret - shortcode.size(), shortcode.size()) != shortcode)
+      return false;
+    const auto start = caret - shortcode.size();
+    std::size_t fence = 0;
+    for (std::size_t at = 0; at < start;) {
+      if (text[at] == '\\') {
+        if (at + 1 == start)
+          return false;
+        at += 2;
+      } else if (text[at] == '`') {
+        auto next = at + 1;
+        while (next < start && text[next] == '`')
+          ++next;
+        if (!fence)
+          fence = next - at;
+        else if (fence == next - at)
+          fence = 0;
+        at = next;
+      } else
+        ++at;
+    }
+    if (fence || text.size() > maximumComposerBytes)
+      return false;
+    const auto wordStart = text.find_last_of(" \t\r\n", start);
+    const auto word = std::string_view(text).substr(
+        wordStart == std::string::npos ? 0 : wordStart + 1, caret - (wordStart == std::string::npos ? 0 : wordStart + 1)
+    );
+    if (word.contains("://") || word.contains('<') || word.contains("]("))
+      return false;
+    const auto styles = plainParser(text, true).styles;
+    if (styles[start] & (ComposerCode | ComposerLink))
+      return false;
+    text.replace(start, shortcode.size(), symbol);
+    if (text.size() > maximumComposerBytes)
+      return false;
+    return applyEdit(std::move(text), start + symbol.size(), start + symbol.size());
+  }
+
+  void ChatInput::textInputApplyEdit(const TextInputEdit& edit) {
+    if (edit.hasCommitText && !edit.hasDelete && !edit.hasPreedit && !edit.submit && completeTrademark(edit.commitText))
+      return;
+    Input::textInputApplyEdit(edit);
   }
 } // namespace app

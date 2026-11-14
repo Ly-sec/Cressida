@@ -212,6 +212,49 @@ int main() {
   };
   try {
     inputVerticalScrollCases();
+    {
+      app::ChatInput chat;
+      chat.setOnKeyEvent([&](std::uint32_t key, std::uint32_t modifiers) {
+        return key == XKB_KEY_colon
+            && !(modifiers & (KeyMod::Ctrl | KeyMod::Alt | KeyMod::Super))
+            && chat.completeTrademark();
+      });
+      chat.setValue("Cressida:tm");
+      chat.inputArea()->dispatchKey(XKB_KEY_colon, ':', KeyMod::Shift, true);
+      const std::string expected = "Cressida\u2122\uFE0E";
+      require(chat.value() == expected, "Typing the closing colon converts a trademark directly after a word");
+      require(chat.textInputState().cursor == expected.size(), "Trademark conversion retains the native caret");
+      require(chat.edit(Input::EditCommand::Undo) && chat.value() == "Cressida:tm", "Trademark conversion is undoable");
+      require(
+          chat.edit(Input::EditCommand::Redo) && chat.value() == expected, "Redo restores the text-style trademark"
+      );
+      Clipboard copied;
+      Input::setTextClipboard(&copied);
+      chat.selectAll();
+      require(chat.edit(Input::EditCommand::Copy) && copied.text == expected, "Copy retains the converted trademark");
+      Input::setTextClipboard(nullptr);
+      std::string sent;
+      chat.setMultiline(true);
+      chat.setSubmitOnEnter(true);
+      chat.clearSelection();
+      chat.setOnSubmit([&](const std::string& text) { sent = text; });
+      chat.inputArea()->dispatchKey(XKB_KEY_Return, 0, 0, true);
+      require(sent == expected, "Submitting uses the same converted text as the draft");
+      chat.setValue("prefix  suffix");
+      chat.applyEdit(chat.value(), 7, 7);
+      chat.textInputApplyEdit({.commitText = ":tm:", .hasCommitText = true});
+      require(chat.value() == "prefix \u2122\uFE0E suffix", "Committed shortcodes retain surrounding text");
+      for (const std::string literal :
+           {"`word:tm", "```\nword:tm", "~~~\nword:tm", "    word:tm", "\\:tm", "https://example.test/:tm", "<:tm"}) {
+        chat.setValue(literal);
+        chat.inputArea()->dispatchKey(XKB_KEY_colon, ':', 0, true);
+        require(chat.value() == literal + ':', "Code, escaped text, URLs and custom emoji tokens stay literal");
+      }
+      chat.setValue("word:tm");
+      chat.textInputApplyEdit({.preeditText = ":", .hasPreedit = true});
+      require(chat.hasPreedit() && chat.value() == "word:tm", "Preedit never converts a trademark");
+      chat.textInputResetPreedit();
+    }
     for (const float scale : {1.0F, 1.25F, 2.0F}) {
       app::theme::select("dark");
       MetricsRenderer renderer("sans-serif", scale);

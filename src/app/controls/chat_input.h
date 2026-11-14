@@ -30,5 +30,7 @@ namespace app {
   class ChatInput : public Input {
   public:
     ChatInput();
+    bool completeTrademark(std::string_view inserted = ":");
+    void textInputApplyEdit(const TextInputEdit& edit) override;
   };
 } // namespace app

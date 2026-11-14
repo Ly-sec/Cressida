@@ -647,6 +647,9 @@ namespace app {
           m_slashAutocompleteNonce.clear();
         });
       field->setOnKeyEvent([this, id](std::uint32_t key, std::uint32_t modifiers) {
+        if (key == XKB_KEY_colon && !(modifiers & (KeyMod::Ctrl | KeyMod::Alt | KeyMod::Super)))
+          if (auto* chat = dynamic_cast<ChatInput*>(m_inputs.at(id)); chat && chat->completeTrademark())
+            return true;
         if (((modifiers & KeyMod::Ctrl) && (key == XKB_KEY_v || key == XKB_KEY_V))
             || ((modifiers & KeyMod::Shift) && key == XKB_KEY_Insert)) {
           beginInputPaste(id, id == "composer" && !(modifiers & KeyMod::Shift), false, modifiers & KeyMod::Shift);

@@ -365,6 +365,11 @@ like the emoji picker.
 Choosing a suggestion inserts it without sending the message. Mentions display
 readable names and emoji display their images while you compose.
 
+Typing `:tm:` converts it to the text-style trademark symbol, including directly
+after a word: `Cressida:tm:` becomes Cressida™. This also works in message
+edits, forward comments and forum bodies. Code, links and escaped `\:tm:` stay
+literal.
+
 ### Emoji and sticker details
 
 Hover over an emoji or sticker in a message to see its name and a larger

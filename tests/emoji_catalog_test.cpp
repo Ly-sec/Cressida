@@ -22,6 +22,7 @@ int main(int argc, char** argv) {
             && catalog.isUnicode("1️⃣")
             && !catalog.isUnicode("1")
             && !catalog.isUnicode("hello")
+            && !catalog.isUnicode("\u2122\uFE0E")
             && !catalog.isUnicode("❤︎"),
         "Recognize complete Unicode graphemes and preserve explicit text presentation"
     );

@@ -46,7 +46,7 @@
 }:
 stdenv.mkDerivation {
   pname = "cressida";
-  version = lib.fileContents ../VERSION;
+  version = lib.removePrefix "v" (lib.fileContents ../VERSION);
 
   src = lib.cleanSourceWith {
     src = ../.;
@@ -56,9 +56,6 @@ stdenv.mkDerivation {
       && !(type == "directory" && lib.hasPrefix "build" (builtins.baseNameOf path))
       && !(builtins.elem (builtins.baseNameOf path) [
         ".direnv"
-        ".agents"
-        ".aws"
-        ".codex"
         "ci-logs"
         "dist"
       ]);

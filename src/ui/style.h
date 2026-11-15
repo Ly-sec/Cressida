@@ -16,6 +16,7 @@ namespace Style {
 
   inline constexpr float borderWidth = 1.0F;
   inline constexpr float emphasizedBorderWidth = 3.0F;
+  inline constexpr float codeBorderWidth = 2.0F;
   inline constexpr float focusRingWidth = 2.0F;
   inline constexpr float disabledOutlineAlpha = 0.5F;
   inline constexpr float textHighlightAlpha = 0.3F;

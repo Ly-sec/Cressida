@@ -538,11 +538,9 @@ namespace app {
         else if (!box.link.empty())
           rectangle(out, box.x, box.y, box.width, box.height, box.spoiler ? raised : panel, Style::controlRadius);
         else if (box.inlineCode) {
-          rectangle(out, box.x, box.y, box.width, box.height, withAlpha(muted, .2F), Style::radiusSm);
-          rectangle(
-              out, box.x + Style::borderWidth, box.y + Style::borderWidth, box.width - Style::spaceXxs,
-              box.height - Style::spaceXxs, panel, Style::radiusXs
-          );
+          rectangle(out, box.x, box.y, box.width, box.height, panel, Style::radiusSm, raised, Style::codeBorderWidth);
+        } else if (box.codeBlock) {
+          rectangle(out, box.x, box.y, box.width, box.height, panel, Style::radiusMd, raised, Style::codeBorderWidth);
         } else {
           rectangle(
               out, box.x, box.y, box.width, box.height,

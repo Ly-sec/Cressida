@@ -783,7 +783,10 @@ namespace app {
     void prepareGuildTagDemo();
     void demoGuildTagStep();
     void send();
-    void rectangle(Node& parent, float x, float y, float w, float h, Color fill, float radius = 0);
+    void rectangle(
+        Node& parent, float x, float y, float w, float h, Color fill, float radius = 0, Color border = {},
+        float borderWidth = 0.0F
+    );
     void floatingPanel(Node& parent, const layout::Frame& frame, Color fill);
     float countBadge(
         Node& parent, float right, float y, int count, bool rail = false, std::string_view noun = "unread mention"

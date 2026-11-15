@@ -57,6 +57,7 @@ namespace app {
     bool inlineCode = false;
     bool embedAccent = true, divider = false, disabled = false, spoiler = false;
     std::string link;
+    bool codeBlock = false;
   };
   struct MessagePicture {
     api::Media media;

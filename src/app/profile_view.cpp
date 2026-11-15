@@ -237,10 +237,10 @@ namespace app {
       body->addChild(std::move(bioClip));
       for (const auto& box : bio.boxes) {
         if (box.inlineCode) {
-          rectangle(*text, box.x, box.y, box.width, box.height, withAlpha(muted, .2F), Style::radiusSm);
+          rectangle(*text, box.x, box.y, box.width, box.height, panel, Style::radiusSm, raised, Style::codeBorderWidth);
+        } else if (box.codeBlock) {
           rectangle(
-              *text, box.x + Style::borderWidth, box.y + Style::borderWidth, box.width - Style::spaceXxs,
-              box.height - Style::spaceXxs, panel, Style::radiusXs
+              *text, box.x, box.y, box.width, box.height, panel, Style::controlRadius, raised, Style::codeBorderWidth
           );
         } else
           rectangle(

@@ -1002,6 +1002,7 @@ namespace app {
         l.y += Style::spaceSm;
         l.codeBox = l.output.boxes.size();
         l.output.boxes.push_back({l.indent, l.y, l.width - l.indent, 0, false, {}});
+        l.output.boxes[l.codeBox].codeBlock = true;
         l.indent += 10;
         l.x = l.indent;
         l.y += 10;

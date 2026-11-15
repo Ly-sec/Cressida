@@ -2899,14 +2899,14 @@ namespace app {
                   if (box.inlineCode) {
                     rectangle(
                         *messageContent, 50 + box.x, bodyY + box.y + continuationTextOffset, box.width, box.height,
-                        panel, Style::radiusSm, raised, Style::borderWidth
+                        panel, Style::radiusSm, raised, Style::codeBorderWidth
                     );
                     continue;
                   }
                   if (box.codeBlock) {
                     rectangle(
                         *messageContent, 50 + box.x, bodyY + box.y, box.width, box.height, panel, Style::radiusMd,
-                        raised, Style::borderWidth
+                        raised, Style::codeBorderWidth
                     );
                   } else {
                     rectangle(

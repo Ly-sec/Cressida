@@ -308,7 +308,7 @@ namespace app {
         if (box.inlineCode || box.codeBlock) {
           rectangle(
               *body, P::inset + box.x, bioY + box.y, box.width, box.height, theme::panel, Style::radiusSm,
-              theme::raised, Style::borderWidth
+              theme::raised, Style::codeBorderWidth
           );
         } else {
           rectangle(

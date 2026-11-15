@@ -16,10 +16,13 @@ namespace app {
   namespace {
     class SyntheticMessageCapture final : public voice::MessageCapture {
     public:
-      bool open(const std::string&, int, int, std::string&) override { return true; }
+      bool open(const std::string& device, int, int, std::string&) override {
+        m_empty = device == "synthetic-empty";
+        return true;
+      }
       int read(std::span<float> output, int wakeFd, int timeout, std::string&) override {
         constexpr std::size_t durationSamples = voice::messageSampleRate;
-        const auto count = std::min(output.size(), durationSamples - m_samples);
+        const auto count = m_empty ? 0 : std::min(output.size(), durationSamples - m_samples);
         for (std::size_t i = 0; i < count; ++i)
           output[i] = std::sin(static_cast<float>(m_samples + i) * .1F) * .25F;
         m_samples += count;
@@ -32,6 +35,7 @@ namespace app {
 
     private:
       std::size_t m_samples = 0;
+      bool m_empty = false;
     };
   } // namespace
   voice::MessageRecorder::CaptureFactory ClientApplication::demoVoiceMessageCapture() {
@@ -69,6 +73,28 @@ namespace app {
                 .owner = "other-owner"}
            }}
       );
+    };
+    const auto awaitRecording = [&] {
+      const auto state = m_voiceMessageRecorder.state();
+      require(state.error.empty(), "Synthetic capture starts successfully");
+      if (state.durationSeconds < .1) {
+        m_window.invalidate();
+        return false;
+      }
+      require(state.phase == voice::MessageRecorderPhase::Recording, "Send is tested during active capture");
+      return true;
+    };
+    const auto awaitDraft = [&] {
+      require(m_voiceMessageRecorder.state().error.empty(), "Interrupted capture finalizes successfully");
+      if (!m_voiceMessageDraft) {
+        m_window.invalidate();
+        return false;
+      }
+      require(
+          !m_voiceMessageSendRequested && m_pendingSends.empty(),
+          "Interrupted Send retains a stopped take without queuing delivery"
+      );
+      return true;
     };
     const auto step = m_demoInteractionStep;
     if (step == 0) {
@@ -333,6 +359,113 @@ namespace app {
           m_voiceMessageChannel.empty() && m_replies.contains(m_channelId),
           "Escape discards the inline recorder before cancelling a preserved reply"
       );
+      openVoiceMessage();
+    } else if (step == 19) {
+      if (!awaitRecording())
+        return;
+      click("voice-message:send");
+      click("voice-message:send");
+      require(
+          m_voiceMessageSendRequested && !m_voiceMessageDraft && m_pendingSends.empty(),
+          "Repeated native Send clicks stop capture and wait for one finished take"
+      );
+    } else if (step == 20) {
+      require(m_voiceMessageRecorder.state().error.empty(), "Send finalizes the synthetic recording");
+      if (m_pendingSends.empty()) {
+        m_window.invalidate();
+        return;
+      }
+      require(
+          m_pendingSends.size() == 1 && m_voiceMessageChannel.empty() && !m_voiceMessageSendRequested,
+          "Send during capture queues exactly once after finalization"
+      );
+      const auto nonce = m_pendingSends.begin()->first;
+      const auto& pending = m_pendingSends.begin()->second;
+      require(
+          pending.voice && api::validUploads({*pending.voice}) && pending.voice->voice->duration > 0,
+          "Chained Send queues a complete typed recording"
+      );
+      require(
+          m_drafts[m_channelId] == "Keep this text draft" && m_replies.contains(m_channelId),
+          "Chained Send preserves unrelated composer content"
+      );
+      api::Event failure{.operation = api::Operation::Send, .resource = m_channelId, .error = "Synthetic send failure"};
+      failure.nonce = nonce;
+      outgoingResult(failure);
+      restoreOutgoing(nonce);
+      clearVoiceMessage();
+      openVoiceMessage();
+    } else if (step == 21) {
+      if (!awaitRecording())
+        return;
+      click("voice-message:send");
+      windowFocusChanged(false);
+      windowFocusChanged(true);
+      require(!m_voiceMessageSendRequested, "Focus loss cancels Send even if focus returns before the next tick");
+    } else if (step == 22) {
+      if (!awaitDraft())
+        return;
+      clearVoiceMessage();
+      openVoiceMessage();
+    } else if (step == 23) {
+      if (!awaitRecording())
+        return;
+      click("voice-message:send");
+      access(false);
+      revokeUnavailableOutgoing();
+      access(true);
+      require(!m_voiceMessageSendRequested, "Access loss cancels Send even if permission returns before finalization");
+    } else if (step == 24) {
+      if (!awaitDraft())
+        return;
+      clearVoiceMessage();
+      openVoiceMessage();
+    } else if (step == 25) {
+      if (!awaitRecording())
+        return;
+      click("voice-message:send");
+      click("voice-message:discard");
+      require(
+          !m_voiceMessageSendRequested && m_voiceMessageChannel.empty() && m_pendingSends.empty(),
+          "Discard cancels a Send waiting for finalization"
+      );
+      openVoiceMessage();
+    } else if (step == 26) {
+      if (!awaitRecording())
+        return;
+      click("voice-message:send");
+      onKey({XKB_KEY_Escape});
+      require(!m_voiceMessageSendRequested && m_voiceMessageChannel.empty(), "Escape cancels a pending Send");
+      openVoiceMessage(false);
+      m_voiceMessageRecorder.start("synthetic-empty");
+    } else if (step == 27) {
+      click("voice-message:send");
+      require(m_voiceMessageSendRequested, "Send can stop a capture before it receives audio");
+    } else if (step == 28) {
+      if (m_voiceMessageRecorder.state().phase != voice::MessageRecorderPhase::Error) {
+        m_window.invalidate();
+        return;
+      }
+      require(
+          !m_voiceMessageSendRequested && !m_voiceMessageDraft && m_pendingSends.empty(),
+          "A finalization error cancels Send without uploading an empty recording"
+      );
+      clearVoiceMessage();
+      openVoiceMessage();
+    } else if (step == 29) {
+      if (!awaitRecording())
+        return;
+      click("voice-message:send");
+      m_voiceMessageChannel = "other-channel";
+      voiceMessageTick();
+      require(!m_voiceMessageSendRequested && m_voiceMessageChannel.empty(), "A changed channel cancels pending Send");
+      openVoiceMessage(false);
+    } else if (step == 30) {
+      require(
+          !m_voiceMessageSendRequested && !m_voiceMessageDraft && m_pendingSends.empty(),
+          "A cancelled worker result cannot populate or send a new recorder"
+      );
+      clearVoiceMessage();
       m_window.close();
     }
     ++m_demoInteractionStep;

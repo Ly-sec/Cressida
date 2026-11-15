@@ -555,6 +555,8 @@ namespace app {
     bool canCreatePoll() const;
     bool canRecordVoiceMessage() const;
     void openVoiceMessage(bool record = true);
+    void stopVoiceMessageRecording();
+    void sendVoiceMessage();
     void drawVoiceMessageRecorder(Node& root, layout::Frame frame);
     float voiceMessageRecorderHeight(float width);
     void drawVoiceMessageVolume(Node& root, float width, float height);
@@ -563,7 +565,7 @@ namespace app {
     void voiceMessageTick();
     void demoVoiceMessageStep();
     static voice::MessageRecorder::CaptureFactory demoVoiceMessageCapture();
-    static constexpr int voiceMessageReplaySteps = 19;
+    static constexpr int voiceMessageReplaySteps = 31;
     void clearVoiceMessage();
     void stopVoiceMessagePlayback();
     std::string m_voiceMessageChannel, m_voiceMessagePlaying, m_voiceMessageError;
@@ -571,6 +573,7 @@ namespace app {
     media::VideoPlayer m_voiceMessagePlayer;
     voice::MessageRecorder m_voiceMessageRecorder;
     std::uint64_t m_voiceMessageRecorderRevision = 0;
+    bool m_voiceMessageSendRequested = false;
     bool m_voiceMessagePlayRequested = false;
     bool m_voiceMessageVolumeOpen = false;
     layout::Frame m_voiceMessageVolumeAnchor, m_voiceMessageVolumeBounds;

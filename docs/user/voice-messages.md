@@ -8,10 +8,12 @@ description:
 
 Click the **microphone** icon before the GIF, sticker and emoji icons on the
 right side of the chat bar. Recording starts inline in the composer, with an
-elapsed time, trash, stop and send controls. Click **Stop recording** when you
-are finished, then **Send recording** to post it, or **Discard recording** to
-delete the local take. Stopping never sends it. The recorder uses the normal
-single-line chat-bar height. There is no recording dialog or separate preview.
+elapsed time, trash, stop and send controls. Click **Send recording** to stop
+recording and post the finished take. You can also click **Stop recording**
+first, then **Send recording** to post it, or **Discard recording** to delete
+the local take. Stop alone never sends it. If finishing fails, nothing is sent.
+The recorder uses the normal single-line chat-bar height. There is no recording
+dialog or separate preview.
 
 Recordings use your saved input device and input volume from
 [Voice & Video](voice.md#choose-devices-and-volume). They capture the microphone
@@ -19,9 +21,10 @@ only, not call audio or desktop sound. Call mute, voice activity detection and
 push-to-talk do not control this separate, explicitly started recorder.
 
 Recording stops if the window loses focus, is hidden, or channel access changes.
-Sending still requires an explicit click. Discarding the recorder, changing
-conversations, opening settings or signing out discards the local take.
-Recordings are not saved to disk or restored after restarting.
+These interruptions cancel a Send click that is still waiting for the recording
+to finish. Sending the retained take requires another explicit click. Discarding
+the recorder, changing conversations, opening settings or signing out discards
+the local take. Recordings are not saved to disk or restored after restarting.
 
 Each message contains one Ogg Opus recording, up to 20 minutes and 20 MiB. Text,
 images, stickers and reply selections already in your composer stay unchanged.

@@ -278,6 +278,8 @@ namespace app {
     m_sending = false;
   }
   void ClientApplication::revokeUnavailableOutgoing() {
+    if (m_voiceMessageSendRequested && !canRecordVoiceMessage())
+      stopVoiceMessageRecording();
     for (auto& [_, pending] : m_pendingSends) {
       if (pending.completed || !pending.revoked || pending.revoked->load())
         continue;

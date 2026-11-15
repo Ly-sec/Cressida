@@ -210,9 +210,7 @@ namespace app {
       closeEmojiPicker();
     if (!focused) {
       stopVoiceMessagePlayback();
-      if (m_voiceMessageRecorder.state().phase == voice::MessageRecorderPhase::Recording
-          || m_voiceMessageRecorder.state().phase == voice::MessageRecorderPhase::Loading)
-        m_voiceMessageRecorder.stop();
+      stopVoiceMessageRecording();
       m_reactorHoverTimer.stop();
       m_hoverReactionKey.clear();
       m_reactionTooltip.reset();

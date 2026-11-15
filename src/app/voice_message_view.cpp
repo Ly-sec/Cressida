@@ -38,6 +38,7 @@ namespace app {
 
   void ClientApplication::clearVoiceMessage() {
     ++m_voiceMessageGeneration;
+    m_voiceMessageSendRequested = false;
     m_voiceMessageRecorder.cancel();
     m_voiceMessageDraft.reset();
     m_voiceMessageChannel.clear();
@@ -62,6 +63,36 @@ namespace app {
     if (record)
       m_voiceMessageRecorder.start(m_preferences.voice.inputDevice, m_preferences.voice.inputVolume);
     m_window.invalidate();
+  }
+
+  void ClientApplication::stopVoiceMessageRecording() {
+    m_voiceMessageSendRequested = false;
+    m_voiceMessageRecorder.stop();
+  }
+
+  void ClientApplication::sendVoiceMessage() {
+    if (m_voiceMessageChannel.empty() || m_voiceMessageChannel != m_channelId || !canRecordVoiceMessage()) {
+      m_voiceMessageSendRequested = false;
+      m_voiceMessageError = "You can no longer send this recording here.";
+      return;
+    }
+    if (!m_voiceMessageDraft) {
+      const auto state = m_voiceMessageRecorder.state();
+      if (state.phase == voice::MessageRecorderPhase::Loading
+          || state.phase == voice::MessageRecorderPhase::Recording
+          || state.phase == voice::MessageRecorderPhase::Ready) {
+        m_voiceMessageSendRequested = true;
+        m_voiceMessageError.clear();
+        m_voiceMessageRecorder.stop();
+      }
+      return;
+    }
+    m_voiceMessageSendRequested = false;
+    if (queueOutgoing("", {*m_voiceMessageDraft}, {}, {}, false)) {
+      clearVoiceMessage();
+      focusChatComposer();
+    } else
+      m_voiceMessageError = m_status.empty() ? "Could not queue this recording. It is retained." : m_status;
   }
 
   void ClientApplication::voiceMessageAction(const Hit& hit) {
@@ -322,8 +353,9 @@ namespace app {
           action();
       };
     };
-    const auto status = state.phase == voice::MessageRecorderPhase::Loading ? "Preparing microphone..."
-        : busy                ? "Recording " + recordingTime(state.durationSeconds)
+    const auto status = m_voiceMessageSendRequested           ? "Finishing recording..."
+        : state.phase == voice::MessageRecorderPhase::Loading ? "Preparing microphone..."
+        : busy                                                ? "Recording " + recordingTime(state.durationSeconds)
         : m_voiceMessageDraft ? recordingTime(m_voiceMessageDraft->voice->duration) + " ready to send"
                               : "Recording stopped";
     const auto metrics = m_window.target().renderer().measureText(status, Style::fontSizeDescription);
@@ -344,30 +376,20 @@ namespace app {
     pollButton(
         root, "voice-message:record", frames.record, "", scoped([this, busy] {
           if (busy)
-            m_voiceMessageRecorder.stop();
+            stopVoiceMessageRecording();
           else if (!m_voiceMessageDraft && canRecordVoiceMessage()) {
             m_voiceMessageError.clear();
             m_voiceMessageRecorder.start(m_preferences.voice.inputDevice, m_preferences.voice.inputVolume);
           }
         }),
-        busy || (!m_voiceMessageDraft && canRecordVoiceMessage())
+        !m_voiceMessageSendRequested && (busy || (!m_voiceMessageDraft && canRecordVoiceMessage()))
     );
     auto* record = static_cast<Button*>(m_widgets.at("voice-message:record"));
     record->setGlyph(busy ? "player-stop-filled" : "microphone");
     record->setTooltip(busy ? "Stop recording" : "Record again");
     pollButton(
-        root, "voice-message:send", frames.send, "", scoped([this] {
-          if (!m_voiceMessageDraft || !canRecordVoiceMessage()) {
-            m_voiceMessageError = "You can no longer send this recording here.";
-            return;
-          }
-          if (queueOutgoing("", {*m_voiceMessageDraft}, {}, {}, false)) {
-            clearVoiceMessage();
-            focusChatComposer();
-          } else
-            m_voiceMessageError = m_status.empty() ? "Could not queue this recording. It is retained." : m_status;
-        }),
-        m_voiceMessageDraft.has_value() && !busy && canRecordVoiceMessage(), true
+        root, "voice-message:send", frames.send, "", scoped([this] { sendVoiceMessage(); }),
+        (m_voiceMessageDraft.has_value() || busy) && !m_voiceMessageSendRequested && canRecordVoiceMessage(), true
     );
     auto* send = static_cast<Button*>(m_widgets.at("voice-message:send"));
     send->setGlyph("send");
@@ -383,6 +405,16 @@ namespace app {
 
   void ClientApplication::voiceMessageTick() {
     const auto state = m_voiceMessageRecorder.drain();
+    if (!m_voiceMessageChannel.empty() && (m_voiceMessageChannel != m_channelId || !m_connected || settingsVisible()))
+      clearVoiceMessage();
+    if ((!m_demo && (!m_window.active() || !m_window.visible())) || !canRecordVoiceMessage()) {
+      m_voiceMessageSendRequested = false;
+      if (state.phase == voice::MessageRecorderPhase::Recording
+          || state.phase == voice::MessageRecorderPhase::Loading) {
+        stopVoiceMessageRecording();
+        m_voiceMessageError = "Recording stopped because focus or channel access changed.";
+      }
+    }
     if (state.revision != m_voiceMessageRecorderRevision) {
       m_voiceMessageRecorderRevision = state.revision;
       if (state.phase == voice::MessageRecorderPhase::Ready
@@ -396,15 +428,12 @@ namespace app {
         };
         m_voiceMessageRecorder.cancel();
       }
+      if (state.phase == voice::MessageRecorderPhase::Error || state.phase == voice::MessageRecorderPhase::Idle)
+        m_voiceMessageSendRequested = false;
       m_window.invalidate();
     }
-    if (!m_voiceMessageChannel.empty() && (m_voiceMessageChannel != m_channelId || !m_connected || settingsVisible()))
-      clearVoiceMessage();
-    if ((state.phase == voice::MessageRecorderPhase::Recording || state.phase == voice::MessageRecorderPhase::Loading)
-        && ((!m_demo && (!m_window.active() || !m_window.visible())) || !canRecordVoiceMessage())) {
-      m_voiceMessageRecorder.stop();
-      m_voiceMessageError = "Recording stopped because focus or channel access changed.";
-    }
+    if (m_voiceMessageSendRequested && m_voiceMessageDraft)
+      sendVoiceMessage();
     if (m_voiceMessagePlayer.drain()) {
       if (!m_voiceMessagePlayer.state().error.empty())
         m_status = "Voice message playback failed: " + m_voiceMessagePlayer.state().error;

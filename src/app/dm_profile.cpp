@@ -304,11 +304,19 @@ namespace app {
           FontWeight::SemiBold
       );
       const float bioY = biographyY + P::metaHeight + P::gap;
-      for (const auto& box : bio.boxes)
-        rectangle(
-            *body, P::inset + box.x, bioY + box.y, box.width, box.height, box.quote ? theme::muted : theme::panel,
-            box.quote ? 0 : Style::radiusSm
-        );
+      for (const auto& box : bio.boxes) {
+        if (box.inlineCode || box.codeBlock) {
+          rectangle(
+              *body, P::inset + box.x, bioY + box.y, box.width, box.height, theme::panel, Style::radiusSm,
+              theme::raised, Style::borderWidth
+          );
+        } else {
+          rectangle(
+              *body, P::inset + box.x, bioY + box.y, box.width, box.height, box.quote ? theme::muted : theme::panel,
+              box.quote ? 0 : Style::radiusSm
+          );
+        }
+      }
       for (const auto& area : messageSpoilerAreas(bio))
         rectangle(*body, P::inset + area.x, bioY + area.y, area.width, area.height, theme::raised, Style::radiusSm);
       const auto links = messageLinkAreas(bio);

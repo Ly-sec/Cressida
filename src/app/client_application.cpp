@@ -916,11 +916,15 @@ namespace app {
     return 0;
   }
 
-  void ClientApplication::rectangle(Node& parent, float x, float y, float w, float h, Color fill, float radius) {
+  void ClientApplication::rectangle(
+      Node& parent, float x, float y, float w, float h, Color fill, float radius, Color border, float borderWidth
+  ) {
     auto node = std::make_unique<RectNode>();
     node->setPosition(x, y);
     node->setSize(std::max(w, 0.0F), std::max(h, 0.0F));
-    node->setStyle(RoundedRectStyle{.fill = fill, .radius = Style::scaledShapeRadius(radius, w, h)});
+    node->setStyle(
+        {.fill = fill, .border = border, .radius = Style::scaledShapeRadius(radius, w, h), .borderWidth = borderWidth}
+    );
     parent.addChild(std::move(node));
   }
 
@@ -2895,21 +2899,24 @@ namespace app {
                   if (box.inlineCode) {
                     rectangle(
                         *messageContent, 50 + box.x, bodyY + box.y + continuationTextOffset, box.width, box.height,
-                        withAlpha(muted, .2F), Style::radiusSm
-                    );
-                    rectangle(
-                        *messageContent, 51 + box.x, bodyY + box.y + continuationTextOffset + Style::borderWidth,
-                        box.width - Style::spaceXxs, box.height - Style::spaceXxs, panel, Style::radiusXs
+                        panel, Style::radiusSm, raised, Style::borderWidth
                     );
                     continue;
                   }
-                  rectangle(
-                      *messageContent, 50 + box.x, bodyY + box.y, box.width, box.height,
-                      box.quote       ? muted
-                          : box.embed ? sidebar
-                                      : panel,
-                      box.quote ? 0 : Style::radiusMd
-                  );
+                  if (box.codeBlock) {
+                    rectangle(
+                        *messageContent, 50 + box.x, bodyY + box.y, box.width, box.height, panel, Style::radiusMd,
+                        raised, Style::borderWidth
+                    );
+                  } else {
+                    rectangle(
+                        *messageContent, 50 + box.x, bodyY + box.y, box.width, box.height,
+                        box.quote       ? muted
+                            : box.embed ? sidebar
+                                        : panel,
+                        box.quote ? 0 : Style::radiusMd
+                    );
+                  }
                   if (box.embed && box.embedAccent)
                     rectangle(*messageContent, 50 + box.x, bodyY + box.y, 3, box.height, rgbHex(box.color), 1);
                   if (!box.code.empty()) {

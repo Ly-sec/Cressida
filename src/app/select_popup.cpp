@@ -166,8 +166,6 @@ namespace app {
   bool ClientApplication::selectDropdownKey(const Key& key) {
     if (!m_selectRequest)
       return false;
-    if (key.control && (key.symbol == XKB_KEY_q || key.symbol == XKB_KEY_Q))
-      return false;
     if (key.symbol == XKB_KEY_Escape || key.symbol == XKB_KEY_Tab)
       closeSelectDropdown();
     else if (m_selectControl && !m_selectDirty) {

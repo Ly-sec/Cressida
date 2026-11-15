@@ -19,7 +19,6 @@ namespace app {
         {"previous_channel", "Alt+Up"},
         {"next_server", "Ctrl+Alt+Down"},
         {"previous_server", "Ctrl+Alt+Up"},
-        {"quit", "Ctrl+q"},
         {"zoom_in", "Ctrl+equal"},
         {"zoom_out", "Ctrl+minus"},
         {"zoom_reset", "Ctrl+0"}
@@ -194,11 +193,9 @@ namespace app {
       const auto at = m_preferences.keybinds.find(name);
       if (pressed != (at == m_preferences.keybinds.end() ? fallback : at->second))
         continue;
-      if (startupCovered() && name != "quit" && !name.starts_with("zoom_"))
+      if (startupCovered() && !name.starts_with("zoom_"))
         return true;
-      if (name == "quit")
-        m_window.close();
-      else if (name == "settings")
+      if (name == "settings")
         openSettings();
       else if (name.starts_with("zoom_")) {
         m_window.setUiScale(name == "zoom_reset" ? 1 : m_window.uiScale() * (name == "zoom_in" ? 1.1F : 1 / 1.1F));

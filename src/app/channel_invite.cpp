@@ -257,7 +257,7 @@ namespace app {
         } else if (key.symbol == XKB_KEY_Return || key.symbol == XKB_KEY_KP_Enter)
           (void)menu->activateHighlighted();
       }
-      return !key.control || (key.symbol != XKB_KEY_q && key.symbol != XKB_KEY_Q);
+      return true;
     }
     if (key.symbol == XKB_KEY_Escape) {
       closeDialog();

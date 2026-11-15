@@ -5729,10 +5729,6 @@ namespace app {
     if (overlayKey(key))
       return;
     if (!m_viewImage.empty()) {
-      if (key.control && (key.symbol == XKB_KEY_q || key.symbol == XKB_KEY_Q)) {
-        m_window.close();
-        return;
-      }
       if (key.control && (key.symbol == XKB_KEY_c || key.symbol == XKB_KEY_C)) {
         imageViewerAction(Action::CopyImage);
       } else if (key.symbol == XKB_KEY_plus || key.symbol == XKB_KEY_equal || key.symbol == XKB_KEY_KP_Add)

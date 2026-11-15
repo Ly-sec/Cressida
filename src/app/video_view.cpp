@@ -299,8 +299,6 @@ namespace app {
       m_video.seek(m_video.state().position + 5);
     else if (key.symbol == XKB_KEY_m || key.symbol == XKB_KEY_M)
       m_video.mute(!m_video.state().muted);
-    else if (key.control && (key.symbol == XKB_KEY_q || key.symbol == XKB_KEY_Q))
-      m_window.close();
     m_window.invalidate();
     return true;
   }

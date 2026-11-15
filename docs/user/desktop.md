@@ -23,6 +23,9 @@ Closing the window with a tray host available hides it and keeps the connection
 alive. Without a tray host, closing the window exits normally. If the tray host
 disappears while the window is hidden, Cressida restores the window.
 
+To exit with a tray host, choose **Close** from the tray menu. If the interface
+freezes, use your desktop's force-quit action.
+
 A connected [voice call](voice.md) also continues while the window is hidden.
 Voice activity can keep transmitting; mute or disconnect when you want to stop.
 Hiding the window releases push to talk.

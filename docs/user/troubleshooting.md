@@ -189,8 +189,8 @@ and access.
 Log files include debug details even when the terminal only shows informational
 messages, warnings and errors. To also see debug details in the terminal:
 
-1. Quit the running client using **Close** in its tray menu or your Quit
-   shortcut.
+1. Quit the running client using **Close** in its tray menu. If your desktop has
+   no tray host, close the window.
 2. Start it from a terminal:
 
    ```sh

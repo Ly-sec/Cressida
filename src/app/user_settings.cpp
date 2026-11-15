@@ -1713,7 +1713,6 @@ namespace app {
             {"previous_channel", "Previous channel"},
             {"next_server", "Next server"},
             {"previous_server", "Previous server"},
-            {"quit", "Quit Cressida"},
             {"zoom_in", "Zoom in"},
             {"zoom_out", "Zoom out"},
             {"zoom_reset", "Reset zoom"}}) {

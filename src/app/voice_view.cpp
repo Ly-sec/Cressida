@@ -704,8 +704,6 @@ namespace app {
   bool ClientApplication::voiceMenuKey(const Key& key) {
     if (!m_contextOpen || !m_voiceMenuInput)
       return false;
-    if (key.control && (key.symbol == XKB_KEY_q || key.symbol == XKB_KEY_Q))
-      return false;
     if (key.symbol == XKB_KEY_Escape)
       closeContext();
     else if (m_voiceMenuRoot) {

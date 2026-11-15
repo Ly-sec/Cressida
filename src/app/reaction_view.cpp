@@ -514,7 +514,7 @@ namespace app {
   }
 
   bool ClientApplication::reactionBrowserKey(const Key& key) {
-    if (m_dialogKind != "reactions" || (key.control && (key.symbol == XKB_KEY_q || key.symbol == XKB_KEY_Q)))
+    if (m_dialogKind != "reactions")
       return false;
     if (key.symbol == XKB_KEY_Escape)
       closeDialog();

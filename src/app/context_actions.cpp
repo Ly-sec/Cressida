@@ -728,8 +728,6 @@ namespace app {
     if (channelInviteKey(key))
       return true;
     if (m_contextOpen) {
-      if (key.control && (key.symbol == XKB_KEY_q || key.symbol == XKB_KEY_Q))
-        return false;
       if (!m_contextMessage.empty()) {
         if (key.symbol == XKB_KEY_Tab) {
           m_contextQuickIndex = m_contextQuickIndex >= 3 ? -1 : m_contextQuickIndex + 1;
@@ -808,8 +806,6 @@ namespace app {
       return true;
     }
     if (!m_dialogKind.empty()) {
-      if (key.control && (key.symbol == XKB_KEY_q || key.symbol == XKB_KEY_Q))
-        return false;
       if (key.control && key.symbol == XKB_KEY_comma)
         return true;
       if (m_dialogKind == "poll-create" || m_dialogKind == "forward")

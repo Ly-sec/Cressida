@@ -278,7 +278,12 @@ def serve(listener, errors):
         errors.append(error)
 
 
-with socket.socket() as listener:
+def main():
+    with socket.socket() as listener:
+        run(listener)
+
+
+def run(listener):
     listener.bind(("127.0.0.1", 0))
     listener.listen(2)
     listener.settimeout(8)
@@ -297,3 +302,7 @@ with socket.socket() as listener:
     if result.returncode:
         sys.stderr.write(result.stderr)
     sys.exit(result.returncode)
+
+
+if __name__ == "__main__":
+    main()

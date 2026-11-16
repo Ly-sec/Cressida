@@ -83,9 +83,13 @@ namespace api {
       std::stop_token stop;
       const std::atomic<std::uint64_t>& generation;
       std::uint64_t session;
+      const std::atomic<std::uint64_t>& authenticationRevision;
+      std::uint64_t revision;
       const process::WakeEvent& wake;
       std::deque<int> recentOpcodes;
-      bool cancelled() const { return stop.stop_requested() || generation != session; }
+      bool cancelled() const {
+        return stop.stop_requested() || generation != session || authenticationRevision != revision;
+      }
     };
     int progress(void* data, curl_off_t, curl_off_t, curl_off_t, curl_off_t) noexcept {
       return static_cast<Connection*>(data)->cancelled();
@@ -166,6 +170,7 @@ namespace api {
     if (session != m_generation)
       return;
     const bool changed = m_session != session;
+    const bool credentialsChanged = changed || m_token != token;
     if (changed) {
       m_memberRequested.clear();
       m_memberPending.clear();
@@ -183,6 +188,8 @@ namespace api {
     }
     m_session = session;
     m_token = std::move(token);
+    if (credentialsChanged)
+      ++m_authenticationRevision;
     if (changed || m_presenceVersion == 0 || !validStatus(m_presence.status))
       m_presence = std::move(presence);
     ++m_presenceVersion;
@@ -195,6 +202,7 @@ namespace api {
     if (expectedSession && m_session != expectedSession)
       return;
     m_token.clear();
+    ++m_authenticationRevision;
     m_memberRequested.clear();
     m_memberPending.clear();
     m_memberPendingCount = 0;
@@ -411,10 +419,10 @@ namespace api {
     bool handoff = false;
     std::string resumeId, resumeEndpoint;
     std::int64_t sequence = -1;
-    std::uint64_t activeSession = 0;
+    std::uint64_t activeSession = 0, activeAuthenticationRevision = 0;
     while (!stop.stop_requested()) {
       std::string token;
-      std::uint64_t session;
+      std::uint64_t session, authenticationRevision;
       {
         std::unique_lock lock(m_mutex);
         m_ready.wait(lock, stop, [&] { return !m_token.empty() && m_session == m_generation; });
@@ -422,14 +430,17 @@ namespace api {
           return;
         token = m_token;
         session = m_session;
+        authenticationRevision = m_authenticationRevision;
       }
-      if (activeSession != session) {
+      if (activeSession != session || activeAuthenticationRevision != authenticationRevision) {
         activeSession = session;
+        activeAuthenticationRevision = authenticationRevision;
         resumeId.clear();
         resumeEndpoint.clear();
         sequence = -1;
+        handoff = false;
       }
-      Connection connection{stop, m_generation, session, m_wake};
+      Connection connection{stop, m_generation, session, m_authenticationRevision, authenticationRevision, m_wake};
       bool fatal = false;
       bool authenticationFailed = false;
       auto retryCause = gateway_pacing::Failure::Transport;
@@ -716,6 +727,8 @@ namespace api {
           size_t count = 0;
           const curl_ws_frame* frame = nullptr;
           const auto code = curl_ws_recv(curl.get(), buffer, sizeof(buffer), &count, &frame);
+          if (connection.cancelled())
+            break;
           if (code == CURLE_AGAIN) {
             wait(curl.get(), POLLIN, connection, nextControl);
             continue;
@@ -822,6 +835,8 @@ namespace api {
                   std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - connectedAt).count()
               );
               std::lock_guard lock(m_mutex);
+              if (connection.cancelled())
+                continue;
               m_memberRequested.clear();
             }
             if (type == "READY") {
@@ -834,6 +849,8 @@ namespace api {
               }
               {
                 std::lock_guard lock(m_mutex);
+                if (connection.cancelled())
+                  continue;
                 if (!m_presenceChosen && data.contains("sessions") && data["sessions"].is_array())
                   for (const auto& own : data["sessions"])
                     if (own.value("session_id", "") == resumeId) {
@@ -851,7 +868,8 @@ namespace api {
               ready = true;
               readyAt = Clock::now();
             }
-            m_dispatch(session, type, data);
+            if (!connection.cancelled())
+              m_dispatch(session, type, data);
           }
         }
       } catch (const GatewayFailure& error) {
@@ -881,8 +899,10 @@ namespace api {
         );
       if (fatal) {
         std::lock_guard lock(m_mutex);
-        if (m_session == session)
+        if (m_session == session && m_authenticationRevision == authenticationRevision) {
           m_token.clear();
+          ++m_authenticationRevision;
+        }
         continue;
       }
       // A short READY followed by another close must not reset failure pacing.

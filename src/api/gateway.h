@@ -56,6 +56,7 @@ namespace api {
     std::condition_variable_any m_ready;
     process::WakeEvent m_wake;
     std::uint64_t m_session = 0, m_subscriptionVersion = 0;
+    std::atomic<std::uint64_t> m_authenticationRevision{0};
     std::string m_token, m_guild, m_channel;
     Presence m_presence;
     bool m_presenceChosen = false, m_presenceRestored = false;

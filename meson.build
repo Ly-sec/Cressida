@@ -384,6 +384,8 @@ chat_links_test = executable('chat_links_test', 'tests/chat_links_test.cpp', dep
 test('chat_links', chat_links_test)
 gateway_test = executable('gateway_test', 'tests/gateway_test.cpp', dependencies: backend_dep)
 test('gateway', find_program('python3'), args: [files('tests/gateway_fixture.py'), gateway_test], timeout: 15)
+gateway_authentication_test = executable('gateway_authentication_test', 'tests/gateway_authentication_test.cpp', dependencies: backend_dep)
+test('gateway_authentication', python, args: [files('tests/gateway_authentication_fixture.py'), gateway_authentication_test], timeout: 60)
 rpc_gateway_test = executable('rpc_gateway_test', 'tests/rpc_gateway_test.cpp', dependencies: backend_dep)
 test('rpc_gateway', find_program('python3'), args: [files('tests/rpc_gateway_fixture.py'), rpc_gateway_test], timeout: 20)
 session_test = executable('session_store_test', 'tests/session_store_test.cpp', 'src/app/session_store.cpp', dependencies: backend_dep)

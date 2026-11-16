@@ -1,6 +1,7 @@
 #include "app/client_application.h"
 #include "app/theme.h"
 #include "render/core/texture_manager.h"
+#include "ui/controls/input.h"
 
 #include <algorithm>
 #include <array>

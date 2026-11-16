@@ -4,6 +4,7 @@
 #include "app/theme.h"
 #include "core/input/key_modifiers.h"
 #include "render/scene/rect_node.h"
+#include "ui/controls/input.h"
 #include "ui/controls/toggle.h"
 
 #include <algorithm>

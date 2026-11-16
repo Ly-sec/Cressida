@@ -1,16 +1,19 @@
 #include "api/client.h"
 
 #include "api/command_uploads.h"
+#include "api/gateway.h"
 #include "api/network_profile.h"
 #include "api/request_diagnostics.h"
 #include "api/rest_schedule.h"
 #include "api/rest_transfer.h"
 #include "api/rest_transport_cache.h"
 #include "api/server_organization.h"
+#include "api/stream_manager.h"
 #include "api/thread_member_list.h"
 #include "api/uploads.h"
 #include "core/browser_identity.h"
 #include "core/log.h"
+#include "voice/connection.h"
 
 #include <algorithm>
 #include <chrono>

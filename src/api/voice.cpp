@@ -1,4 +1,7 @@
 #include "api/client.h"
+#include "api/gateway.h"
+#include "api/stream_manager.h"
+#include "voice/connection.h"
 
 #include <algorithm>
 

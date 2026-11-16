@@ -2,6 +2,7 @@
 #include "app/controls/chat_input.h"
 #include "app/message_preferences.h"
 #include "app/theme.h"
+#include "ui/controls/input.h"
 
 #include <algorithm>
 #include <cmath>

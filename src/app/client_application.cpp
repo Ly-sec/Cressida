@@ -1,5 +1,6 @@
 #include "app/client_application.h"
 
+#include "api/stream_manager.h"
 #include "api/uploads.h"
 #include "app/automod_message.h"
 #include "app/composer_format.h"
@@ -22,6 +23,7 @@
 #include "core/files/resource_paths.h"
 #include "core/input/key_modifiers.h"
 #include "core/input/key_symbols.h"
+#include "core/text_clipboard.h"
 #include "core/timer_manager.h"
 #include "render/core/texture_manager.h"
 #include "render/gl_shared_context.h"
@@ -30,9 +32,11 @@
 #include "render/scene/rect_node.h"
 #include "render/scene/text_node.h"
 #include "ui/controls/button.h"
+#include "ui/controls/input.h"
 #include "ui/controls/label.h"
 #include "ui/controls/scrollbar.h"
 #include "ui/palette.h"
+#include "voice/stream_audio.h"
 
 #include <algorithm>
 #include <cctype>

@@ -2,6 +2,7 @@
 #include "app/theme.h"
 #include "cursor-shape-v1-client-protocol.h"
 #include "render/core/texture_manager.h"
+#include "ui/controls/input.h"
 #include "ui/controls/select.h"
 #include "ui/controls/slider.h"
 #include "ui/controls/toggle.h"

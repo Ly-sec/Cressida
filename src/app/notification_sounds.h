@@ -1,6 +1,6 @@
 #pragma once
 
-#include "voice/connection.h"
+#include "voice/state.h"
 
 #include <array>
 #include <memory>

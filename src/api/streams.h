@@ -1,6 +1,6 @@
 #pragma once
 
-#include "voice/connection.h"
+#include "voice/state.h"
 
 #include <chrono>
 #include <cstdint>
@@ -10,6 +10,10 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+namespace voice {
+  struct ShareSettings;
+}
 
 namespace api {
   inline constexpr std::size_t maximumStreams = 50;

@@ -1,9 +1,9 @@
 #pragma once
 
 #include "api/stream_previews.h"
-#include "api/streams.h"
+#include "api/stream_state.h"
 #include "api/voice_roster.h"
-#include "voice/stream_audio.h"
+#include "voice/audio.h"
 
 #include <functional>
 
@@ -11,19 +11,6 @@ namespace api {
   struct StreamParent {
     std::uint64_t generation = 0;
     std::string guild, channel, self, session;
-  };
-  struct StreamView {
-    StreamRecord stream;
-    voice::State connection;
-    bool publishing = false, paused = false;
-    std::shared_ptr<voice::VideoPipeline> video;
-    std::shared_ptr<voice::StreamAudio> audio;
-  };
-  struct StreamSnapshot {
-    std::uint64_t revision = 0, generation = 0;
-    std::string channel, error;
-    std::vector<StreamRecord> available;
-    std::vector<StreamView> active;
   };
   class StreamManager {
   public:

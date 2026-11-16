@@ -1,7 +1,9 @@
+#include "api/stream_manager.h"
 #include "app/client_application.h"
 #include "app/stream_popout.h"
 #include "cursor-shape-v1-client-protocol.h"
 #include "render/scene/text_node.h"
+#include "voice/stream_audio.h"
 
 #include <algorithm>
 #include <iostream>

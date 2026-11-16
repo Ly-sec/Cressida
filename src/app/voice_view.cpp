@@ -3,6 +3,7 @@
 #include "app/user_settings_form.h"
 #include "core/input/key_modifiers.h"
 #include "render/scene/input_area.h"
+#include "ui/controls/input.h"
 #include "ui/controls/select.h"
 #include "ui/controls/slider.h"
 

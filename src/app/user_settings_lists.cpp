@@ -2,6 +2,7 @@
 #include "app/client_application.h"
 #include "app/theme.h"
 #include "app/user_settings_form.h"
+#include "ui/controls/input.h"
 
 #include <algorithm>
 #include <cctype>

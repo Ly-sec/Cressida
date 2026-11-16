@@ -1,6 +1,7 @@
 #include "api/streams.h"
 
 #include "voice/protocol.h"
+#include "voice/video_codec.h"
 
 #include <algorithm>
 #include <charconv>

@@ -3,6 +3,7 @@
 #include "app/voice_command.h"
 #include "render/scene/rect_node.h"
 #include "render/scene/text_node.h"
+#include "ui/controls/input.h"
 #include "ui/controls/select.h"
 #include "ui/controls/slider.h"
 

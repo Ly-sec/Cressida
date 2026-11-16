@@ -27,6 +27,7 @@
 #include "render/scene/rect_node.h"
 #include "render/scene/text_node.h"
 #include "ui/controls/button.h"
+#include "ui/controls/input.h"
 #include "ui/controls/label.h"
 #include "ui/controls/scrollbar.h"
 #include "ui/palette.h"

@@ -1,8 +1,11 @@
 #include "api/stream_manager.h"
 
 #include "core/process/wake_event.h"
+#include "voice/connection.h"
 #include "voice/protocol.h"
+#include "voice/stream_audio.h"
 #include "voice/stream_preview.h"
+#include "voice/video_codec.h"
 
 #include <algorithm>
 #include <atomic>

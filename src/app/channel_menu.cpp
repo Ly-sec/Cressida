@@ -1,6 +1,7 @@
 #include "app/client_application.h"
 #include "app/theme.h"
 #include "render/scene/rect_node.h"
+#include "ui/controls/input.h"
 
 #include <algorithm>
 #include <chrono>

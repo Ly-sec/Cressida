@@ -2,6 +2,7 @@
 #include "app/client_application.h"
 #include "app/message_group.h"
 #include "auth/browser_login.h"
+#include "ui/controls/input.h"
 
 #include <algorithm>
 #include <charconv>

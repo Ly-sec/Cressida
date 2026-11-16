@@ -4,6 +4,7 @@
 #include "api/client.h"
 #include "api/member_list_identity.h"
 #include "api/message_search.h"
+#include "api/stream_state.h"
 #include "app/autocomplete.h"
 #include "app/channel_access.h"
 #include "app/channel_invite.h"
@@ -45,7 +46,6 @@
 #include "auth/browser_login.h"
 #include "auth/qr_login.h"
 #include "capture/screen.h"
-#include "core/text_clipboard.h"
 #include "core/timer_manager.h"
 #include "media/video_player.h"
 #include "render/backend/gles_framebuffer.h"
@@ -56,15 +56,19 @@
 #include "render/scene/node.h"
 #include "rpc/server.h"
 #include "ui/controls/context_menu.h"
-#include "ui/controls/input.h"
 #include "ui/controls/select_popup_context.h"
+#include "ui/text_presentation.h"
 #include "updates/updater.h"
 #include "voice/message_recorder.h"
+#include "voice/video_codec.h"
 
 #include <EGL/egl.h>
 #include <chrono>
 #include <map>
 #include <set>
+
+class Input;
+class TextClipboard;
 
 namespace app {
   class SingleInstance;

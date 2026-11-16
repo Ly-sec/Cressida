@@ -1,5 +1,6 @@
 #include "app/client_application.h"
 #include "render/scene/input_area.h"
+#include "ui/controls/input.h"
 
 #include <algorithm>
 #include <iostream>

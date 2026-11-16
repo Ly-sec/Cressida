@@ -8,6 +8,7 @@
 #include "render/scene/rect_node.h"
 #include "ui/controls/button.h"
 #include "ui/controls/collapsible.h"
+#include "ui/controls/input.h"
 #include "ui/controls/label.h"
 #include "ui/controls/scrollbar.h"
 #include "ui/controls/select.h"

@@ -1,3 +1,4 @@
+#include "api/stream_manager.h"
 #include "app/client_application.h"
 #include "app/single_instance.h"
 

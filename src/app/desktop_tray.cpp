@@ -95,13 +95,13 @@ namespace app {
       }
       return g_variant_builder_end(&result);
     }
-    GVariant* layout(int id, int depth, GVariant* names, bool sharing) {
+    GVariant* menuLayout(int id, int depth, GVariant* names, bool sharing) {
       GVariantBuilder children;
       g_variant_builder_init(&children, G_VARIANT_TYPE("av"));
       if (id == 0 && depth != 0)
         for (int child = 1; child < static_cast<int>(labels.size()); ++child)
           if (child != 4 || sharing)
-            g_variant_builder_add(&children, "v", layout(child, 0, names, sharing));
+            g_variant_builder_add(&children, "v", menuLayout(child, 0, names, sharing));
       return g_variant_new("(i@a{sv}@av)", id, properties(id, names, sharing), g_variant_builder_end(&children));
     }
   } // namespace
@@ -218,7 +218,7 @@ namespace app {
         g_variant_get(args, "(ii@as)", &id, &depth, &names);
         if (validId(id))
           g_dbus_method_invocation_return_value(
-              invocation, g_variant_new("(u@(ia{sv}av))", menuRevision, layout(id, depth, names, sharing))
+              invocation, g_variant_new("(u@(ia{sv}av))", menuRevision, menuLayout(id, depth, names, sharing))
           );
         else
           g_dbus_method_invocation_return_error(

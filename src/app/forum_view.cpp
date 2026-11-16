@@ -2,6 +2,7 @@
 #include "app/discord_timestamp.h"
 #include "app/reply_preview.h"
 #include "app/theme.h"
+#include "ui/controls/input.h"
 #include "ui/controls/scrollbar.h"
 
 #include <algorithm>

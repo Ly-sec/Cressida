@@ -2,6 +2,7 @@
 #include "app/theme.h"
 #include "core/files/resource_paths.h"
 #include "render/core/texture_manager.h"
+#include "ui/controls/input.h"
 
 #include <algorithm>
 #include <cctype>

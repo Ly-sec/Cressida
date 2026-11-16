@@ -6,6 +6,7 @@
 #include "render/scene/rect_node.h"
 #include "render/scene/text_node.h"
 #include "ui/controls/button.h"
+#include "ui/controls/input.h"
 #include "ui/controls/select.h"
 
 #include <algorithm>

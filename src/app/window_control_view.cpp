@@ -3,6 +3,7 @@
 #include "app/settings_style.h"
 #include "app/theme.h"
 #include "render/core/texture_manager.h"
+#include "render/scene/image_node.h"
 
 #include <charconv>
 #include <cmath>

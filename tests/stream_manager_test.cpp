@@ -1,4 +1,6 @@
 #include "api/stream_manager.h"
+#include "voice/stream_audio.h"
+#include "voice/video_codec.h"
 
 #include <algorithm>
 #include <atomic>

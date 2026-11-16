@@ -4,6 +4,7 @@
 #include "app/theme.h"
 #include "render/scene/text_node.h"
 #include "ui/controls/button.h"
+#include "ui/controls/input.h"
 #include "ui/controls/scrollbar.h"
 #include "ui/controls/slider.h"
 #include "ui/controls/toggle.h"

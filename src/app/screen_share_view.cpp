@@ -1,7 +1,10 @@
+#include "api/stream_manager.h"
 #include "app/client_application.h"
 #include "app/stream_popout.h"
 #include "app/theme.h"
 #include "render/core/texture_manager.h"
+#include "render/scene/image_node.h"
+#include "voice/stream_audio.h"
 
 #include <algorithm>
 #include <charconv>

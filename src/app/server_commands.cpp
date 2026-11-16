@@ -3,6 +3,7 @@
 #include "app/client_application.h"
 #include "app/server_audit.h"
 #include "app/server_settings_form.h"
+#include "ui/controls/input.h"
 
 #include <algorithm>
 #include <cctype>

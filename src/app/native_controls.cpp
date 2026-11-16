@@ -5,9 +5,11 @@
 #include "app/theme.h"
 #include "core/input/key_modifiers.h"
 #include "core/input/keybind_matcher.h"
+#include "core/text_clipboard.h"
 #include "render/scene/input_area.h"
 #include "render/scene/text_node.h"
 #include "ui/controls/glyph.h"
+#include "ui/controls/input.h"
 #include "ui/controls/scrollbar.h"
 #include "ui/palette.h"
 

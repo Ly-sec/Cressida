@@ -4,6 +4,7 @@
 #include "app/theme.h"
 #include "render/scene/input_area.h"
 #include "ui/controls/button.h"
+#include "ui/controls/input.h"
 
 #include <algorithm>
 #include <iostream>

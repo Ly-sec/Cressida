@@ -3,6 +3,7 @@
 #include "app/theme.h"
 #include "ui/controls/button.h"
 #include "ui/controls/checkbox.h"
+#include "ui/controls/input.h"
 #include "ui/controls/scrollbar.h"
 
 #include <algorithm>

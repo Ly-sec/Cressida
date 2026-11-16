@@ -2,6 +2,7 @@
 #include "app/composer_tokens.h"
 #include "app/controls/chat_input.h"
 #include "app/theme.h"
+#include "ui/controls/input.h"
 #include "ui/controls/scrollbar.h"
 
 #include <algorithm>

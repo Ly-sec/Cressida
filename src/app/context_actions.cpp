@@ -6,6 +6,7 @@
 #include "core/files/resource_paths.h"
 #include "render/scene/input_area.h"
 #include "render/scene/rect_node.h"
+#include "ui/controls/input.h"
 
 #include <algorithm>
 #include <cmath>

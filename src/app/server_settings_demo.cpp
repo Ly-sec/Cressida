@@ -6,6 +6,7 @@
 #include "render/core/image_encoder.h"
 #include "render/core/texture_manager.h"
 #include "ui/controls/button.h"
+#include "ui/controls/input.h"
 #include "ui/controls/scrollbar.h"
 #include "ui/controls/toggle.h"
 

@@ -5,7 +5,6 @@
 #include "api/connection_bootstrap.h"
 #include "api/emoji.h"
 #include "api/forwarding.h"
-#include "api/gateway.h"
 #include "api/gifs.h"
 #include "api/guild_settings.h"
 #include "api/history.h"
@@ -17,7 +16,7 @@
 #include "api/rest_rate_limits.h"
 #include "api/rest_restrictions.h"
 #include "api/role_styles.h"
-#include "api/stream_manager.h"
+#include "api/stream_previews.h"
 #include "api/threads.h"
 #include "api/typing.h"
 #include "api/user_directory.h"
@@ -26,6 +25,7 @@
 #include "api/voice_session.h"
 #include "auth/credentials.h"
 #include "core/process/wake_event.h"
+#include "voice/audio.h"
 
 #include <array>
 #include <atomic>
@@ -39,7 +39,13 @@
 #include <stop_token>
 #include <thread>
 
+namespace voice {
+  class Connection;
+}
+
 namespace api {
+  class Gateway;
+  class StreamManager;
   class RestTransportCache;
   struct RestReadIntent;
 

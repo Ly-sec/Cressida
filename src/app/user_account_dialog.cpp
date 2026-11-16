@@ -3,6 +3,7 @@
 #include "app/theme.h"
 #include "app/user_settings_form.h"
 #include "ui/controls/button.h"
+#include "ui/controls/input.h"
 #include "ui/controls/select.h"
 
 #include <algorithm>

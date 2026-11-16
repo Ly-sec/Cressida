@@ -1,5 +1,6 @@
 #include "app/client_application.h"
 #include "cursor-shape-v1-client-protocol.h"
+#include "ui/controls/input.h"
 
 #include <algorithm>
 #include <cmath>

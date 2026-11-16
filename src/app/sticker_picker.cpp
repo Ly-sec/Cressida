@@ -2,6 +2,7 @@
 #include "app/font_catalog.h"
 #include "app/theme.h"
 #include "render/core/texture_manager.h"
+#include "ui/controls/input.h"
 
 #include <algorithm>
 #include <cmath>

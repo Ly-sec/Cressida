@@ -60,7 +60,7 @@ namespace {
         {"referrer_current", ""},
         {"referring_domain_current", ""},
         {"release_channel", "stable"},
-        {"client_build_number", 634304},
+        {"client_build_number", 673869},
         {"client_event_source", nullptr},
     };
     const auto& properties = browser_identity::properties();

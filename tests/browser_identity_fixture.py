@@ -22,7 +22,7 @@ PROPERTIES = {
     "os": "Linux", "browser": "Chrome", "device": "", "system_locale": "en-US",
     "browser_user_agent": USER_AGENT, "browser_version": "128.0.0.0", "os_version": "",
     "referrer": "", "referring_domain": "", "referrer_current": "", "referring_domain_current": "",
-    "release_channel": "stable", "client_build_number": 634304, "client_event_source": None,
+    "release_channel": "stable", "client_build_number": 673869, "client_event_source": None,
 }
 EXPECTED_PATHS = ["/rest-first", "/rest-reset", "/gateway", "/unrelated"]
 errors, received = [], []

@@ -10,7 +10,8 @@
 namespace browser_identity {
   namespace {
     constexpr std::string_view browserVersion = "128.0.0.0";
-    constexpr std::uint64_t webClientBuildNumber = 634304;
+    // Stable web build observed on 2026-11-16; provenance is recorded in AGENTS.md.
+    constexpr std::uint64_t webClientBuildNumber = 673869;
     constexpr std::string_view systemLocale = "en-US";
     constexpr std::string_view origin = "https://discord.com";
     constexpr std::string_view referer = "https://discord.com/channels/@me";

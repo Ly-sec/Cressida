@@ -68,14 +68,15 @@ if os.environ.get('CRESSIDA_TEST_FAIL_FLATPAK'):
     print('synthetic package launch failure', file=sys.stderr)
     exit(17)
 with open(os.environ['CRESSIDA_TEST_RECORD'], 'a') as record:
-    record.write('flatpak\\n')
+    view = next(arg.split('=', 2)[2] for arg in sys.argv if arg.startswith('--env=CRESSIDA_DEMO_VIEW='))
+    record.write('flatpak:' + view + '\\n')
 """)
         app = """
 import os
 from pathlib import Path
 assert (Path(os.environ['XDG_RUNTIME_DIR']) / os.environ['WAYLAND_DISPLAY']).is_socket()
 with open(os.environ['CRESSIDA_TEST_RECORD'], 'a') as record:
-    record.write('appimage\\n')
+    record.write('appimage:' + os.environ['CRESSIDA_DEMO_VIEW'] + '\\n')
 """
         image = self.root / "image"
         self.executable(image, f"""
@@ -96,7 +97,14 @@ app.chmod(0o700)
     def test_flatpak_launcher_receives_the_private_compositor_socket(self):
         result = self.smoke()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.record.read_text().splitlines(), ["appimage", "flatpak"] * 6)
+        views = (
+            "login-themed", "login-themed-light", "autocomplete-cycle", "sharing-cycle",
+            "rpc-cycle", "media-gallery-cycle", "video-cycle",
+        )
+        self.assertEqual(
+            self.record.read_text().splitlines(),
+            [f"{package}:{view}" for view in views for package in ("appimage", "flatpak")],
+        )
 
     def test_bootstrap_uses_retained_verified_assets_for_both_architectures(self):
         self.executable(self.commands / "curl", """

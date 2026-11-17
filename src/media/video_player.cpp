@@ -48,7 +48,17 @@ namespace media {
     std::atomic_bool redraw = false;
     bool audioOnly = false, oneShot = false;
     VideoState state;
-    bool option(const char* name, const char* value) { return mpv_set_option_string(player, name, value) >= 0; }
+    bool option(const char* name, const char* value, bool allowMissing = false) {
+      const auto error = mpv_set_option_string(player, name, value);
+      if (error >= 0)
+        return true;
+      if (allowMissing && error == MPV_ERROR_OPTION_NOT_FOUND) {
+        logger.debug("player option unavailable name={} code={}", name, error);
+        return true;
+      }
+      logger.warn("player option failed name={} code={}", name, error);
+      return false;
+    }
     void flag(const char* name, bool value) {
       int flag = value;
       mpv_set_property_async(player, 0, name, MPV_FORMAT_FLAG, &flag);
@@ -86,9 +96,6 @@ namespace media {
       return fail(!m->input ? "input" : "player-create");
     for (const auto& [name, value] :
          {std::pair{"config", "no"},
-          {"load-scripts", "no"},
-          {"ytdl", "no"},
-          {"osc", "no"},
           {"terminal", "no"},
           {"input-default-bindings", "no"},
           {"input-vo-keyboard", "no"},
@@ -113,6 +120,11 @@ namespace media {
           {"demuxer-max-back-bytes", "8MiB"},
           {"cache-secs", "10"}})
       if (!m->option(name, value))
+        return fail("options");
+    // These options are omitted when their scripting features are compiled out.
+    // When present, disabling them must still succeed before initialization.
+    for (const char* name : {"load-scripts", "ytdl", "osc"})
+      if (!m->option(name, "no", true))
         return fail("options");
     if (!std::isfinite(initialVolume) || initialVolume < 0 || initialVolume > 100)
       return fail("volume");

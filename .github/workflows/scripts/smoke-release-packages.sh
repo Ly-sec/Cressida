@@ -50,7 +50,7 @@ for ((attempt = 0; attempt < 100; ++attempt)); do
 done
 test -S "$test_root/runtime/$WAYLAND_DISPLAY"
 
-for view in login-themed login-themed-light autocomplete-cycle sharing-cycle rpc-cycle media-gallery-cycle; do
+for view in login-themed login-themed-light autocomplete-cycle sharing-cycle rpc-cycle media-gallery-cycle video-cycle; do
     echo "Package smoke check: AppImage $view"
     check_logged "$logs/appimage-$view.log" env -u LD_PRELOAD -u CRESSIDA_ASSETS_DIR -u DISCORD_CPP_ASSETS_DIR \
         -u __EGL_VENDOR_LIBRARY_FILENAMES -u __EGL_VENDOR_LIBRARY_DIRS -u GIO_EXTRA_MODULES \

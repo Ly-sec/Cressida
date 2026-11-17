@@ -117,6 +117,12 @@ message contents.
 - For video playback, check the package's libmpv and FFmpeg dependencies.
 - For saving images, check that your desktop portal's FileChooser backend works.
 
+If a video reports **Could not initialize video playback**, include the nearby
+`playback` log lines when reporting it. An option failure includes the option's
+name and error code. This happens before the video loads, so another upload may
+fail in the same way. Packaged players without scripting support are supported;
+missing script-disable options do not prevent playback.
+
 ## Voice does not connect or has no audio
 
 Check that PulseAudio or PipeWire's PulseAudio-compatible service is running.

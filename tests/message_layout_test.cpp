@@ -1750,6 +1750,8 @@ int main(int argc, char** argv) {
             && !animationLayout.pictures[0].video
             && animationLayout.pictures[0].videoSource.empty()
             && animationLayout.pictures[0].animated
+            && animationLayout.pictures[0].link == gif.url
+            && api::mediaBrowserUrl(animationLayout.pictures[0].link, animationLayout.pictures[0].media.url) == gif.url
             && animationLayout.pictures[0].media.url == gif.video.url
             && animationLayout.boxes.empty(),
         "GIF videos use their looping media, without a video link card or play overlay"
@@ -1831,6 +1833,7 @@ int main(int argc, char** argv) {
     api::Embed youtube;
     youtube.type = "video";
     youtube.provider = "YouTube";
+    youtube.url = "https://www.youtube.com/watch?v=example";
     youtube.title = "A video";
     youtube.description = "Long descriptions should not replace the video thumbnail.";
     youtube.thumbnail = {
@@ -1843,9 +1846,11 @@ int main(int argc, char** argv) {
     require(
         videoLayout.pictures.size() == 1
             && videoLayout.pictures[0].video
+            && videoLayout.pictures[0].videoSource.empty()
+            && videoLayout.pictures[0].link == youtube.url
             && videoLayout.pictures[0].width > 300
             && !videoLayout.plainText.contains("Long descriptions"),
-        "YouTube embeds use a full-width video thumbnail and play action"
+        "External video previews use a full-width thumbnail without claiming native playback"
     );
     auto larger = app::layoutRichMessage(
         rich, 400,

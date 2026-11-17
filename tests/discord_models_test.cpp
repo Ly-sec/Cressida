@@ -15,6 +15,38 @@ namespace {
 int main() {
   using nlohmann::json;
   try {
+    const std::string gifPreview = "https://static.klipy.com/ii/example/clip.mp4";
+    for (const std::string_view page :
+         {"https://klipy.com/gifs/example", "https://tenor.com/view/example-123", "https://giphy.com/gifs/example",
+          "https://klipy.com/gifs/example?item=1#preview"}) {
+      require(
+          api::mediaUrl(page).empty() && api::mediaBrowserUrl(page, gifPreview) == page,
+          "Explicit browser actions preserve provider pages without enabling automatic downloads from them"
+      );
+    }
+    const std::string attachment = "https://cdn.discordapp.com/attachments/10/20/image.gif?ex=123&is=456&hm=abc";
+    require(
+        api::mediaBrowserUrl(attachment, gifPreview) == attachment
+            && api::mediaBrowserUrl({}, gifPreview) == gifPreview,
+        "Attachment browser links retain their signed URL and media-only messages retain their fallback"
+    );
+    require(
+        api::mediaBrowserUrl("https://example.com/article", gifPreview) == gifPreview,
+        "Article previews continue opening the actual media rather than the article page"
+    );
+    for (const std::string_view invalid :
+         {"javascript:alert(1)", "file:///tmp/image.gif", "https://", "https://?url=example.com",
+          "https://user:password@example.com/gif", "https://klipy.com/gifs/\nimage", "https://klipy.com/gifs/\\image",
+          "https://klipy.com.attacker.test/gifs/example", "https://klipy.com@attacker.test/gifs/example"}) {
+      require(
+          api::mediaBrowserUrl(invalid, gifPreview) == gifPreview && api::mediaBrowserUrl(invalid).empty(),
+          "Invalid browser destinations fall back only to validated public media"
+      );
+    }
+    require(
+        api::mediaBrowserUrl(std::string(4097, 'x'), gifPreview) == gifPreview,
+        "Oversized original links cannot reach the browser opener"
+    );
     auto appMessage = api::parseMessages(
                           json::array(
                               {{{"id", "100"},

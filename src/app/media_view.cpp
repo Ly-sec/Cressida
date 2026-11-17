@@ -115,6 +115,7 @@ namespace app {
     };
     const auto* draft = draftImage(m_viewImage);
     const auto source = viewerMediaLink();
+    const auto browserLink = api::mediaBrowserUrl(m_viewUrl, m_viewImage);
     const auto cached = m_images.find(m_viewImage);
     const bool available = (draft && !draft->upload.bytes.empty())
         || (cached != m_images.end() && !cached->second.bytes.empty())
@@ -126,7 +127,7 @@ namespace app {
     separator.separator = true;
     m_contextEntries.push_back(std::move(separator));
     add(Action::CopyMediaLink, "Copy Media Link", "link", !source.empty());
-    add(Action::OpenMediaLink, "Open Media Link", "external-link", !source.empty());
+    add(Action::OpenMediaLink, "Open Media Link", "external-link", !browserLink.empty());
     m_imageContext = m_viewImage;
     m_contextX = x;
     m_contextY = y;
@@ -147,9 +148,10 @@ namespace app {
         m_imageStatus = "Media link copied.";
       }
     } else if (action == Action::OpenMediaLink) {
-      if (!link.empty())
+      const auto browserLink = api::mediaBrowserUrl(m_viewUrl, m_viewImage);
+      if (!browserLink.empty())
         m_imageStatus =
-            m_demo || auth::openExternalUrl(link) ? "Opening media link…" : "Could not open the media link.";
+            m_demo || auth::openExternalUrl(browserLink) ? "Opening media link…" : "Could not open the media link.";
     } else if (action == Action::CopyImage || action == Action::SaveImage) {
       if (m_imageSaveRequest || m_pendingImageAction != Action::None)
         return;
@@ -731,14 +733,18 @@ namespace app {
           m_imageStatus == "Media link copied." && viewerMediaLink() == m_messages.front().attachments[0].url,
           "Copy Media Link retains the original attachment URL"
       );
+      m_viewUrl = "https://klipy.com/gifs/example";
       openMenu();
-    } else if (step == 8)
+    } else if (step == 8) {
       clickEntry(Action::OpenMediaLink);
-    else if (step == 9) {
+    } else if (step == 9) {
       require(
-          m_imageStatus == "Opening media link…",
-          "Open Media Link selects the browser action without launching it offline"
+          m_imageStatus == "Opening media link…"
+              && api::mediaBrowserUrl(m_viewUrl, m_viewImage) == m_viewUrl
+              && viewerMediaLink() == api::mediaUrl(m_viewImage),
+          "Open Media Link preserves a GIF provider page while direct media actions retain the preview source"
       );
+      m_viewUrl = m_messages.front().attachments[0].url;
       openMenu();
     } else if (step == 10) {
       onKey({.symbol = XKB_KEY_Escape});

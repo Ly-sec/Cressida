@@ -3105,16 +3105,14 @@ namespace app {
                   );
                   const float px = left + 74 + pic.x, py = top + bodyY + pic.y;
                   if (pic.video) {
-                    rectangle(
-                        *messageContent, 50 + pic.x + pic.width / 2 - 25,
-                        bodyY + pic.y + pic.height / 2 - Style::spaceRelaxed, 50, 40,
-                        hovered(px, py, pic.width, pic.height) ? accent : panel, 10
-                    );
-                    label(
-                        *messageContent, 50 + pic.x + pic.width / 2 - 7, bodyY + pic.y + pic.height / 2 - 11, 24, "▶",
-                        Style::fontSizeHeader, foreground
-                    );
                     m_hits.push_back({px, py, pic.width, pic.height, Action::OpenUrl, pic.link});
+                    iconButton(
+                        *messageContent,
+                        {layout::Chat::authorGutter + pic.x + (pic.width - Style::controlHeightLg) / 2,
+                         bodyY + pic.y + (pic.height - Style::controlHeightLg) / 2, Style::controlHeightLg,
+                         Style::controlHeightLg, Action::OpenUrl, pic.link},
+                        "external-link", "Watch in browser"
+                    );
                   } else {
                     if (m_viewImage.empty())
                       m_viewerImages.push_back(

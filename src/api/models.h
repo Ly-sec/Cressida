@@ -225,6 +225,8 @@ namespace api {
   bool validUploads(const std::vector<Upload>& uploads);
   // Fixed Discord CDN/proxy and public GIF provider origins, without credentials.
   std::string mediaUrl(std::string_view value);
+  // Browser destinations are separate from the bounded media download source.
+  std::string mediaBrowserUrl(std::string_view original, std::string_view preview = {});
 
   struct Reaction {
     std::string id, name;

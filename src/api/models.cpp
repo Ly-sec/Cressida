@@ -13,6 +13,11 @@
 
 namespace api {
   namespace {
+    constexpr std::size_t maximumMediaUrlBytes = 4096;
+    bool validMediaUrlText(std::string_view value) {
+      return value.size() <= maximumMediaUrlBytes
+          && std::ranges::none_of(value, [](unsigned char c) { return c <= 32 || c == 127 || c == '\\'; });
+    }
     std::string text(const nlohmann::json& value, const char* key, std::string fallback = {}) {
       const auto it = value.find(key);
       return it != value.end() && it->is_string() ? it->get<std::string>() : fallback;
@@ -415,8 +420,7 @@ namespace api {
   }
 
   std::string mediaUrl(std::string_view value) {
-    if (value.size() > 4096
-        || std::ranges::any_of(value, [](unsigned char c) { return c <= 32 || c == 127 || c == '\\'; }))
+    if (!validMediaUrlText(value))
       return {};
     if (value.starts_with('/'))
       return mediaUrl("https://cdn.discordapp.com" + std::string(value));
@@ -465,6 +469,18 @@ namespace api {
           return std::string(value);
     }
     return {};
+  }
+
+  std::string mediaBrowserUrl(std::string_view original, std::string_view preview) {
+    // GIF provider pages are browser destinations, never automatic download
+    // sources. Ordinary article previews still open their image itself.
+    if (validMediaUrlText(original))
+      for (const std::string_view origin :
+           {"https://klipy.com/gifs/", "https://tenor.com/view/", "https://giphy.com/gifs/"})
+        if (original.starts_with(origin))
+          return std::string(original);
+    auto result = mediaUrl(original);
+    return result.empty() ? mediaUrl(preview) : result;
   }
 
   bool validUploads(const std::vector<Upload>& uploads) {

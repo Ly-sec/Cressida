@@ -42,6 +42,11 @@ Right-click an enlarged image for **Copy Image**, **Save Image**, **Copy Media
 Link** and **Open Media Link**. Saving uses your desktop's file selection
 service where available. Opening a media link uses your external browser.
 
+For Klipy, Tenor and Giphy GIFs, **Open Media Link** opens the provider's page.
+**Copy Media Link** keeps the direct media URL. Other images and clips open
+their original media URL; your browser and the server's response determine
+whether it displays or downloads that file.
+
 ## Memory use
 
 Cressida stores larger animation frames with lossless compression, preserving
@@ -58,6 +63,10 @@ If many images load at once, some may appear a little later to keep memory use
 bounded. Their animation data stays intact while they wait.
 
 ## Play video
+
+YouTube and other previews without a supported direct video source open in your
+browser. Their external-link control shows **Watch in browser** on hover. They
+do not play inside Cressida.
 
 Received video attachments can play in the native player. Use its controls to
 play, pause, seek, adjust volume, mute or enter its expanded view. Ordinary

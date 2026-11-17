@@ -41,6 +41,13 @@ namespace api {
     std::map<std::string, GuildNotification> guildNotifications;
   };
 
+  // Project only the edited target from a successful settings response. Mute
+  // changes need an explicit matching acknowledgement before changing the UI.
+  std::optional<UserUpdates> notificationSettingsResult(
+      const nlohmann::json& requested, const nlohmann::json& response, const std::string& guild,
+      const std::string& channel = {}
+  );
+
   // Gateway-owned protocol tracking, or an event-loop-owned view of typed updates.
   // Keep personal nicknames separate from global and guild display names so that
   // removing an alias immediately restores the original name everywhere.

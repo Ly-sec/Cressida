@@ -413,15 +413,24 @@ int main() {
             && mute->path == "/users/@me/guilds/@me/settings"
             && mute->body.size() == 1
             && mute->body["channel_overrides"].size() == 1
-            && mute->body["channel_overrides"]["10"]["muted"] == true,
+            && mute->body["channel_overrides"]["10"]["muted"] == true
+            && mute->body["channel_overrides"]["10"]["mute_config"]
+                == json{{"end_time", nullptr}, {"selected_time_window", -1}},
         "DM mute patches only the selected conversation"
     );
     auto unmute = interactionRequest({.kind = Kind::Unmute, .channel = "10", .guild = "30"});
     require(
         unmute
             && unmute->path == "/users/@me/guilds/30/settings"
-            && unmute->body["channel_overrides"]["10"]["muted"] == false,
-        "Unmute retains the proper guild scope"
+            && unmute->body == json{{"channel_overrides", {{"10", {{"muted", false}}}}}},
+        "Unmute retains the proper guild scope and sends no indefinite mute configuration"
+    );
+    const auto timedMute = interactionRequest({.kind = Kind::Mute, .channel = "10", .muteDuration = 900});
+    require(
+        timedMute
+            && timedMute->body["channel_overrides"]["10"]["mute_config"]["selected_time_window"] == 900
+            && timedMute->body["channel_overrides"]["10"]["mute_config"]["end_time"].is_string(),
+        "Timed conversation mutes retain their selected duration and deadline"
     );
     const auto normalMentions = json::array({"users", "roles", "everyone"});
     const std::string mentions = "<@7> <@!8> <@&9> @everyone @here";

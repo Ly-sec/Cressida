@@ -5,6 +5,7 @@
 #include <stdexcept>
 
 namespace {
+  constexpr std::uint64_t pinnedConversationFlag = 1ULL << 11;
   void require(bool value, const char* message) {
     if (!value)
       throw std::runtime_error(message);
@@ -111,9 +112,111 @@ int main() {
     notification.guildNotification = GuildNotification{.muted = false};
     request = interactionRequest(notification);
     require(
-        request && request->body["muted"] == false && request->body["mute_config"]["end_time"].is_null(),
-        "Unmuting clears the old deadline explicitly"
+        request && request->body == Json{{"muted", false}},
+        "Unmuting sends only the mute flag without creating an indefinite mute configuration"
     );
+    const std::pair<std::string, std::string> scopes[] = {{"10", ""}, {"10", "20"}, {"", "20"}};
+    for (const auto& [guild, channel] : scopes) {
+      Interaction unmute{
+          .kind = channel.empty() ? Kind::GuildNotifications : Kind::Unmute, .channel = channel, .guild = guild
+      };
+      if (channel.empty())
+        unmute.guildNotification = GuildNotification{.muted = false};
+      const auto unmuteRequest = interactionRequest(unmute);
+      require(unmuteRequest.has_value(), "Server, channel and private conversation unmute requests are valid");
+      const Json scopeId = guild.empty() ? Json(nullptr) : Json(guild);
+      Json oldTarget{{"muted", true}, {"mute_config", {{"end_time", "2035-01-01T00:00:00Z"}}}};
+      Json savedTarget{{"muted", false}, {"mute_config", nullptr}, {"message_notifications", 2}};
+      if (!channel.empty()) {
+        oldTarget["channel_id"] = channel;
+        oldTarget["flags"] = pinnedConversationFlag;
+        savedTarget["channel_id"] = channel;
+      }
+      auto settings = [&](const Json& target) {
+        Json value{{"guild_id", scopeId}};
+        if (channel.empty())
+          value.update(target);
+        else
+          value["channel_overrides"] = Json::array({target, {{"channel_id", "30"}, {"muted", true}}});
+        return value;
+      };
+      UserDirectory before;
+      before.consume("READY", {{"user_guild_settings", Json::array({settings(oldTarget)})}});
+      const auto target = channel.empty() ? guild : channel;
+      require(before.muted(target), "Reload fixtures begin with an active timed mute");
+      auto saved = settings(savedTarget);
+      auto result = notificationSettingsResult(unmuteRequest->body, saved, guild, channel);
+      require(result.has_value(), "The returned target explicitly confirms the unmute");
+      require(
+          channel.empty() ? result->guildNotifications.size() == 1
+                          : result->notifications.size() == 1 && result->notifications.contains(channel),
+          "A settings response projects only the edited target"
+      );
+      before.apply(*result);
+      require(
+          !before.muted(target) && before.notificationLevel(target) == 2 && !before.nextMuteExpiry(),
+          "Confirmed settings use the returned level and clear the old mute deadline"
+      );
+      if (!channel.empty())
+        require(before.pinnedDm(channel), "Unmuting preserves pin flags omitted from the response");
+      UserDirectory reloaded;
+      reloaded.consume("READY", {{"user_guild_settings", Json::array({saved})}});
+      require(!reloaded.muted(target), "Unmute stays consistent with the saved settings after a fresh READY");
+
+      for (const int duration : {-1, 900}) {
+        auto mute = unmute;
+        mute.muteDuration = duration;
+        if (channel.empty())
+          mute.guildNotification->muted = true;
+        else
+          mute.kind = Kind::Mute;
+        const auto muteRequest = interactionRequest(mute);
+        auto muteTarget = oldTarget;
+        muteTarget["mute_config"] = {{"end_time", "invalid"}};
+        auto muted = notificationSettingsResult(muteRequest->body, settings(muteTarget), guild, channel);
+        require(muted.has_value(), "An explicit matching mute acknowledgement is accepted");
+        UserDirectory mutedView;
+        mutedView.apply(*muted);
+        require(
+            mutedView.muted(target) && mutedView.nextMuteExpiry().has_value() == (duration > 0),
+            "Timed and indefinite mute defaults survive malformed optional response metadata"
+        );
+      }
+
+      for (const Json& invalidMute : {Json(true), Json("false"), Json(nullptr)}) {
+        auto rejectedTarget = savedTarget;
+        rejectedTarget["muted"] = invalidMute;
+        require(
+            !notificationSettingsResult(unmuteRequest->body, settings(rejectedTarget), guild, channel),
+            "Contradictory or malformed mute acknowledgements cannot report unmute success"
+        );
+      }
+      auto omittedMute = savedTarget;
+      omittedMute.erase("muted");
+      require(
+          !notificationSettingsResult(unmuteRequest->body, settings(omittedMute), guild, channel)
+              && !notificationSettingsResult(unmuteRequest->body, Json::object(), guild, channel)
+              && !notificationSettingsResult(unmuteRequest->body, Json::array(), guild, channel),
+          "Missing mute confirmations and malformed response envelopes cannot fabricate success"
+      );
+      auto wrongScope = saved;
+      wrongScope["guild_id"] = "99";
+      require(
+          !notificationSettingsResult(unmuteRequest->body, wrongScope, guild, channel),
+          "Settings responses must match the requested server or private conversation scope"
+      );
+      if (!channel.empty()) {
+        auto wrongChannel = saved;
+        wrongChannel["channel_overrides"][0]["channel_id"] = "99";
+        auto duplicate = saved;
+        duplicate["channel_overrides"].push_back(savedTarget);
+        require(
+            !notificationSettingsResult(unmuteRequest->body, wrongChannel, guild, channel)
+                && !notificationSettingsResult(unmuteRequest->body, duplicate, guild, channel),
+            "Missing and ambiguous target channel responses are rejected"
+        );
+      }
+    }
     notification.guildNotification = GuildNotification{.flags = guildOptInChannelsOff};
     require(!interactionRequest(notification), "Whole stale flag words cannot be written accidentally");
     notification.notificationFlagsMask = guildOptInChannelsOn | guildOptInChannelsOff;

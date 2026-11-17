@@ -84,6 +84,85 @@ namespace api {
     return result;
   }
 
+  std::optional<UserUpdates> notificationSettingsResult(
+      const nlohmann::json& requested, const nlohmann::json& response, const std::string& guild,
+      const std::string& channel
+  ) {
+    if (!requested.is_object()
+        || !response.is_object()
+        || (!guild.empty() && !validSnowflake(guild))
+        || (channel.empty() ? guild.empty() : !validSnowflake(channel)))
+      return {};
+    if (const auto id = response.find("guild_id"); id != response.end()) {
+      if (guild.empty() ? !id->is_null() : *id != guild)
+        return {};
+    }
+    const auto confirms = [](const nlohmann::json& sent, const nlohmann::json& saved) {
+      if (const auto muted = sent.find("muted"); muted != sent.end())
+        return muted->is_boolean()
+            && saved.contains("muted")
+            && saved["muted"].is_boolean()
+            && saved["muted"] == *muted;
+      return true;
+    };
+    UserUpdates result;
+    if (channel.empty()) {
+      if (!confirms(requested, response))
+        return {};
+      auto sent = requested;
+      sent["guild_id"] = guild;
+      result.guildNotifications = guildNotifications(sent);
+      if (!result.guildNotifications.contains(guild))
+        return {};
+      auto saved = response;
+      saved["guild_id"] = guild;
+      UserDirectory projection;
+      projection.apply(result);
+      UserUpdates authoritative;
+      authoritative.guildNotifications = guildNotifications(saved);
+      projection.apply(authoritative);
+      result.guildNotifications[guild] = projection.guildPreferences(guild);
+    } else {
+      const auto overrides = requested.find("channel_overrides");
+      const auto rows = response.find("channel_overrides");
+      if (overrides == requested.end()
+          || !overrides->is_object()
+          || !overrides->contains(channel)
+          || !(*overrides)[channel].is_object()
+          || rows == response.end()
+          || !rows->is_array())
+        return {};
+      const nlohmann::json* confirmed = nullptr;
+      for (const auto& row : *rows) {
+        if (!row.is_object() || !row.contains("channel_id") || row["channel_id"] != channel)
+          continue;
+        if (confirmed)
+          return {};
+        confirmed = &row;
+      }
+      const auto& sent = (*overrides)[channel];
+      if (!confirmed || !confirms(sent, *confirmed))
+        return {};
+      auto fallback = sent;
+      fallback["channel_id"] = channel;
+      result.notifications = channelNotifications({{"channel_overrides", nlohmann::json::array({fallback})}});
+      const auto saved = channelNotifications({{"channel_overrides", nlohmann::json::array({*confirmed})}});
+      if (!result.notifications.contains(channel) || !saved.contains(channel))
+        return {};
+      auto& target = result.notifications.at(channel);
+      const auto& patch = saved.at(channel);
+      const auto merge = [](auto& value, const auto& change) {
+        if (change)
+          value = change;
+      };
+      merge(target.muted, patch.muted);
+      merge(target.muteUntil, patch.muteUntil);
+      merge(target.level, patch.level);
+      merge(target.flags, patch.flags);
+    }
+    return result;
+  }
+
   void UserDirectory::apply(const UserUpdates& update) {
     if (update.reset || update.relationshipsReset) {
       m_names.clear();

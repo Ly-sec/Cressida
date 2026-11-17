@@ -93,9 +93,9 @@ namespace api {
       body["notify_highlights"] = *patch.notifyHighlights;
     if (patch.flags)
       body["flags"] = *patch.flags;
-    if (patch.muted) {
+    if (patch.muted.value_or(false)) {
       body["mute_config"] = {{"end_time", nullptr}, {"selected_time_window", -1}};
-      if (*patch.muted && muteDuration != -1) {
+      if (muteDuration != -1) {
         const auto end = std::time(nullptr) + muteDuration;
         std::tm utc{};
         gmtime_r(&end, &utc);

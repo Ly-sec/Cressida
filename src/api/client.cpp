@@ -2862,9 +2862,6 @@ namespace api {
                     | *command.interaction->guildNotification->flags;
               }
             }
-            auto acknowledged = body;
-            acknowledged["guild_id"] = command.interaction->guild;
-            event.users.guildNotifications = guildNotifications(acknowledged);
           } else if (command.interaction->kind == InteractionKind::MarkGuildRead) {
             pendingReadStates = std::move(body["read_states"]);
             body["read_states"] = Json::array();
@@ -2899,13 +2896,6 @@ namespace api {
               body = guildRailPatch(*snapshot, *command.interaction->railMove, command.interaction->organizationGuilds);
             else
               body = guildPrivacyPatch(*snapshot, command.interaction->guild, *command.interaction->guildPrivacy);
-          }
-          if (command.interaction->kind == InteractionKind::Mute
-              || command.interaction->kind == InteractionKind::Unmute
-              || command.interaction->kind == InteractionKind::ChannelNotifications) {
-            auto overrideData = body["channel_overrides"][command.resource];
-            overrideData["channel_id"] = command.resource;
-            event.users.notifications = channelNotifications(Json{{"channel_overrides", Json::array({overrideData})}});
           }
           if (command.interaction->kind == InteractionKind::MessageButton
               || command.interaction->kind == InteractionKind::SubmitModal
@@ -3441,23 +3431,12 @@ namespace api {
             break;
           case Operation::Interaction:
             if (command.interaction->kind == InteractionKind::GuildNotifications) {
-              if (response->is_object()) {
-                if (const auto id = response->find("guild_id");
-                    id != response->end() && !id->is_null() && *id != command.interaction->guild)
-                  throw std::runtime_error("Unexpected server preference identity");
-                auto confirmed = *response;
-                confirmed["guild_id"] = command.interaction->guild;
-                const auto authoritative = guildNotifications(confirmed);
-                if (const auto at = authoritative.find(command.interaction->guild); at != authoritative.end()) {
-                  UserDirectory projection;
-                  projection.apply(event.users);
-                  UserUpdates patch;
-                  patch.guildNotifications = authoritative;
-                  projection.apply(patch);
-                  event.users.guildNotifications[command.interaction->guild] =
-                      projection.guildPreferences(command.interaction->guild);
-                }
+              auto confirmed = notificationSettingsResult(body, *response, command.interaction->guild);
+              if (!confirmed) {
+                event.error = "The service did not confirm the server preferences. Try again.";
+                break;
               }
+              event.users = std::move(*confirmed);
               {
                 std::lock_guard lock(m_mutex);
                 const auto& guild = command.interaction->guild;
@@ -3478,6 +3457,18 @@ namespace api {
                   ++m_guildPreferenceRevisions[guild];
                 }
               }
+            } else if (
+                command.interaction->kind == InteractionKind::Mute
+                || command.interaction->kind == InteractionKind::Unmute
+                || command.interaction->kind == InteractionKind::ChannelNotifications
+            ) {
+              auto confirmed =
+                  notificationSettingsResult(body, *response, command.interaction->guild, command.interaction->channel);
+              if (!confirmed) {
+                event.error = "The service did not confirm the conversation preferences. Try again.";
+                break;
+              }
+              event.users = std::move(*confirmed);
             } else if (
                 command.interaction->kind == InteractionKind::MoveGuild
                 || command.interaction->kind == InteractionKind::EditGuildFolder

@@ -58,6 +58,10 @@ unread dot in the rail; unread channel names still use the brighter text color.
 Mute a channel or category to suppress its ordinary unread styling. Mention
 counts remain available when a server or channel is muted.
 
+To turn a mute off, right-click the server, channel or category and choose its
+**Unmute** action. Cressida waits for the service to confirm the change. If it
+cannot confirm the save, the previous state remains and an error appears.
+
 When unread channels are above or below the visible sidebar, a **NEW UNREAD
 MESSAGES** pill appears at that edge. Mentions take priority and show a count,
 including mentions in muted channels. Click the pill to reveal the nearest

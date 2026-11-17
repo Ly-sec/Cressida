@@ -14,6 +14,11 @@ Use **Find or start a conversation** to find a person or conversation. The DM
 list shows avatars, presence and available activity summaries or custom
 statuses. A person's server tag can appear beside their name.
 
+Right-click a conversation to mute it or choose **Unmute conversation**. The
+same actions are available from a person's menu when you already have a DM with
+them. Cressida waits for the service to confirm a mute change. If it cannot
+confirm the save, the previous state remains and an error appears.
+
 ## Read a profile beside your chat
 
 In a one-to-one DM, the right panel shows the recipient's profile. It can

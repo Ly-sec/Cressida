@@ -978,12 +978,11 @@ namespace api {
         return {};
       request.path = "/users/@me/guilds/" + (action.guild.empty() ? "@me" : action.guild) + "/settings";
       request.method = "PATCH";
-      request.body = {
-          {"channel_overrides",
-           {{action.channel,
-             {{"muted", action.kind == Kind::Mute},
-              {"mute_config", {{"end_time", nullptr}, {"selected_time_window", -1}}}}}}}
-      };
+      request.body = {{"channel_overrides", {{action.channel, {{"muted", action.kind == Kind::Mute}}}}}};
+      if (action.kind == Kind::Mute)
+        request.body["channel_overrides"][action.channel]["mute_config"] = {
+            {"end_time", nullptr}, {"selected_time_window", -1}
+        };
       if (action.kind == Kind::Mute && action.muteDuration != -1) {
         if (action.muteDuration != 900
             && action.muteDuration != 3600

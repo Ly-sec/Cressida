@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <sys/socket.h>
@@ -22,6 +23,8 @@ namespace {
     unsigned requests = 0, destroyed = 0, serials = 0, surfaceCommits = 0, frames = 0;
     std::string appId;
     bool requestingSurface = false;
+    std::uint32_t lastSerial = 0;
+    bool requestingSeat = false;
     std::vector<std::string> activations;
   };
   class Compositor {
@@ -40,6 +43,13 @@ namespace {
     static void destroy(wl_client*, wl_resource* resource) { wl_resource_destroy(resource); }
     Compositor() {
       require(display, "Create a private protocol compositor");
+      wl_global_create(
+          display, &wl_seat_interface, 1, this, [](wl_client* client, void*, std::uint32_t version, std::uint32_t id) {
+            auto* resource = wl_resource_create(client, &wl_seat_interface, version, id);
+            static const struct wl_seat_interface implementation{};
+            wl_resource_set_implementation(resource, &implementation, nullptr, nullptr);
+          }
+      );
       wl_global_create(
           display, &wl_compositor_interface, 1, this,
           [](wl_client* client, void* data, std::uint32_t version, std::uint32_t id) {
@@ -96,10 +106,12 @@ namespace {
                       }
                       static const struct xdg_activation_token_v1_interface implementation{
                           .set_serial =
-                              [](wl_client*, wl_resource* resource, std::uint32_t, wl_resource*) {
+                              [](wl_client*, wl_resource* resource, std::uint32_t serial, wl_resource* seat) {
                                 auto& self = *static_cast<Pending*>(wl_resource_get_user_data(resource))->owner;
                                 std::lock_guard lock(self.mutex);
                                 ++self.state.serials;
+                                self.state.lastSerial = serial;
+                                self.state.requestingSeat = seat != nullptr;
                               },
                           .set_app_id =
                               [](wl_client*, wl_resource* resource, const char* appId) {
@@ -174,6 +186,7 @@ int main() {
     struct Globals {
       wl_compositor* compositor = nullptr;
       xdg_activation_v1* manager = nullptr;
+      wl_seat* seat = nullptr;
     } globals;
     auto* registry = wl_display_get_registry(display);
     const wl_registry_listener listener{
@@ -186,6 +199,8 @@ int main() {
               else if (std::strcmp(interface, "xdg_activation_v1") == 0)
                 globals.manager =
                     static_cast<xdg_activation_v1*>(wl_registry_bind(registry, name, &xdg_activation_v1_interface, 1));
+              else if (std::strcmp(interface, "wl_seat") == 0)
+                globals.seat = static_cast<wl_seat*>(wl_registry_bind(registry, name, &wl_seat_interface, 1));
             },
         .global_remove = [](void*, wl_registry*, std::uint32_t) {}
     };
@@ -259,7 +274,66 @@ int main() {
           server.snapshot().activations.size() == activationsBefore,
           "Hiding cancels pending requests and queued activation"
       );
+      const auto focusBefore = server.snapshot().activations.size();
+      std::string exported;
+      unsigned delivered = 0;
+      server.hold = false;
+      require(
+          activation.exportToken(
+              globals.seat, std::numeric_limits<std::uint32_t>::max(),
+              [&](std::string token) {
+                exported = std::move(token);
+                ++delivered;
+              }
+          ),
+          "Accept a browser activation request"
+      );
+      pump();
+      require(
+          delivered == 1
+              && exported == "generated-focus-token"
+              && server.snapshot().lastSerial == std::numeric_limits<std::uint32_t>::max()
+              && server.snapshot().requestingSeat
+              && server.snapshot().appId.empty()
+              && server.snapshot().activations.size() == focusBefore,
+          "Browser handoff exports the actual seat/serial without targeting or activating our own app"
+      );
+      server.hold = true;
+      activation.exportToken(globals.seat, 7, [&](std::string) { ++delivered; });
+      pump();
+      activation.unmap();
+      pump();
+      require(delivered == 1, "Hiding cancels a pending browser launch");
+      activation.exportToken(globals.seat, 8, [&](std::string token) {
+        require(token.empty(), "An unresponsive compositor falls back without an activation handle");
+        ++delivered;
+      });
+      pump();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+      TimerManager::instance().tick();
+      pump();
+      require(delivered == 2, "An unresponsive compositor cannot block opening a link indefinitely");
+      constexpr unsigned maximumPendingExports = 8;
+      for (unsigned i = 0; i < maximumPendingExports; ++i)
+        require(
+            activation.exportToken(globals.seat, i + 1, [&](std::string) { ++delivered; }),
+            "Accept bounded simultaneous clicks"
+        );
+      require(
+          !activation.exportToken(globals.seat, 9, [&](std::string) { ++delivered; }), "Reject excess pending clicks"
+      );
+      activation.unmap();
+      activation.exportToken(globals.seat, 0, [&](std::string token) {
+        require(token.empty(), "Missing input never reuses an old activation token");
+        ++delivered;
+      });
+      require(delivered == 3, "Missing input permits a normal link launch");
       activation.bind(nullptr, surface);
+      activation.exportToken(globals.seat, 9, [&](std::string token) {
+        require(token.empty(), "Missing protocol permits an ordinary browser launch");
+        ++delivered;
+      });
+      require(delivered == 4, "Missing protocol completes the browser handoff");
       activation.request("unsupported-manager");
       activation.presented();
       pump();
@@ -273,6 +347,7 @@ int main() {
         "Focus requests neither remap a surface nor wait for rendering"
     );
     wl_surface_destroy(surface);
+    wl_seat_destroy(globals.seat);
     xdg_activation_v1_destroy(globals.manager);
     wl_compositor_destroy(globals.compositor);
     wl_registry_destroy(registry);

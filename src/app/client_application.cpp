@@ -104,6 +104,12 @@ namespace app {
 
   } // namespace
 
+  bool ClientApplication::openExternalUrl(const std::string& url) {
+    if (m_demo || !auth::isExternalUrl(url))
+      return false;
+    return m_window.externalActivation([url](std::string token) { auth::openExternalUrl(url, std::move(token)); });
+  }
+
   ClientApplication::ClientApplication(bool demoMode, std::string token, SingleInstance* instance)
       : m_voiceMessageRecorder(demoMode ? demoVoiceMessageCapture() : voice::MessageRecorder::CaptureFactory{}),
         m_instance(instance), m_updater(
@@ -111,7 +117,7 @@ namespace app {
                                    .currentVersion = std::string(cressida::build_info::version())}
                               ),
         m_screen([this](auto frame) { m_client.streams().preview()->source(std::move(frame)); }),
-        m_token(std::move(token)) {
+        m_login([this](const std::string& url) { return openExternalUrl(url); }), m_token(std::move(token)) {
     m_window.setTextInputDispatcher(&m_controlInput);
     m_window.auxiliaryFds = [this] {
       std::vector<int> descriptors{m_rpc.eventFd(), m_updater.eventFd()};
@@ -6490,7 +6496,7 @@ namespace app {
       if (const auto code = api::serverInviteCode(hit.id); code && hit.id.contains('/'))
         openServerAccess(*code);
       else if (!openDiscordLink(hit.id))
-        auth::openExternalUrl(hit.id);
+        openExternalUrl(hit.id);
       break;
     case Action::RevealSpoiler:
       m_revealedSpoilers.insert(hit.id);

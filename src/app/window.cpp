@@ -127,6 +127,8 @@ namespace app {
     std::string pasteText, pasteMime;
     Clock::time_point pasteDeadline;
     std::uint32_t inputSerial = 0;
+    std::uint32_t activationSerial = 0;
+    Clock::time_point activationInputAt{};
     struct Source {
       Impl* owner;
       wl_data_source* handle;
@@ -351,6 +353,7 @@ namespace app {
     void keyboardBlur(wl_surface* lost) {
       const bool changed = keyboardFocused;
       keyboardFocused = false;
+      activationSerial = 0;
       repeatKey = 0;
       cancelPendingKeys();
       if (compose)
@@ -622,6 +625,8 @@ namespace app {
               return;
             if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
               self.inputSerial = serial;
+              self.activationSerial = serial;
+              self.activationInputAt = Clock::now();
               self.emitKey(key + 8);
               if (self.keymap && xkb_keymap_key_repeats(self.keymap, key + 8) && self.repeatRate > 0) {
                 self.repeatKey = key + 8;
@@ -679,6 +684,8 @@ namespace app {
       .button =
           [](void* data, wl_pointer*, std::uint32_t serial, std::uint32_t, std::uint32_t button, std::uint32_t state) {
             auto& self = *static_cast<Impl*>(data);
+            self.activationSerial = serial;
+            self.activationInputAt = Clock::now();
             if (button == 0x111) {
               if (state == WL_POINTER_BUTTON_STATE_PRESSED && self.owner.contextClick) {
                 self.inputSerial = serial;
@@ -1347,6 +1354,15 @@ namespace app {
     }
     m->activationState.request(activationToken);
     invalidate();
+  }
+  void Window::requestAttention() {
+    if (m->visible && !active())
+      m->activationState.request();
+  }
+  bool Window::externalActivation(std::function<void(std::string)> ready) {
+    const auto serial =
+        m->visible && Clock::now() - m->activationInputAt <= DesktopActivationToken::lifetime ? m->activationSerial : 0;
+    return m->activationState.exportToken(m->seat, serial, std::move(ready));
   }
   void Window::setTextInputDispatcher(InputDispatcher* dispatcher) {
     if (m->textInputDispatcher && m->textInputDispatcher != dispatcher)

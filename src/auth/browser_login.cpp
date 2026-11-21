@@ -12,19 +12,11 @@
 #include <netinet/in.h>
 #include <nlohmann/json.hpp>
 #include <poll.h>
-#include <spawn.h>
 #include <string_view>
 #include <sys/random.h>
 #include <sys/socket.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <utility>
-
-#ifndef CRESSIDA_OPEN_URI
-#define CRESSIDA_OPEN_URI "xdg-open"
-#endif
-
-extern char** environ;
 
 namespace auth {
   namespace {
@@ -38,28 +30,6 @@ namespace auth {
           close(fd);
       }
     };
-
-    bool openBrowser(const std::string& url) {
-      posix_spawn_file_actions_t actions;
-      if (posix_spawn_file_actions_init(&actions) != 0)
-        return false;
-      posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
-      posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
-      posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
-      char program[] = CRESSIDA_OPEN_URI;
-      char* args[] = {program, const_cast<char*>(url.c_str()), nullptr};
-      pid_t pid = -1;
-      const auto error = posix_spawnp(&pid, program, &actions, nullptr, args, environ);
-      posix_spawn_file_actions_destroy(&actions);
-      if (error != 0)
-        return false;
-      // Do not kill or wait on the user's browser when cancelling sign-in.
-      std::thread([pid] {
-        while (waitpid(pid, nullptr, 0) < 0 && errno == EINTR) {
-        }
-      }).detach();
-      return true;
-    }
 
     std::optional<std::string> randomKey() {
       std::array<unsigned char, 32> bytes{};
@@ -286,14 +256,8 @@ namespace auth {
     }
   } // namespace
 
-  bool openExternalUrl(const std::string& url) {
-    if ((!url.starts_with("https://") && !url.starts_with("http://"))
-        || url.find_first_of("\r\n\t ") != std::string::npos)
-      return false;
-    return openBrowser(url);
-  }
-
-  BrowserLogin::BrowserLogin(Opener opener) : m_opener(opener ? std::move(opener) : openBrowser) {}
+  BrowserLogin::BrowserLogin(Opener opener)
+      : m_opener(opener ? std::move(opener) : [](const std::string& url) { return openExternalUrl(url); }) {}
   BrowserLogin::~BrowserLogin() { cancel(); }
 
   bool BrowserLogin::start() {

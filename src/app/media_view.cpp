@@ -151,7 +151,7 @@ namespace app {
       const auto browserLink = api::mediaBrowserUrl(m_viewUrl, m_viewImage);
       if (!browserLink.empty())
         m_imageStatus =
-            m_demo || auth::openExternalUrl(browserLink) ? "Opening media link…" : "Could not open the media link.";
+            m_demo || openExternalUrl(browserLink) ? "Opening media link…" : "Could not open the media link.";
     } else if (action == Action::CopyImage || action == Action::SaveImage) {
       if (m_imageSaveRequest || m_pendingImageAction != Action::None)
         return;

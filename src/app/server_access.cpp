@@ -156,7 +156,7 @@ namespace app {
           return;
         if (m_serverAccessVerification) {
           if (!m_demo)
-            auth::openExternalUrl("https://discord.com/channels/" + card.data->guild.id);
+            openExternalUrl("https://discord.com/channels/" + card.data->guild.id);
         } else if (card.joined) {
           const auto guild = card.data->guild.id;
           closeDialog();

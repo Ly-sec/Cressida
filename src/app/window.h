@@ -41,6 +41,8 @@ namespace app {
     void requestClose();
     void hide();
     void show(std::string activationToken = {});
+    void requestAttention();
+    bool externalActivation(std::function<void(std::string)> ready);
     bool visible() const;
     // Changes only when a hidden window needs a new native shell role.
     std::uint64_t toplevelGeneration() const;

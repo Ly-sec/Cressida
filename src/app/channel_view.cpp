@@ -2446,7 +2446,7 @@ namespace app {
         break;
       if (button.style == 5) {
         if (api::externalLink(button.url) && !openDiscordLink(button.url))
-          auth::openExternalUrl(button.url);
+          openExternalUrl(button.url);
         break;
       }
       const auto key = found->id + ":" + button.customId;

@@ -507,7 +507,7 @@ namespace app {
       const auto guild = m_unreadGuilds.find(m_dialogText);
       const auto destination = guild == m_unreadGuilds.end() || guild->second.empty() ? "@me" : guild->second;
       if (!m_demo && api::validSnowflake(m_dialogText))
-        auth::openExternalUrl("https://discord.com/channels/" + destination + "/" + m_dialogText);
+        openExternalUrl("https://discord.com/channels/" + destination + "/" + m_dialogText);
     } else if (m_dialogKind == "message-security" && action == "resume") {
       const auto channel = m_dialogText;
       if (!m_demo && !m_client.resumeMessageChallenge(channel)) {

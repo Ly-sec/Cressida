@@ -293,7 +293,7 @@ namespace app {
     if (request.section == Section::ConnectionAuthorize) {
       const auto url = text(event.userSettings, "url");
       if (!url.empty())
-        auth::openExternalUrl(url);
+        openExternalUrl(url);
       closeUserAccountDialog();
       state.status = "Complete authorization in your browser, then refresh connections.";
     } else if (identity.cache == "profile-save") {

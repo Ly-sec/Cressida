@@ -6,10 +6,12 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 
 namespace auth {
-  bool openExternalUrl(const std::string& url);
+  bool isExternalUrl(std::string_view url);
+  bool openExternalUrl(const std::string& url, std::string activationToken = {});
   struct BrowserResult {
     std::string key;
     std::string handoffToken;

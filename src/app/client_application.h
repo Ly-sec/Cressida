@@ -422,6 +422,7 @@ namespace app {
     void insert(std::string text);
     void activate(const Hit& hit);
     void connect();
+    bool openExternalUrl(const std::string& url);
     void beginLogin();
     void beginQrLogin();
     void clearQrLogin();

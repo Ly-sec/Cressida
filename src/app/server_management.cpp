@@ -708,7 +708,7 @@ namespace app {
     if (id == "management:access-refresh") {
       loadServerManagement();
     } else if (id == "management:monetization-browser") {
-      if (!m_demo && !auth::openExternalUrl("https://discord.com/guilds/" + s.guild + "/settings/ROLE_SUBSCRIPTIONS"))
+      if (!m_demo && !openExternalUrl("https://discord.com/guilds/" + s.guild + "/settings/ROLE_SUBSCRIPTIONS"))
         s.error = "Could not open the monetization settings in your browser.";
     } else if (id == "management:apply-members") {
       if (s.lists.contains("management:member-date-invalid") && !s.lists["management:member-date-invalid"].empty())

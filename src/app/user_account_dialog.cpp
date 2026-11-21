@@ -202,7 +202,7 @@ namespace app {
     else if (action == "sms-disable")
       open("sms-disable");
     else if (action == "key-register")
-      auth::openExternalUrl(api::userSettingsBrowserUrl(Section::SecurityKeys));
+      openExternalUrl(api::userSettingsBrowserUrl(Section::SecurityKeys));
     else if (action.starts_with("key-rename:"))
       open("key-rename", action.substr(11));
     else if (action.starts_with("key-remove:"))

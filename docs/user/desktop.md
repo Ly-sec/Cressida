@@ -1,7 +1,7 @@
 ---
 title: Desktop integration
 description:
-  Use the tray, start minimized and return to the running window from
+  Use the tray, open browser links and return to the running window from
   notifications.
 ---
 
@@ -63,6 +63,11 @@ to the client. Clicking a valid notification restores a hidden window or asks
 the desktop to focus the existing one. Your compositor controls whether focus
 can be granted.
 
+Eligible new-message notifications and due reminders also ask the compositor to
+draw attention to an unfocused, visible window. Muted conversations and Do Not
+Disturb keep their existing notification behavior. A hidden tray window stays
+hidden until you open it or click a notification.
+
 Custom emoji in notification text use readable `:name:` labels because system
 notification text does not render the same way as a chat message.
 
@@ -102,6 +107,18 @@ ordinary background-request errors, opening a screen preview and successful
 voice rekeying do not play cues. Bursts are bounded; stale cues are dropped
 rather than played long after their event. Changing sound settings or signing
 out cancels queued playback.
+
+## Browser links
+
+External web links open in your default browser. After a recent click or key
+press, Cressida passes a Wayland activation token through the desktop portal so
+the browser can request focus, including when it is already running. Browser
+sign-in uses the same handoff.
+
+If the portal is unavailable, Cressida uses the desktop's normal link opener.
+Links still open on desktops without activation support. Your compositor and
+browser decide whether to switch focus or show an attention indicator; Cressida
+cannot force either behavior.
 
 ## Window decorations
 

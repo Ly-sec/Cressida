@@ -120,7 +120,6 @@ namespace app {
     }
     const auto avatar = notice.avatar;
     const bool needsAvatar = !avatar.empty() && notice.avatarBytes.empty();
-    m_window.requestAttention();
     m_desktopNotifications.show(std::move(notice));
     if (needsAvatar && m_assets.request(avatar))
       m_pendingImages[avatar] |= imageUseMask(ImageUse::Content);

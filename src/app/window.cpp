@@ -1355,10 +1355,6 @@ namespace app {
     m->activationState.request(activationToken);
     invalidate();
   }
-  void Window::requestAttention() {
-    if (m->visible && !active())
-      m->activationState.request();
-  }
   bool Window::externalActivation(std::function<void(std::string)> ready) {
     const auto serial =
         m->visible && Clock::now() - m->activationInputAt <= DesktopActivationToken::lifetime ? m->activationSerial : 0;

@@ -358,7 +358,6 @@ namespace app {
                       )
                     : saved.summary
             );
-          m_window.requestAttention();
           m_desktopNotifications.show(std::move(notice));
         }
       }

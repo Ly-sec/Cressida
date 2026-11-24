@@ -63,10 +63,10 @@ to the client. Clicking a valid notification restores a hidden window or asks
 the desktop to focus the existing one. Your compositor controls whether focus
 can be granted.
 
-Eligible new-message notifications and due reminders also ask the compositor to
-draw attention to an unfocused, visible window. Muted conversations and Do Not
-Disturb keep their existing notification behavior. A hidden tray window stays
-hidden until you open it or click a notification.
+Receiving a new-message notification or a due reminder does not request window
+activation or focus. Click the notification to return to Cressida. Muted
+conversations and Do Not Disturb keep their existing notification behavior. A
+hidden tray window stays hidden until you open it or click a notification.
 
 Custom emoji in notification text use readable `:name:` labels because system
 notification text does not render the same way as a chat message.

@@ -244,7 +244,10 @@ int main() {
           "Enabled notification sounds and expiry use documented hints"
       );
       require(first.image.empty(), "A notice without sender identity never contains an avatar");
+      require(!notifications.poll(), "Delivering a notification does not activate its conversation");
       service.token(first.id, "private-notification-token");
+      dispatchFor(std::chrono::milliseconds(30));
+      require(!notifications.poll(), "An activation token alone does not activate its conversation");
       service.action(first.id, "unrecognized");
       dispatchFor(std::chrono::milliseconds(30));
       require(!notifications.poll(), "Unrecognized notification actions do not navigate");

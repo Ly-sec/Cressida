@@ -365,7 +365,7 @@ namespace app {
       require(!m_videoSource.empty(), "Clicking play must open the video");
     } else if (m_demoInteractionStep == 1) {
       require(state.error.empty(), "Native video must load successfully");
-      if (state.loading || state.width == 0) {
+      if (state.loading || state.width == 0 || state.height == 0 || !state.playing || state.position <= 0) {
         m_window.invalidate();
         return;
       }
@@ -373,7 +373,11 @@ namespace app {
       click(Action::PauseVideo);
       require(!state.playing, "Native pause click must reach the player");
     } else if (m_demoInteractionStep == 2) {
-      require(!state.playing, "Native pause button must pause");
+      // Engine property notifications can still describe playback before the click.
+      if (state.playing) {
+        m_window.invalidate();
+        return;
+      }
       click(Action::SeekVideo);
       require(m_videoDrag == 1, "Timeline receives pointer capture");
     } else if (m_demoInteractionStep == 3) {
@@ -402,8 +406,12 @@ namespace app {
       m_window.scroll(Style::spaceGroup);
       require(m_messageScroll == previousScroll, "Expanded video blocks scrolling the covered conversation");
       click(Action::PauseVideo);
+      require(state.playing, "Expanded play click must reach the player");
     } else if (m_demoInteractionStep == 6) {
-      require(state.playing, "Expanded play button resumes");
+      if (!state.playing) {
+        m_window.invalidate();
+        return;
+      }
       click(Action::VolumeVideo);
     } else if (m_demoInteractionStep == 7) {
       require(m_videoDrag == 2, "Volume drag survives repaint");

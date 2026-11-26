@@ -199,15 +199,18 @@ Path(sys.argv[sys.argv.index('--output') + 1]).write_bytes(b'corrupt download')
         self.assertIn("flatpak-login-themed.log", result.stderr)
 
     def deployment(self, arch, codec_major="62"):
+        self.environment["CRESSIDA_TEST_CP"] = shutil.which("cp")
         self.executable(self.commands / "cp", """
-import shutil, sys
+import os, subprocess, sys
 from pathlib import Path
-if '/app/.' in sys.argv:
-    binary = Path(sys.argv[-1]) / 'bin/cressida'
-    binary.parent.mkdir(parents=True)
-    binary.touch()
-elif Path(sys.argv[-2]).exists():
-    shutil.copytree(sys.argv[-2], sys.argv[-1])
+sdk = Path(os.environ['CRESSIDA_TEST_SDK_ROOT'])
+arguments = sys.argv[1:]
+source = arguments[-2]
+if source.startswith(('/app/', '/usr/')):
+    arguments[-2] = str(sdk) + source
+else:
+    assert Path(source).is_relative_to(sdk), 'unexpected SDK copy source: ' + source
+subprocess.run([os.environ['CRESSIDA_TEST_CP'], *arguments], check=True)
 """)
         self.executable(self.commands / "install", "")
         self.executable(self.commands / "patchelf", "print('/lib/ld-release-test.so')\n")
@@ -219,14 +222,30 @@ print(os.environ['CRESSIDA_TEST_SDK_LIBDIR'] if sys.argv[1] == '--variable=libdi
         self.environment["LD_LIBRARY_PATH"] = "/cressida-test-host-libs"
         triplet = arch + "-linux-gnu"
         work = self.root / arch
-        sdk_libdir = work / "sdk" / triplet
+        sdk = work / "sdk"
+        sdk_libdir = sdk / "usr/lib" / triplet
+        for relative, content in {
+            "app/bin/cressida": "synthetic client",
+            "usr/share/fonts/noto-emoji/NotoColorEmoji.ttf": "synthetic font",
+            "usr/share/mime/packages/cressida-test.xml": "synthetic MIME database",
+            "usr/share/X11/locale/en_US.UTF-8/Compose": "synthetic Compose table",
+            "usr/share/licenses/sdk-license": "synthetic SDK notice",
+            "usr/manifest.json": "{}",
+            f"usr/lib/{triplet}/GL/default/lib/dri/driver.so": "synthetic graphics driver",
+        }.items():
+            fixture = sdk / relative
+            fixture.parent.mkdir(parents=True, exist_ok=True)
+            fixture.write_text(content)
         codecs = sdk_libdir / "codecs-extra"
         (codecs / "lib").mkdir(parents=True)
         if codec_major:
             (codecs / "lib" / f"libavcodec.so.{codec_major}").touch()
         (codecs / "share/licenses").mkdir(parents=True)
         (codecs / "share/licenses/codec-license").write_text("synthetic codec notice")
-        self.environment.update(CRESSIDA_TEST_TRIPLET=triplet, CRESSIDA_TEST_SDK_LIBDIR=str(sdk_libdir))
+        self.environment.update(
+            CRESSIDA_TEST_TRIPLET=triplet, CRESSIDA_TEST_SDK_LIBDIR=str(sdk_libdir),
+            CRESSIDA_TEST_SDK_ROOT=str(sdk),
+        )
         tool = work / "tool/squashfs-root/usr/bin/appimagetool"
         self.executable(tool, """
 import os, sys
@@ -259,6 +278,17 @@ else:
                 self.assertTrue((work / f"cressida-0.1.0-{arch}.AppImage").is_file())
                 notice = work / "AppDir/usr/share/codec-licenses/codec-license"
                 self.assertEqual(notice.read_text(), "synthetic codec notice")
+                resources = {
+                    "bin/cressida": "synthetic client",
+                    "share/fonts/noto-emoji/NotoColorEmoji.ttf": "synthetic font",
+                    "share/mime/packages/cressida-test.xml": "synthetic MIME database",
+                    "share/X11/locale/en_US.UTF-8/Compose": "synthetic Compose table",
+                    "share/sdk-licenses/sdk-license": "synthetic SDK notice",
+                    "share/freedesktop-sdk-manifest.json": "{}",
+                    f"lib/{arch}-linux-gnu/GL/default/lib/dri/driver.so": "synthetic graphics driver",
+                }
+                for relative, content in resources.items():
+                    self.assertEqual((work / "AppDir/usr" / relative).read_text(), content)
 
     def test_missing_or_incompatible_codecs_stop_image_creation(self):
         for arch, codec_major in (("x86_64", None), ("aarch64", "61")):

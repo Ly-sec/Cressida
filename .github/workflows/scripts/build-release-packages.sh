@@ -17,7 +17,8 @@ bash "$root/.github/workflows/scripts/prepare-release-appimage-tool.sh" "$work" 
 version=$(python3 "$root/.github/workflows/scripts/prepare_release_packages.py" "$RELEASE_REF" "$work")
 manifest="$work/dev.lysec.Cressida.json"
 flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user --noninteractive flathub org.freedesktop.Sdk//26.08 org.freedesktop.Platform//26.08
+flatpak install --user --noninteractive flathub org.freedesktop.Sdk//26.08 org.freedesktop.Platform//26.08 \
+    org.freedesktop.Platform.codecs-extra//26.08-extra
 flatpak-builder --user --force-clean --disable-rofiles-fuse --jobs=2 \
     --state-dir="$work/state" --repo="$work/repo" --default-branch=stable \
     "$work/build" "$manifest"

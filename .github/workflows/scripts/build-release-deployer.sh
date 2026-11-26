@@ -11,7 +11,11 @@ printf '%s  %s\n' "$source_sha256" "$work/deployer-source.tar.gz" | sha256sum --
 mkdir "$work/deployer-source"
 tar -xzf "$work/deployer-source.tar.gz" --strip-components=1 -C "$work/deployer-source"
 patch -d "$work/deployer-source" -p1 < "$root/packaging/appimage/built-in-pixbuf.patch"
+patch -d "$work/deployer-source" -p1 < "$root/packaging/appimage/library-search.patch"
 cd "$work/deployer-source"
+CGO_ENABLED=0 GOTOOLCHAIN=local GOVCS='*:off' GOPROXY=https://proxy.golang.org \
+    GOMODCACHE="$work/go-modules" GOCACHE="$work/go-cache" \
+    go test -mod=readonly -buildvcs=false ./src/appimagetool -run '^TestPreferredLibrarySearch$'
 CGO_ENABLED=0 GOTOOLCHAIN=local GOVCS='*:off' GOPROXY=https://proxy.golang.org \
     GOMODCACHE="$work/go-modules" GOCACHE="$work/go-cache" \
     go build -mod=readonly -trimpath -buildvcs=false \

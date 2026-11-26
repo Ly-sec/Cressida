@@ -1,0 +1,75 @@
+--- a/src/appimagetool/appdirtool.go
++++ b/src/appimagetool/appdirtool.go
+@@ -1178,14 +1178,17 @@
+ 		}
+ 	}
+ 
+-	// Also look for libraries in in LD_LIBRARY_PATH
+-	ldpstr := os.Getenv("LD_LIBRARY_PATH")
+-	ldps := strings.Split(ldpstr, ":")
+-	for _, ldp := range ldps {
++	// Prefer explicit deployment paths over SDK defaults, including for copied rpaths.
++	var searchLocations []string
++	for _, ldp := range strings.Split(os.Getenv("LD_LIBRARY_PATH"), ":") {
+ 		if ldp != "" {
+-			libraryLocations = helpers.AppendIfMissing(libraryLocations, filepath.Clean(ldp))
+-		}
+-	}
++			searchLocations = helpers.AppendIfMissing(searchLocations, filepath.Clean(ldp))
++		}
++	}
++	for _, location := range libraryLocations {
++		searchLocations = helpers.AppendIfMissing(searchLocations, location)
++	}
++	libraryLocations = searchLocations
+ 
+ 	// TODO: find ld.so.cache on the system and use the locations contained therein, too
+ 
+--- /dev/null
++++ b/src/appimagetool/library_search_test.go
+@@ -0,0 +1,45 @@
++package main
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++)
++
++func TestPreferredLibrarySearch(t *testing.T) {
++	original := libraryLocations
++	t.Cleanup(func() { libraryLocations = original })
++	root := t.TempDir()
++	base := filepath.Join(root, "base")
++	codecs := filepath.Join(root, "codecs")
++	for _, directory := range []string{base, codecs} {
++		if err := os.Mkdir(directory, 0700); err != nil {
++			t.Fatal(err)
++		}
++		if err := os.WriteFile(filepath.Join(directory, "libcressida-codec-test.so"), nil, 0600); err != nil {
++			t.Fatal(err)
++		}
++	}
++	fallback := filepath.Join(base, "libcressida-fallback-test.so")
++	if err := os.WriteFile(fallback, nil, 0600); err != nil {
++		t.Fatal(err)
++	}
++	libraryLocations = []string{base}
++	t.Setenv("LD_LIBRARY_PATH", codecs+":"+base+":"+codecs)
++	for _, name := range []string{"libcressida-codec-test.so", "libcressida-fallback-test.so", "libcressida-codec-test.so"} {
++		path, err := findLibrary(name)
++		if err != nil {
++			t.Fatal(err)
++		}
++		expected := filepath.Join(codecs, name)
++		if name == "libcressida-fallback-test.so" {
++			expected = fallback
++		}
++		if path != expected {
++			t.Fatalf("selected %s, want %s", path, expected)
++		}
++		if libraryLocations[0] != codecs || libraryLocations[1] != base {
++			t.Fatalf("copied rpaths lost library precedence: %v", libraryLocations)
++		}
++	}
++}

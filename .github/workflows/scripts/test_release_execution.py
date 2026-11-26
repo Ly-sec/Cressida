@@ -43,10 +43,14 @@ class ReleaseExecutionTests(unittest.TestCase):
             path.write_text(f"#!{sys.executable}\n" + source)
         path.chmod(0o700)
 
-    def smoke(self, fail=False):
+    def smoke(self, fail=False, compositor_delay=0, compositor_failure=False):
         self.executable(self.commands / "weston", """
-import os, signal, socket, sys
+import os, signal, socket, sys, time
 from pathlib import Path
+if os.environ.get('CRESSIDA_TEST_FAIL_WESTON'):
+    print('synthetic compositor startup failure', file=sys.stderr)
+    exit(19)
+time.sleep(float(os.environ.get('CRESSIDA_TEST_WESTON_DELAY', '0')))
 with socket.socket(socket.AF_UNIX) as listener:
     listener.bind(str(Path(os.environ['XDG_RUNTIME_DIR']) / os.environ['WAYLAND_DISPLAY']))
     listener.listen()
@@ -88,6 +92,9 @@ app.chmod(0o700)
 """)
         if fail:
             self.environment["CRESSIDA_TEST_FAIL_FLATPAK"] = "1"
+        self.environment["CRESSIDA_TEST_WESTON_DELAY"] = str(compositor_delay)
+        if compositor_failure:
+            self.environment["CRESSIDA_TEST_FAIL_WESTON"] = "1"
         return subprocess.run(
             ["bash", str(SCRIPTS / "smoke-release-packages.sh"), str(image),
              str(self.root / "bundle"), str(self.root / "logs")],
@@ -105,6 +112,17 @@ app.chmod(0o700)
             self.record.read_text().splitlines(),
             [f"{package}:{view}" for view in views for package in ("appimage", "flatpak")],
         )
+
+    def test_compositor_can_take_longer_than_five_seconds_to_start(self):
+        result = self.smoke(compositor_delay=6)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(self.record.read_text().splitlines()), 14)
+
+    def test_compositor_startup_failure_prints_its_log(self):
+        result = self.smoke(compositor_failure=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("synthetic compositor startup failure", result.stderr)
+        self.assertFalse(self.record.exists())
 
     def test_bootstrap_uses_retained_verified_assets_for_both_architectures(self):
         self.executable(self.commands / "curl", """
@@ -180,30 +198,44 @@ Path(sys.argv[sys.argv.index('--output') + 1]).write_bytes(b'corrupt download')
         self.assertIn("synthetic package launch failure", result.stderr)
         self.assertIn("flatpak-login-themed.log", result.stderr)
 
-    def test_deployment_searches_the_selected_sdk_triplet_without_leaking_it(self):
+    def deployment(self, arch, codec_major="62"):
         self.executable(self.commands / "cp", """
-import sys
+import shutil, sys
 from pathlib import Path
 if '/app/.' in sys.argv:
     binary = Path(sys.argv[-1]) / 'bin/cressida'
     binary.parent.mkdir(parents=True)
     binary.touch()
+elif Path(sys.argv[-2]).exists():
+    shutil.copytree(sys.argv[-2], sys.argv[-1])
 """)
         self.executable(self.commands / "install", "")
         self.executable(self.commands / "patchelf", "print('/lib/ld-release-test.so')\n")
+        self.executable(self.commands / "pkg-config", """
+import os, sys
+assert sys.argv[-1] == 'libavcodec'
+print(os.environ['CRESSIDA_TEST_SDK_LIBDIR'] if sys.argv[1] == '--variable=libdir' else '62.28.103')
+""")
         self.environment["LD_LIBRARY_PATH"] = "/cressida-test-host-libs"
-        for arch, triplet in (("x86_64", "x86_64-linux-gnu"), ("aarch64", "aarch64-linux-gnu")):
-            with self.subTest(arch=arch):
-                work = self.root / arch
-                self.environment["CRESSIDA_TEST_TRIPLET"] = triplet
-                tool = work / "tool/squashfs-root/usr/bin/appimagetool"
-                self.executable(tool, """
+        triplet = arch + "-linux-gnu"
+        work = self.root / arch
+        sdk_libdir = work / "sdk" / triplet
+        codecs = sdk_libdir / "codecs-extra"
+        (codecs / "lib").mkdir(parents=True)
+        if codec_major:
+            (codecs / "lib" / f"libavcodec.so.{codec_major}").touch()
+        (codecs / "share/licenses").mkdir(parents=True)
+        (codecs / "share/licenses/codec-license").write_text("synthetic codec notice")
+        self.environment.update(CRESSIDA_TEST_TRIPLET=triplet, CRESSIDA_TEST_SDK_LIBDIR=str(sdk_libdir))
+        tool = work / "tool/squashfs-root/usr/bin/appimagetool"
+        self.executable(tool, """
 import os, sys
 from pathlib import Path
 assert 'LD_LIBRARY_PATH' not in os.environ
 if sys.argv[1] == '-s':
     triplet = os.environ['CRESSIDA_TEST_TRIPLET']
-    assert os.environ['CRESSIDA_TEST_TOOL_LIBRARY_PATH'].split(':') == ['/app/lib', '/usr/lib/' + triplet, '/lib/' + triplet]
+    codecs = os.environ['CRESSIDA_TEST_SDK_LIBDIR'] + '/codecs-extra/lib'
+    assert os.environ['CRESSIDA_TEST_TOOL_LIBRARY_PATH'].split(':') == ['/app/lib', codecs, '/usr/lib/' + triplet, '/lib/' + triplet]
     appdir = Path(sys.argv[-1]).parents[3]
     loader = appdir / 'lib/ld-release-test.so'
     loader.parent.mkdir()
@@ -213,12 +245,28 @@ else:
     assert os.environ['CRESSIDA_TEST_TOOL_LIBRARY_PATH'] == '/cressida-test-host-libs'
     Path('Cressida-' + os.environ['VERSION'] + '-' + os.environ['ARCH'] + '.AppImage').write_bytes(b'fixture')
 """, isolate_libraries=True)
-                result = subprocess.run(
-                    ["bash", str(SCRIPTS / "build-release-appimage.sh"), str(work), "0.1.0", arch],
-                    env=self.environment, text=True, capture_output=True, timeout=20,
-                )
+        return subprocess.run(
+            ["bash", str(SCRIPTS / "build-release-appimage.sh"), str(work), "0.1.0", arch],
+            env=self.environment, text=True, capture_output=True, timeout=20,
+        )
+
+    def test_deployment_searches_the_selected_sdk_triplet_without_leaking_it(self):
+        for arch in ("x86_64", "aarch64"):
+            with self.subTest(arch=arch):
+                result = self.deployment(arch)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                work = self.root / arch
                 self.assertTrue((work / f"cressida-0.1.0-{arch}.AppImage").is_file())
+                notice = work / "AppDir/usr/share/codec-licenses/codec-license"
+                self.assertEqual(notice.read_text(), "synthetic codec notice")
+
+    def test_missing_or_incompatible_codecs_stop_image_creation(self):
+        for arch, codec_major in (("x86_64", None), ("aarch64", "61")):
+            with self.subTest(arch=arch, codec_major=codec_major):
+                result = self.deployment(arch, codec_major)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("SDK codec extension is missing or incompatible", result.stderr)
+                self.assertFalse((self.root / arch / f"cressida-0.1.0-{arch}.AppImage").exists())
 
 
 if __name__ == "__main__":

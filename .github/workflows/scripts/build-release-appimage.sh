@@ -24,6 +24,13 @@ case "$arch" in
     aarch64) triplet=aarch64-linux-gnu ;;
     *) echo 'Unsupported AppImage architecture.' >&2; exit 1 ;;
 esac
+codecs="$(pkg-config --variable=libdir libavcodec)/codecs-extra"
+codec_version=$(pkg-config --modversion libavcodec)
+if [[ ! -r "$codecs/lib/libavcodec.so.${codec_version%%.*}" ]]; then
+    echo "The SDK codec extension is missing or incompatible: $codecs" >&2
+    exit 1
+fi
+cp -a "$codecs/share/licenses" "$appdir/usr/share/codec-licenses"
 mkdir -p "$appdir/usr/lib/$triplet/GL"
 cp -a "/usr/lib/$triplet/GL/default" "$appdir/usr/lib/$triplet/GL/"
 
@@ -33,7 +40,7 @@ export PATH="$work/tool/squashfs-root/usr/bin:$PATH"
 export VERSION="$version" ARCH="$arch"
 tool="$work/tool/squashfs-root/usr/bin/appimagetool"
 interpreter=$(patchelf --print-interpreter "$appdir/usr/bin/cressida")
-LD_LIBRARY_PATH="/app/lib:/usr/lib/$triplet:/lib/$triplet" \
+LD_LIBRARY_PATH="/app/lib:$codecs/lib:/usr/lib/$triplet:/lib/$triplet" \
     "$tool" -s deploy "$appdir/usr/share/applications/dev.lysec.Cressida.desktop"
 
 # Resolve the loader and bundled resources relative to the extracted image.

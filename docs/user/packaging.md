@@ -204,9 +204,11 @@ requires Nix. Package builds omit test targets; private headless replays check
 both packaged formats after the main test suite passes. All manifest modules
 install libraries into `/app/lib`, keeping dependency lookup and the packaged
 runtime consistent across architectures and builder versions. AppImage
-deployment searches the selected SDK architecture's library directories. Package
-checks forward a private compositor socket through Flatpak's normal Wayland
-permission and print the failing check's log directly in the job output.
+deployment includes the matching runtime codec extension and its license
+notices, preserving H.264 decoding in the bundled FFmpeg libraries. Package
+checks wait up to 30 seconds for their private compositor, forward its socket
+through Flatpak's normal Wayland permission and print startup or playback
+failures directly in the job output.
 
 The release job attaches both `.AppImage` and `.flatpak` files for each
 architecture, a `cressida-VERSION.tar.xz` source archive and `SHA256SUMS`

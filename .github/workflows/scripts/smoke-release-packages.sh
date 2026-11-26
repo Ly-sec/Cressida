@@ -40,15 +40,20 @@ env "${weston_env[@]}" weston --backend=headless --renderer=gl --no-config \
     --width=1600 --height=1000 --idle-time=0 --socket="$WAYLAND_DISPLAY" \
     --log="$logs/weston.log" > "$logs/weston-output.log" 2>&1 &
 weston_pid=$!
-for ((attempt = 0; attempt < 100; ++attempt)); do
+compositor_start_timeout=30
+compositor_deadline=$((SECONDS + compositor_start_timeout))
+while ((SECONDS < compositor_deadline)); do
     [[ -S "$test_root/runtime/$WAYLAND_DISPLAY" ]] && break
     if ! kill -0 "$weston_pid" 2>/dev/null; then
-        cat "$logs/weston-output.log" "$logs/weston.log" >&2
-        exit 1
+        break
     fi
     sleep 0.05
 done
-test -S "$test_root/runtime/$WAYLAND_DISPLAY"
+if [[ ! -S "$test_root/runtime/$WAYLAND_DISPLAY" ]]; then
+    echo "Package compositor did not become ready within $compositor_start_timeout seconds." >&2
+    cat "$logs/weston-output.log" "$logs/weston.log" >&2 || true
+    exit 1
+fi
 
 for view in login-themed login-themed-light autocomplete-cycle sharing-cycle rpc-cycle media-gallery-cycle video-cycle; do
     echo "Package smoke check: AppImage $view"

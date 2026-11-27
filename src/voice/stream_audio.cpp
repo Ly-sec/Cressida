@@ -2,17 +2,15 @@
 
 #include "core/application_identity.h"
 #include "core/process/wake_event.h"
+#include "voice/stream_audio_dsp.h"
 
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <cmath>
 #include <condition_variable>
 #include <deque>
-#include <limits>
 #include <map>
 #include <mutex>
-#include <optional>
 #include <opus.h>
 #include <poll.h>
 #include <pulse/pulseaudio.h>
@@ -23,14 +21,15 @@
 namespace voice {
   namespace {
     using Clock = std::chrono::steady_clock;
-    constexpr int channels = 2, packetBytes = 1275;
+    constexpr int channels = streamAudioChannels;
+    constexpr auto packetBytes = maximumStreamAudioPacketBytes;
     constexpr std::size_t stereoSamples = frameSamples * channels, frameBytes = stereoSamples * sizeof(float);
-    constexpr std::size_t maximumApplications = 128, maximumSources = 32, maximumQueue = 16, maximumBufferedFrames = 5;
+    constexpr std::size_t maximumApplications = 128, maximumSources = 32, maximumBufferedFrames = 5;
     constexpr auto audioInterval = std::chrono::milliseconds{20};
     constexpr auto setupTimeout = std::chrono::seconds{5};
-    constexpr auto sourceIdleTimeout = std::chrono::seconds{5};
     constexpr std::size_t maximumLabelBytes = 256;
-    constexpr auto defaultBuffer = std::numeric_limits<std::uint32_t>::max();
+    constexpr auto maximumCaptureLag = audioInterval * static_cast<int>(maximumBufferedFrames);
+    constexpr int streamBitrate = 128000;
     struct Application {
       std::uint32_t index, sink;
       std::string id, name;
@@ -38,7 +37,10 @@ namespace voice {
     };
     struct Monitor {
       pa_stream* stream = nullptr;
+      std::uint32_t application = 0;
+      std::string sink;
       std::deque<float> samples;
+      Clock::time_point deadline = Clock::now() + setupTimeout;
       ~Monitor() {
         if (stream) {
           pa_stream_disconnect(stream);
@@ -80,6 +82,7 @@ namespace voice {
         desired = false;
         capture = {};
         packets.clear();
+        removed.clear();
         const auto epoch = ++revision;
         changed();
         if (std::this_thread::get_id() != worker.get_id())
@@ -118,7 +121,7 @@ namespace voice {
         receiveAt(ssrc, sequence, timestamp, opus, {});
       }
       void receiveAt(
-          std::uint32_t, std::uint16_t sequence, std::uint32_t, std::span<const std::uint8_t> opus,
+          std::uint32_t ssrc, std::uint16_t sequence, std::uint32_t timestamp, std::span<const std::uint8_t> opus,
           Clock::time_point due
       ) override {
         if (opus.empty() || opus.size() > packetBytes)
@@ -126,15 +129,16 @@ namespace voice {
         std::lock_guard lock(mutex);
         if (!desired || requested.deafened)
           return;
-        if (packets.size() >= maximumQueue)
+        if (packets.size() >= maximumStreamAudioPackets)
           packets.pop_front();
-        packets.push_back({sequence, {opus.begin(), opus.end()}, due});
+        packets.push_back({ssrc, sequence, timestamp, {opus.begin(), opus.end()}, due});
         (void)wake.signal();
       }
-      void remove(std::uint32_t) override {
+      void remove(std::uint32_t ssrc) override {
         std::lock_guard lock(mutex);
-        packets.clear();
-        ++playbackEpoch;
+        std::erase_if(packets, [=](const auto& packet) { return packet.ssrc == ssrc; });
+        if (removed.size() < maximumStreamAudioPackets)
+          removed.push_back(ssrc);
         (void)wake.signal();
       }
       AudioState state() const override {
@@ -156,7 +160,9 @@ namespace voice {
 
     private:
       struct Received {
+        std::uint32_t ssrc;
         std::uint16_t sequence;
+        std::uint32_t timestamp;
         std::vector<std::uint8_t> bytes;
         Clock::time_point due{};
       };
@@ -171,7 +177,12 @@ namespace voice {
         std::vector<pollfd> all(descriptors, descriptors + count);
         all.push_back({self.wake.fd(), POLLIN, 0});
         constexpr int maximumPoll = 20;
-        const auto result = ::poll(all.data(), all.size(), timeout < 0 ? maximumPoll : std::min(timeout, maximumPoll));
+        auto limit = maximumPoll;
+        if (self.nextWake != Clock::time_point::max()) {
+          const auto remaining = std::chrono::ceil<std::chrono::milliseconds>(self.nextWake - Clock::now());
+          limit = static_cast<int>(std::clamp<std::int64_t>(remaining.count(), 0, maximumPoll));
+        }
+        const auto result = ::poll(all.data(), all.size(), timeout < 0 ? limit : std::min(timeout, limit));
         for (unsigned long i = 0; i < count; ++i)
           descriptors[i].revents = all[i].revents;
         if (all.back().revents)
@@ -213,12 +224,9 @@ namespace voice {
           pa_stream_unref(output);
           output = nullptr;
         }
-        playout.clear();
-        nextSequence.reset();
+        playout.reset();
         if (encoder)
           opus_encoder_ctl(encoder, OPUS_RESET_STATE);
-        if (decoder)
-          opus_decoder_ctl(decoder, OPUS_RESET_STATE);
       }
       void close() {
         closeStreams();
@@ -301,7 +309,7 @@ namespace voice {
         if (!appRead)
           appsDone = true;
       }
-      bool openStreams(const std::vector<std::string>& sources, const AudioSettings& settings) {
+      bool syncStreams(const std::vector<std::string>& sources, const AudioSettings& settings) {
         const pa_sample_spec format{PA_SAMPLE_FLOAT32NE, sampleRate, channels};
         const pa_buffer_attr buffers{
             frameBytes * maximumBufferedFrames, frameBytes * 2, frameBytes, frameBytes, frameBytes
@@ -309,7 +317,7 @@ namespace voice {
         const auto flags = static_cast<pa_stream_flags_t>(
             PA_STREAM_ADJUST_LATENCY | PA_STREAM_AUTO_TIMING_UPDATE | PA_STREAM_DONT_MOVE
         );
-        if (!publishing) {
+        if (!publishing && !output) {
           output = pa_stream_new(context, "Shared stream playback", &format, nullptr);
           if (!output
               || pa_stream_connect_playback(
@@ -317,17 +325,31 @@ namespace voice {
                      nullptr, nullptr
                  ) < 0)
             return false;
-        } else {
+          if (output)
+            pa_stream_set_write_callback(output, [](pa_stream*, std::size_t, void*) {}, nullptr);
+        } else if (publishing) {
           const bool system = std::ranges::find(sources, "system") != sources.end();
+          const auto selected = [&](const Application& app) {
+            return app.active
+                && (system || std::ranges::find(sources, app.id) != sources.end())
+                && sinks.contains(app.sink);
+          };
+          std::erase_if(monitors, [&](const auto& monitor) {
+            return std::ranges::none_of(applications, [&](const auto& app) {
+              return selected(app) && app.index == monitor->application && sinks.at(app.sink) == monitor->sink;
+            });
+          });
           for (const auto& application : applications) {
-            if (!application.active)
-              continue;
-            if (!system && std::ranges::find(sources, application.id) == sources.end())
+            if (!selected(application)
+                || monitors.size() >= maximumSources
+                || std::ranges::any_of(monitors, [&](const auto& monitor) {
+                     return monitor->application == application.index;
+                   }))
               continue;
             const auto sink = sinks.find(application.sink);
-            if (sink == sinks.end() || monitors.size() >= maximumSources)
-              continue;
             auto monitor = std::make_unique<Monitor>();
+            monitor->application = application.index;
+            monitor->sink = sink->second;
             monitor->stream = pa_stream_new(context, "Shared application audio", &format, nullptr);
             if (monitor->stream)
               pa_stream_set_read_callback(monitor->stream, [](pa_stream*, std::size_t, void*) {}, nullptr);
@@ -357,12 +379,11 @@ namespace voice {
       void run(std::stop_token stop) {
         int error = 0;
         encoder = opus_encoder_create(sampleRate, channels, OPUS_APPLICATION_AUDIO, &error);
-        decoder = opus_decoder_create(sampleRate, channels, &error);
         if (encoder) {
-          opus_encoder_ctl(encoder, OPUS_SET_BITRATE(128000));
+          opus_encoder_ctl(encoder, OPUS_SET_BITRATE(streamBitrate));
           opus_encoder_ctl(encoder, OPUS_SET_INBAND_FEC(1));
         }
-        std::uint64_t applied = 0, playedEpoch = 0;
+        std::uint64_t applied = 0;
         bool running = false, opened = false, activeRequest = false;
         AudioSettings settings;
         std::vector<std::string> sources;
@@ -370,9 +391,10 @@ namespace voice {
         auto next = Clock::now();
         std::int64_t captureOriginUs = 0;
         std::uint64_t capturedSamples = 0;
-        Clock::time_point lastPlayout{};
+        Clock::time_point captureDeadline{};
         while (!stop.stop_requested()) {
-          bool request = false, read = false, reset = false, flushPlayback = false;
+          bool request = false, read = false, reset = false, flushPlayback = false, sourcesChanged = false;
+          nextWake = Clock::time_point::max();
           Capture deliver;
           {
             std::unique_lock lock(mutex);
@@ -384,8 +406,8 @@ namespace voice {
             read = std::exchange(refresh, false);
             if (applied != revision) {
               applied = revision;
-              reset =
-                  request != activeRequest || sources != selected || settings.outputDevice != requested.outputDevice;
+              reset = request != activeRequest || (!publishing && settings.outputDevice != requested.outputDevice);
+              sourcesChanged = sources != selected;
               flushPlayback = settings.deafened != requested.deafened;
               activeRequest = request;
               settings = requested;
@@ -393,28 +415,17 @@ namespace voice {
               gain = volume;
             }
             deliver = capture;
-            for (auto& packet : packets) {
-              if (playout.size() < maximumQueue
-                  && (!nextSequence || static_cast<std::int16_t>(packet.sequence - *nextSequence) >= 0))
-                playout.try_emplace(packet.sequence, std::move(packet));
-              if (!nextSequence)
-                nextSequence = packet.sequence;
-              lastReceived = Clock::now();
-            }
+            for (const auto ssrc : removed)
+              playout.remove(ssrc);
+            removed.clear();
+            for (auto& packet : packets)
+              playout.receive(packet.ssrc, packet.sequence, packet.timestamp, packet.bytes, packet.due, Clock::now());
             packets.clear();
-            if (playedEpoch != playbackEpoch) {
-              playedEpoch = playbackEpoch;
-              reset = true;
-            }
           }
           if (read)
             enumeratePending = true;
           if (flushPlayback) {
-            playout.clear();
-            nextSequence.reset();
-            lastPlayout = {};
-            if (decoder)
-              opus_decoder_ctl(decoder, OPUS_RESET_STATE);
+            playout.reset();
             if (output && pa_stream_get_state(output) == PA_STREAM_READY)
               if (auto* operation = pa_stream_flush(output, nullptr, nullptr))
                 pa_operation_unref(operation);
@@ -424,6 +435,8 @@ namespace voice {
             opened = false;
             running = false;
           }
+          if (!context)
+            opened = running = false;
           if (!request && !read && !enumerating && !enumeratePending) {
             close();
             std::lock_guard lock(mutex);
@@ -432,7 +445,7 @@ namespace voice {
             changed();
             continue;
           }
-          if (!encoder || !decoder || (!context && !open())) {
+          if (!encoder || (!context && !open())) {
             fail("The shared audio service is unavailable.", applied);
             continue;
           }
@@ -472,51 +485,40 @@ namespace voice {
                     stateValue.inputs.push_back({app.id, app.name});
                 changed();
               }
-              closeStreams();
-              opened = false;
-              running = false;
+              sourcesChanged = true;
             }
             if (enumerating && Clock::now() >= enumerationDeadline) {
               fail("Shared audio source discovery timed out.", applied);
               continue;
             }
-            if (request && !enumerating && !opened) {
-              if (!openStreams(sources, settings)) {
+            if (request && !enumerating && (!opened || sourcesChanged)) {
+              if (!syncStreams(sources, settings)) {
                 fail("An application audio source could not be opened.", applied);
                 continue;
               }
+              if (!opened) {
+                next = Clock::now();
+                captureOriginUs = 0;
+                capturedSamples = 0;
+                captureDeadline = {};
+              }
               opened = true;
-              next = Clock::now();
-              captureOriginUs = 0;
-              capturedSamples = 0;
             }
             if (opened) {
               bool ready = (!output || pa_stream_get_state(output) == PA_STREAM_READY);
               bool failed = output && !PA_STREAM_IS_GOOD(pa_stream_get_state(output));
               for (const auto& monitor : monitors) {
-                ready &= pa_stream_get_state(monitor->stream) == PA_STREAM_READY;
-                failed |= !PA_STREAM_IS_GOOD(pa_stream_get_state(monitor->stream));
+                const auto state = pa_stream_get_state(monitor->stream);
+                if (!running)
+                  ready &= state == PA_STREAM_READY;
+                failed |= !PA_STREAM_IS_GOOD(state) || (state != PA_STREAM_READY && Clock::now() >= monitor->deadline);
               }
-              if (failed || (!ready && Clock::now() >= deadline)) {
+              if ((!enumerating && failed) || (!ready && Clock::now() >= deadline)) {
                 fail("Shared audio devices did not become ready.", applied);
                 continue;
               }
               if (ready && !running) {
                 running = true;
-                captureOriginUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                                      Clock::now().time_since_epoch() - audioInterval
-                )
-                                      .count();
-                pa_usec_t latency = 0;
-                int negative = 0;
-                if (!monitors.empty()
-                    && pa_stream_get_latency(monitors.front()->stream, &latency, &negative) >= 0
-                    && !negative)
-                  captureOriginUs -= std::min<std::uint64_t>(
-                      latency,
-                      std::chrono::duration_cast<std::chrono::microseconds>(audioInterval * maximumBufferedFrames)
-                          .count()
-                  );
                 std::lock_guard lock(mutex);
                 completed = applied;
                 stateValue.running = true;
@@ -531,50 +533,64 @@ namespace voice {
                     condition.notify_all();
                   }
                 }
-                std::size_t droppedCapture = 0;
-                for (auto& monitor : monitors) {
-                  for (std::size_t n = 0; n < maximumBufferedFrames; ++n) {
-                    const void* data = nullptr;
-                    std::size_t bytes = 0;
-                    if (pa_stream_peek(monitor->stream, &data, &bytes) < 0 || !bytes)
-                      break;
-                    const auto count = bytes / sizeof(float);
-                    if (count <= stereoSamples * maximumBufferedFrames) {
+                if (publishing) {
+                  std::size_t droppedCapture = 0;
+                  for (auto& monitor : monitors) {
+                    if (pa_stream_get_state(monitor->stream) != PA_STREAM_READY)
+                      continue;
+                    for (std::size_t n = 0; n < maximumBufferedFrames; ++n) {
+                      const void* data = nullptr;
+                      std::size_t bytes = 0;
+                      if (pa_stream_peek(monitor->stream, &data, &bytes) < 0 || !bytes)
+                        break;
+                      const auto count = bytes / sizeof(float);
                       const auto* samples = static_cast<const float*>(data);
-                      for (std::size_t i = 0; i < count; ++i)
+                      const auto keep = std::min(count, stereoSamples * maximumBufferedFrames);
+                      for (std::size_t i = count - keep; i < count; ++i)
                         monitor->samples.push_back(samples && std::isfinite(samples[i]) ? samples[i] : 0);
+                      pa_stream_drop(monitor->stream);
+                      const auto overflow = count
+                          - keep
+                          + (monitor->samples.size() > stereoSamples * maximumBufferedFrames
+                                 ? monitor->samples.size() - stereoSamples * maximumBufferedFrames
+                                 : 0);
+                      droppedCapture = std::max(droppedCapture, overflow / channels);
+                      while (monitor->samples.size() > stereoSamples * maximumBufferedFrames)
+                        monitor->samples.pop_front();
                     }
-                    pa_stream_drop(monitor->stream);
-                    if (monitor->samples.size() > stereoSamples * maximumBufferedFrames)
-                      droppedCapture = std::max(
-                          droppedCapture, (monitor->samples.size() - stereoSamples * maximumBufferedFrames) / channels
-                      );
-                    while (monitor->samples.size() > stereoSamples * maximumBufferedFrames)
-                      monitor->samples.pop_front();
                   }
-                }
-                const auto now = Clock::now();
-                capturedSamples += droppedCapture;
-                const bool captureReady = !publishing || std::ranges::all_of(monitors, [](const auto& monitor) {
-                  return monitor->samples.size() >= stereoSamples;
-                });
-                if (now >= next && !captureReady)
-                  next = now + audioInterval / 4;
-                if (now >= next && captureReady) {
-                  next += audioInterval;
-                  if (now - next > audioInterval * maximumBufferedFrames) {
-                    next = now + audioInterval;
-                  }
-                  std::array<float, stereoSamples> samples{};
-                  if (publishing) {
-                    if (!capturedSamples)
+                  capturedSamples += droppedCapture;
+                  for (std::size_t batch = 0; batch < maximumBufferedFrames; ++batch) {
+                    const auto now = Clock::now();
+                    const auto full = [](const auto& monitor) { return monitor->samples.size() >= stereoSamples; };
+                    const bool any = std::ranges::any_of(monitors, full);
+                    const bool all = !monitors.empty() && std::ranges::all_of(monitors, full);
+                    if (!all && !(any && now >= captureDeadline)) {
+                      nextWake = monitors.empty() ? next : (any ? captureDeadline : Clock::time_point::max());
+                      if (!monitors.empty() || now < next)
+                        break;
+                    }
+                    if (!captureOriginUs) {
                       captureOriginUs =
                           std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch() - audioInterval)
                               .count();
+                      capturedSamples = 0;
+                      captureDeadline = now;
+                    }
+                    const auto expected =
+                        captureOriginUs + static_cast<std::int64_t>(capturedSamples * 1000000 / sampleRate);
+                    const auto current =
+                        std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch() - audioInterval)
+                            .count();
+                    if (current - expected
+                        > std::chrono::duration_cast<std::chrono::microseconds>(maximumCaptureLag).count())
+                      captureOriginUs += current - expected;
+                    std::array<float, stereoSamples> samples{};
                     for (auto& monitor : monitors) {
-                      const auto count = std::min(samples.size(), monitor->samples.size());
-                      for (std::size_t i = 0; i < count; ++i) {
-                        samples[i] += monitor->samples.front();
+                      if (!full(monitor))
+                        continue;
+                      for (auto& sample : samples) {
+                        sample += monitor->samples.front();
                         monitor->samples.pop_front();
                       }
                     }
@@ -596,57 +612,60 @@ namespace voice {
                       if (deliver)
                         deliver(std::move(frame));
                     }
-                  } else if (output) {
-                    if (now - lastReceived > sourceIdleTimeout) {
-                      playout.clear();
-                      nextSequence.reset();
-                    }
-                    if (nextSequence && !settings.deafened) {
-                      const auto found = playout.find(*nextSequence);
-                      int count = 0;
-                      pa_usec_t latency = 0;
-                      int negative = 0;
-                      auto lead = std::chrono::microseconds{};
-                      if (pa_stream_get_latency(output, &latency, &negative) >= 0 && !negative)
-                        lead = std::chrono::microseconds{std::min<std::uint64_t>(
-                            latency,
-                            std::chrono::duration_cast<std::chrono::microseconds>(audioInterval * maximumBufferedFrames)
-                                .count()
-                        )};
-                      const auto due = found != playout.end() ? found->second.due : lastPlayout + audioInterval;
-                      if (due <= now + lead) {
-                        if (found != playout.end()) {
-                          count = opus_decode_float(
-                              decoder, found->second.bytes.data(), found->second.bytes.size(), samples.data(),
-                              frameSamples, 0
-                          );
-                          playout.erase(found);
-                        } else
-                          count = opus_decode_float(decoder, nullptr, 0, samples.data(), frameSamples, 0);
-                        ++*nextSequence;
-                        lastPlayout = due == Clock::time_point{} ? now : due;
-                        if (count < 0)
-                          samples.fill(0);
-                      }
-                    }
-                    for (auto& sample : samples)
-                      sample = std::clamp(sample * settings.outputVolume, -1.0F, 1.0F);
-                    if (pa_stream_writable_size(output) >= frameBytes)
-                      pa_stream_write(output, samples.data(), frameBytes, nullptr, 0, PA_SEEK_RELATIVE);
+                    capturedSamples += frameSamples;
+                    captureDeadline = std::max(captureDeadline + audioInterval, now - maximumCaptureLag);
+                    next = now + audioInterval;
+                    nextWake = now;
                   }
-                  capturedSamples += frameSamples;
+                } else if (output && !settings.deafened) {
+                  // Output capacity owns consumption. A short or full output buffer
+                  // retains the remaining decoded samples for the next write callback.
+                  for (std::size_t batch = 0; batch < maximumStreamAudioPackets; ++batch) {
+                    const auto writable = pa_stream_writable_size(output);
+                    if (writable == static_cast<std::size_t>(-1)) {
+                      fail("Shared audio playback stopped responding.", applied);
+                      break;
+                    }
+                    const auto capacity = writable / (sizeof(float) * channels) * channels;
+                    if (!capacity)
+                      break;
+                    pa_usec_t latency = 0;
+                    int negative = 0;
+                    auto lead = std::chrono::microseconds{};
+                    if (pa_stream_get_latency(output, &latency, &negative) >= 0 && !negative)
+                      lead = std::min(
+                          std::chrono::microseconds{static_cast<std::int64_t>(latency)},
+                          std::chrono::duration_cast<std::chrono::microseconds>(maximumCaptureLag)
+                      );
+                    const auto pending = playout.prepare(Clock::now(), lead);
+                    if (pending.empty()) {
+                      const auto due = playout.deadline();
+                      if (due != Clock::time_point::max())
+                        nextWake = std::max(Clock::now(), due - lead);
+                      break;
+                    }
+                    const auto count = std::min(capacity, pending.size());
+                    std::vector<float> samples(pending.begin(), pending.begin() + count);
+                    for (auto& sample : samples)
+                      sample = std::isfinite(sample) ? std::clamp(sample * settings.outputVolume, -1.0F, 1.0F) : 0;
+                    if (pa_stream_write(output, samples.data(), count * sizeof(float), nullptr, 0, PA_SEEK_RELATIVE)
+                        < 0) {
+                      fail("Shared audio could not be played.", applied);
+                      break;
+                    }
+                    playout.consume(count);
+                  }
                 }
               }
             }
           }
           int result = 0;
-          pa_mainloop_iterate(loop, 1, &result);
+          if (loop && pa_mainloop_iterate(loop, 1, &result) < 0)
+            fail("The shared audio service stopped responding.", applied);
         }
         close();
         if (encoder)
           opus_encoder_destroy(encoder);
-        if (decoder)
-          opus_decoder_destroy(decoder);
       }
       bool publishing;
       mutable std::mutex mutex;
@@ -657,9 +676,10 @@ namespace voice {
       AudioState stateValue;
       std::vector<std::string> selected;
       float volume = 1;
-      std::uint64_t revision = 0, completed = 0, playbackEpoch = 0;
+      std::uint64_t revision = 0, completed = 0;
       bool desired = false, refresh = false;
       std::deque<Received> packets;
+      std::vector<std::uint32_t> removed;
       pa_mainloop* loop = nullptr;
       pa_context* context = nullptr;
       pa_stream* output = nullptr;
@@ -669,11 +689,9 @@ namespace voice {
       std::vector<Application> applications;
       std::vector<std::unique_ptr<Monitor>> monitors;
       bool subscribed = false, enumerating = false, enumeratePending = false, sinksDone = false, appsDone = false;
-      Clock::time_point deadline{}, enumerationDeadline{}, lastReceived{};
+      Clock::time_point deadline{}, enumerationDeadline{}, nextWake = Clock::time_point::max();
       OpusEncoder* encoder = nullptr;
-      OpusDecoder* decoder = nullptr;
-      std::map<std::uint16_t, Received> playout;
-      std::optional<std::uint16_t> nextSequence;
+      StreamAudioPlayout playout;
       std::jthread worker;
     };
   } // namespace

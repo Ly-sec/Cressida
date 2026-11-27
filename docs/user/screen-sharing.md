@@ -86,6 +86,10 @@ sharing** stops sending application audio.
 Application audio uses PulseAudio or PipeWire's PulseAudio-compatible service.
 The screen source itself uses PipeWire and your desktop's ScreenCast portal.
 
+Refreshing the audio source list or changing an application's volume keeps
+existing capture running. Adding or removing an application updates the selected
+mix without restarting the other sources.
+
 ## Change or stop your stream
 
 Use **Pause** to stop sending the screen and shared audio while retaining the
@@ -143,6 +147,10 @@ there is only one stream.
 Deafening silences received stream audio while video can continue. Hidden video
 tiles can stop requesting frames until they become visible again. Closing a view
 does not itself end a publication; use **Stop sharing** to end yours.
+
+Audio resumes after a brief silence or when the publisher resumes a paused
+stream. You do not need to stop and reopen the watch for these pauses. A failed
+connection still requires an explicit new attempt.
 
 ## Desktop requirements and current limits
 

@@ -40,6 +40,7 @@
   opus,
   libsodium,
   libpulseaudio,
+  pulseaudio,
   pipewire,
   doCheck ? false,
   rev ? "unknown",
@@ -108,7 +109,10 @@ stdenv.mkDerivation {
   ];
 
   inherit doCheck;
-  nativeCheckInputs = [ dbus ];
+  nativeCheckInputs = [
+    dbus
+    pulseaudio
+  ];
   # GIO's byte-based MIME detection needs a database even in a clean sandbox.
   preCheck = ''
     export XDG_DATA_DIRS="${shared-mime-info}/share''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"

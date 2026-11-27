@@ -60,7 +60,8 @@
         "slug": "docs/voice"
       },
       {
-        "slug": "docs/screen-sharing"
+        "slug": "docs/screen-sharing",
+        "label": "Screen sharing and application audio"
       },
       {
         "slug": "docs/desktop",
@@ -105,6 +106,9 @@
       },
       {
         "slug": "docs/changelog"
+      },
+      {
+        "slug": "docs/changelog-v0-4-0"
       }
     ]
   },
